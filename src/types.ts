@@ -12,7 +12,11 @@ export interface PremiumIndexItem {
 export interface FundingSnapshot {
   base: string; // e.g. "BTC"
   symbol: string;
-  rateFraction: number; // e.g. 0.0003
+  rateFraction?: number; // e.g. 0.0003
+  avgRatePct8h?: number; // New field for average 8h percentage rate
   ratePct8h: number; // percentage for 8h window (0.03%)
-  nextFundingTime: number;
+  nextFundingTime?: number;
+  timestamp: number;
+  interval?: 1 | 2 | 4 | 8; // in hours
+  maxLeverage?: number; // e.g. 20
 }
