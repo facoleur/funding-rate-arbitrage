@@ -1,6 +1,5 @@
 # Node modules
 node_modules/
-
 # Build output
 dist/
 build/
@@ -26,3 +25,5 @@ yarn-error.log*
 .env.development.local
 .env.test.local
 .env.production.local
+
+.trigger

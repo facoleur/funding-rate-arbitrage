@@ -1,0 +1,23 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model History {
+  id           Int      @id @default(autoincrement())
+  createdAt    DateTime @default(now())
+  coin         String?
+  e1fr         Float?
+  e2fr         Float?
+  e1price      Float?
+  e2price      Float?
+  diff         Float?
+  apr          Float?
+  priceDiffPct Float?
+  long         String?
+  short        String?
+}
