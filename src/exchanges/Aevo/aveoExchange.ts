@@ -10,7 +10,8 @@ export class AevoExchange {
   readonly name = "aevo" as Exchange;
 
   private limiter = new Bottleneck({
-    minTime: 1000, // e.g., ~50 req/sec
+    minTime: 400, // e.g., ~2.5 requests per second
+    maxConcurrent: 1,
   });
 
   /** Returns a list of available option (and possibly other derivatives) instruments for a given underlying symbol */
@@ -81,6 +82,38 @@ export class AevoExchange {
     };
   }
 
+  getNormalizedOptionName(instrumentName: string): string {
+    // Example: "BTC-25OCT25-30000-C" → "BTC-20251025-30000-C"
+    const parts = instrumentName.split("-");
+    if (parts.length !== 4) return instrumentName; // unexpected format
+
+    const [underlying, datePart, strike, type] = parts;
+    const day = datePart.slice(0, 2);
+    const monthStr = datePart.slice(2, 5).toUpperCase();
+    const year = "20" + datePart.slice(5, 7);
+
+    const monthMap: { [key: string]: string } = {
+      JAN: "01",
+      FEB: "02",
+      MAR: "03",
+      APR: "04",
+      MAY: "05",
+      JUN: "06",
+      JUL: "07",
+      AUG: "08",
+      SEP: "09",
+      OCT: "10",
+      NOV: "11",
+      DEC: "12",
+    };
+
+    const month = monthMap[monthStr];
+    if (!month) return instrumentName; // unexpected month
+
+    const normalizedDate = `${year}${month}${day}`;
+    return `${underlying}-${normalizedDate}-${strike}-${type}`;
+  }
+
   /** Get full option chain with live prices for a specific date and underlying */
   async getOptionChainPrices(
     symbol: string,
@@ -92,7 +125,6 @@ export class AevoExchange {
       chain.map((opt) =>
         this.limiter.schedule(async () => {
           const ticker = await this.getOptionTicker(opt.instrument_name);
-          console.log("got ticker");
 
           if (
             (ticker.bid_price ?? 0) * (ticker.bid_qty ?? 0) <
@@ -101,19 +133,25 @@ export class AevoExchange {
             return null;
           }
 
-          return {
+          const option = {
             ...opt,
+            option_type: opt.option_type === "call" ? "C" : "P",
+            normalized_name: this.getNormalizedOptionName(opt.instrument_name),
             bid_price: ticker.bid_price!,
             ask_price: ticker.ask_price!,
             bid_qty: ticker.bid_qty!,
             ask_qty: ticker.ask_qty!,
+            maker_fee_rate: 0.0,
+            taker_fee_rate: 0.0,
             underlying_price: ticker.underlying_price!,
           };
+
+          return option;
         })
       )
     );
 
     // Filter out nulls (smaller size / no data)
-    return pricedChain.filter((x): x is OptionQuote => x !== null);
+    return pricedChain.filter((x): x is NonNullable<typeof x> => x !== null);
   }
 }

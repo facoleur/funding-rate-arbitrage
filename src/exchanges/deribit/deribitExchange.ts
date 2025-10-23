@@ -1,12 +1,22 @@
 import Bottleneck from "bottleneck";
 import { Exchange, OptionQuote } from "..";
 import { createHttpClient } from "../../core/httpClient";
+import { OptionSpread } from "../../services/compareOptions";
 import { SIZE_TRHRESHOLD } from "../derive/deriveExchange";
 
 const http = createHttpClient("https://www.deribit.com/api/v2/");
 
 export class DeribitExchange {
+  // static getLinkForOption(item: OptionSpread) {
+  // 	throw new Error("Method not implemented.");
+  // }
+
   readonly name = "deribit";
+  static readonly baseTradeUrl = "https://deribit.com/options";
+
+  static getLinkForOption(instrument: OptionSpread) {
+    return `${this.baseTradeUrl}/${instrument.symbol}/${instrument.symbol_date}/${instrument.instrument}`;
+  }
 
   // Get all non-expired option instruments for a given currency
   async getOptionInstruments(symbol: string) {
@@ -145,7 +155,7 @@ export class DeribitExchange {
     const chain = await this.getOptionChainForDate(symbol, targetDate);
 
     const limiter = new Bottleneck({
-      minTime: 20, // 50 requests per second
+      minTime: 15, // 50 requests per second
     });
 
     const pricedChain = await Promise.all(

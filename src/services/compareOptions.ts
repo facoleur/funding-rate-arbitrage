@@ -3,6 +3,8 @@ import { OptionQuote } from "../exchanges";
 export type OptionMap = Map<string, OptionQuote[]>;
 
 export type OptionSpread = {
+  symbol: string;
+  symbol_date: string;
   instrument: string;
   strike: number;
   type: string;
@@ -14,6 +16,9 @@ export type OptionSpread = {
   spread: string;
   apr: string;
   maxSize: string;
+
+  buyLink?: string;
+  sellLink?: string;
 };
 
 function isValidQuote(q: OptionQuote): q is Required<OptionQuote> {
@@ -90,7 +95,15 @@ export function compareOptions(optionGroups: OptionQuote[][]): OptionSpread[] {
         highestBid.bid_qty * highestBid.bid_price
       );
 
+      const name = quotes[0].normalized_name;
+      const firstDash = name.indexOf("-");
+      const secondDash =
+        firstDash === -1 ? -1 : name.indexOf("-", firstDash + 1);
+      const symbol_date = secondDash === -1 ? name : name.slice(0, secondDash);
+
       return {
+        symbol: name.slice(0, 3),
+        symbol_date,
         instrument,
         strike: quotes[0].strike,
         type: quotes[0].option_type,

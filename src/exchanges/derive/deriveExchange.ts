@@ -1,6 +1,7 @@
 import Bottleneck from "bottleneck";
 import { Exchange, OptionQuote } from "..";
 import { createHttpClient } from "../../core/httpClient";
+import { OptionSpread } from "../../services/compareOptions";
 
 export const SIZE_TRHRESHOLD = 100;
 
@@ -8,6 +9,29 @@ const http = createHttpClient("https://api.lyra.finance/");
 
 export class DeriveExchange {
   readonly name = "derive";
+  static readonly baseTradeUrl = "https://app.derive.xyz/trade/options?";
+
+  static getLinkForOption(instrument: OptionSpread) {
+    return `${this.baseTradeUrl}symbol=${instrument.instrument}`;
+  }
+
+  async getAvailableDates(symbol: string): Promise<Date[]> {
+    const response = await http.post("public/get_instruments", {
+      expired: false,
+      instrument_type: "option",
+      currency: symbol,
+    });
+
+    const res: Date[] = [];
+    const dates: Date[] = response.data.result.forEach((option: any) => {
+      const date = new Date(option.option_details.expiry * 1000);
+      if (!res.find((d) => d.getTime() === date.getTime())) {
+        res.push(date);
+      }
+    });
+
+    return res;
+  }
 
   async getOptionInstruments(symbol: string) {
     const response = await http.post("public/get_instruments", {
@@ -114,7 +138,7 @@ export class DeriveExchange {
     const chain = await this.getOptionChainForDate(symbol, targetDate);
 
     const limiter = new Bottleneck({
-      minTime: 20, // 50 requests per second
+      minTime: 15, // 100 requests per second
     });
 
     const pricedChain = await Promise.all(
