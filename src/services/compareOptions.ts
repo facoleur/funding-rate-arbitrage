@@ -112,8 +112,8 @@ export function compareOptions(optionGroups: OptionQuote[][]): OptionSpread[] {
         sell_to: highestBid.exchange,
         buy_ask: lowestAsk.ask_price.toFixed(2),
         sell_bid: highestBid.bid_price.toFixed(2),
-        spread: netDiffPct.toFixed(2) + "%",
-        apr: apr.toFixed(2) + "%",
+        spread: netDiffPct.toFixed(2),
+        apr: apr.toFixed(2),
         maxSize: maxSize.toFixed(2),
       };
     })

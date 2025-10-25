@@ -12,17 +12,19 @@ import {
 import { sendTelegramMessage } from "./telegram";
 
 (async () => {
+  try {
+    await runTask();
+  } catch (error) {
+    console.error("Error in main task:", error);
+  }
+})();
+
+export async function runTask() {
   const derive = new DeriveExchange();
   const deribit = new DeribitExchange();
   const aevo = new AevoExchange();
 
   const expiries = await derive.getAvailableDates("BTC");
-  // const exp = await derive.getAvailableDates("BTC");
-  // const expiries = exp.slice(0, 100);
-
-  // const expiries = [new Date("2024-09-27")];
-
-  // const tickers = ["BTC", "ETH"];
   const tickers = ["ETH"];
 
   const data: OptionSpread[] = [];
@@ -37,29 +39,11 @@ import { sendTelegramMessage } from "./telegram";
         exp
       );
 
-      // const a_chain: OptionQuote[] = await aevo.getOptionChainPrices(
-      //   ticker,
-      //   exp
-      // );
-
-      // const rows = compareOptionChains(l_chain, d_chain);
-      // data.push(...rows);
-      const grouped = groupOptionsByInstrument([
-        ...l_chain,
-        ...d_chain,
-        // ...a_chain,
-      ]);
+      const grouped = groupOptionsByInstrument([...l_chain, ...d_chain]);
       const results = compareOptions([...grouped.values()]);
       sendTelegramMessage(results);
 
-      console.log(
-        "ticker: ",
-        ticker,
-        "exp:",
-        exp,
-        "nbr of options:",
-        results.length
-      );
+      console.log("ticker: ", ticker, "opportunities: ", results.length);
 
       if (results.length > 0) {
         console.table(results);
@@ -69,6 +53,5 @@ import { sendTelegramMessage } from "./telegram";
     }
   }
 
-  // sendTelegramMessage(data);
   console.table(data);
-})();
+}
