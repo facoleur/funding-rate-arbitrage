@@ -6,17 +6,24 @@ export type OptionSpread = {
   symbol: string;
   symbol_date: string;
   instrument: string;
+  buy_from_instrument: string;
+  sell_to_instrument: string;
+  buy_from_underlying_price: number;
+  sell_to_underlying_price: number;
   strike: number;
+  bid_raw: number;
+  ask_raw: number;
+  bid_price: number;
+  ask_price: number;
   type: string;
   expiration: string;
   buy_from: string;
   sell_to: string;
-  buy_ask: string;
-  sell_bid: string;
-  spread: string;
-  apr: string;
-  maxSize: string;
-
+  buy_ask: number;
+  sell_bid: number;
+  spread: number;
+  apr: number;
+  maxSize: number;
   buyLink?: string;
   sellLink?: string;
 };
@@ -105,16 +112,22 @@ export function compareOptions(optionGroups: OptionQuote[][]): OptionSpread[] {
         symbol: name.slice(0, 3),
         symbol_date,
         instrument,
+        buy_from_instrument: lowestAsk.instrument_name,
+        sell_to_instrument: highestBid.instrument_name,
+        buy_from_underlying_price: +lowestAsk.underlying_price,
+        sell_to_underlying_price: +highestBid.underlying_price,
         strike: quotes[0].strike,
+        bid_raw: highestBid.bid_price_raw,
+        ask_raw: lowestAsk.ask_price_raw,
         type: quotes[0].option_type,
         expiration: `${daysToExp.toFixed(1)}d`,
         buy_from: lowestAsk.exchange,
         sell_to: highestBid.exchange,
-        buy_ask: lowestAsk.ask_price.toFixed(2),
-        sell_bid: highestBid.bid_price.toFixed(2),
-        spread: netDiffPct.toFixed(2),
-        apr: apr.toFixed(2),
-        maxSize: maxSize.toFixed(2),
+        buy_ask: +lowestAsk.ask_price,
+        sell_bid: +highestBid.bid_price,
+        spread: +netDiffPct.toFixed(2),
+        apr: +apr.toFixed(2),
+        maxSize: +maxSize.toFixed(2),
       };
     })
     .filter(Boolean);

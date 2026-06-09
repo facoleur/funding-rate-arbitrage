@@ -5,6 +5,6 @@ export function createHttpClient(baseURL: string): AxiosInstance {
   return axios.create({
     baseURL,
     timeout: 15_000,
-    headers: { "User-Agent": "FundingDiffBot/1.0" },
+    headers: { "User-Agent": "ArbitrageBot/1.0" },
   });
 }

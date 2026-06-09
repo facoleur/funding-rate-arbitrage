@@ -27,13 +27,12 @@ function mkLink(name: string, url: string): string {
 }
 
 // ✅ Function to send Telegram messages
-export async function sendTelegramMessage(data: OptionSpread[]) {
+export async function sendTelegramMessageBatch(data: OptionSpread[]) {
   for (const item of data) {
-    const aprNum = parseFloat(item.apr);
-    if (aprNum < 10) {
-      console.log(
-        `APR ${aprNum}% is below threshold, not sending Telegram message.`
-      );
+    if (item.apr < 10) {
+      // console.log(
+      //   `APR ${aprNum}% is below threshold, not sending Telegram message.`
+      // );
       return;
     }
 
@@ -110,13 +109,98 @@ export async function sendTelegramMessage(data: OptionSpread[]) {
       parse_mode: "MarkdownV2",
       disable_web_page_preview: true,
     });
-    console.log("✅ Message sent:", message);
+    // console.log("✅ Message sent:", message);
   } catch (error: any) {
     // show Telegram API error response body when available
-    console.error(
-      "❌ Failed to send Telegram message:",
-      error?.response?.data ?? error?.message ?? error
-    );
+    // console.error(
+    //   "❌ Failed to send Telegram message:",
+    //   error?.response?.data ?? error?.message ?? error
+    // );
   }
 }
-// ...existing code...
+
+export async function sendTelegramMessage(item: OptionSpread) {
+  if (item.apr < 10) {
+    console.log(
+      `APR ${item.apr}% is below threshold, not sending Telegram message.`
+    );
+    return;
+  }
+
+  let buyLink = "";
+  let sellLink = "";
+
+  try {
+    if (
+      item.buy_from === "derive" &&
+      typeof (DeriveExchange as any).getLinkForOption === "function"
+    ) {
+      buyLink = (DeriveExchange as any).getLinkForOption(item) ?? "";
+    } else if (
+      item.buy_from === "deribit" &&
+      typeof (DeribitExchange as any).getLinkForOption === "function"
+    ) {
+      buyLink = (DeribitExchange as any).getLinkForOption(item) ?? "";
+    }
+  } catch (e) {
+    // don't break the whole flow if link generation fails
+    console.error("link generation error (buy):", e);
+    buyLink = "";
+  }
+
+  try {
+    if (
+      item.sell_to === "derive" &&
+      typeof (DeriveExchange as any).getLinkForOption === "function"
+    ) {
+      sellLink = (DeriveExchange as any).getLinkForOption(item) ?? "";
+    } else if (
+      item.sell_to === "deribit" &&
+      typeof (DeribitExchange as any).getLinkForOption === "function"
+    ) {
+      sellLink = (DeribitExchange as any).getLinkForOption(item) ?? "";
+    }
+  } catch (e) {
+    console.error("link generation error (sell):", e);
+    sellLink = "";
+  }
+
+  item.buyLink = buyLink;
+  item.sellLink = sellLink;
+
+  const title = `*${escapeMdV2(String(item.symbol))} ${escapeMdV2(
+    String(item.instrument)
+  )}*`;
+  const buyPart = `Buy from: ${mkLink(
+    item.buy_from,
+    item.buyLink ?? ""
+  )} at ${escapeMdV2(String(item.buy_ask))}`;
+  const sellPart = `Sell to: ${mkLink(
+    item.sell_to,
+    item.sellLink ?? ""
+  )} at ${escapeMdV2(String(item.sell_bid))}`;
+  const tail = `Spread: ${escapeMdV2(String(item.spread))} APR: ${escapeMdV2(
+    String(item.apr)
+  )}`;
+
+  const message = `${title}\n${buyPart}\n${sellPart}\n${tail}\n`;
+
+  if (isEmptyString(message)) {
+    return;
+  }
+
+  try {
+    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      chat_id: CHAT_ID,
+      text: String(message),
+      parse_mode: "MarkdownV2",
+      disable_web_page_preview: true,
+    });
+    // console.log("✅ Message sent:", message);
+  } catch (error: any) {
+    // console.error(
+    //   "❌ Failed to send Telegram message:",
+    //   error?.response?.data ?? error?.message ?? error
+    // );
+  }
+}

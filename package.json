@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "start": "tsx src/main.ts",
+    "trade": "tsx src/trading/deribit/main.ts",
     "build": "tsc -p .",
     "run": "node dist/index.js"
   },

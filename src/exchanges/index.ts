@@ -1,13 +1,3 @@
-// src/exchanges/index.ts
-// import { Exchange } from "../core/exchange";
-// import { AsterExchange } from "./aster/asterExchange";
-// import { HyperliquidExchange } from "./hyperliquid/hyperliquidExchange";
-
-// export const EXCHANGES: Exchange[] = [
-//   new AsterExchange(),
-//   new HyperliquidExchange(),
-// ];
-
 export type Exchange = "derive" | "deribit";
 
 export type OptionQuote = {
@@ -23,6 +13,8 @@ export type OptionQuote = {
 
   bid_price?: number;
   ask_price?: number;
+  bid_price_raw?: number;
+  ask_price_raw?: number;
   bid_qty?: number;
   ask_qty?: number;
 };

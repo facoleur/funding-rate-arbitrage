@@ -12,7 +12,7 @@ export class DeribitExchange {
   // }
 
   readonly name = "deribit";
-  static readonly baseTradeUrl = "https://deribit.com/options";
+  static readonly baseTradeUrl = "https://test.deribit.com/options";
 
   static getLinkForOption(instrument: OptionSpread) {
     return `${this.baseTradeUrl}/${instrument.symbol}/${instrument.symbol_date}/${instrument.instrument}`;
@@ -104,6 +104,9 @@ export class DeribitExchange {
     const result = {
       bid_price: ticker.best_bid_price * ticker.underlying_price,
       ask_price: ticker.best_ask_price * ticker.underlying_price,
+      bid_price_raw: ticker.best_bid_price,
+      ask_price_raw: ticker.best_ask_price,
+      underlying_price: ticker.underlying_price,
       bid_qty: ticker.best_bid_amount,
       ask_qty: ticker.best_ask_amount,
     };
@@ -173,6 +176,9 @@ export class DeribitExchange {
             normalized_name: normalizeInstrumentName(opt.instrument_name),
             bid_price: ticker.bid_price,
             ask_price: ticker.ask_price,
+            bid_price_raw: ticker.bid_price_raw,
+            ask_price_raw: ticker.ask_price_raw,
+            underlying_price: ticker.underlying_price,
             bid_qty: ticker.bid_qty,
             ask_qty: ticker.ask_qty,
           };
