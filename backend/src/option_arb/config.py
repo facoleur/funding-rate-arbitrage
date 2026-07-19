@@ -26,7 +26,7 @@ class Thresholds(BaseModel):
 
 
 class ExecutorConfig(BaseModel):
-    mode: Literal["paper", "live"] = "paper"
+    mode: Literal["paper", "live", "backtest"] = "paper"
     order_type: Literal["ioc_limit"] = "ioc_limit"
     max_slippage_pct: float = 2.0
     walk_book: bool = True
@@ -112,9 +112,7 @@ class Settings(BaseSettings):
         if self.alembic_database_url:
             return self.alembic_database_url
         # derive sync URL from async URL
-        return (self.database_url
-                .replace("+asyncpg", "+psycopg2")
-                .replace("+aiosqlite", ""))
+        return self.database_url.replace("+asyncpg", "+psycopg2").replace("+aiosqlite", "")
 
 
 def load_config(path: str | Path | None = None) -> AppConfig:

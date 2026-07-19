@@ -1,30 +1,28 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
 import pytest
-from sqlmodel import select
 
 from option_arb.config import AppConfig
-from option_arb.db.models import ExchangeState, Position
+from option_arb.db.models import ExchangeState
 from option_arb.db.session import get_session
 from option_arb.events import Event, bus
 from option_arb.exchanges.base import (
     AbstractExchange,
     Book,
-    Instrument,
-    OrderRequest,
     OrderResult,
-    TickerUpdate,
 )
 from option_arb.services.rebalancer import Rebalancer
 
 
 class _FakeEx(AbstractExchange):
-    def __init__(self, name: str, *, balance: float, positions: list[dict], raise_: bool = False) -> None:
+    def __init__(
+        self, name: str, *, balance: float, positions: list[dict], raise_: bool = False
+    ) -> None:
         self.name = name
         self._balance = balance
         self._positions = positions
@@ -41,12 +39,23 @@ class _FakeEx(AbstractExchange):
         return self._positions
 
     # unused abstract methods
-    async def list_instruments(self, u, m): return []  # noqa: E704
-    async def get_orderbook_l2(self, i): return Book(exchange=self.name, instrument="", ts=datetime.now(timezone.utc))  # noqa: E704
-    def ws_channels(self, instruments): return []  # noqa: E704
-    def parse_ws_message(self, raw): return None  # noqa: E704
-    async def place_order(self, order): return OrderResult(status="REJECTED")  # noqa: E704
-    async def cancel_order(self, x): return False  # noqa: E704
+    async def list_instruments(self, u, m):
+        return []
+
+    async def get_orderbook_l2(self, i):
+        return Book(exchange=self.name, instrument="", ts=datetime.now(UTC))
+
+    def ws_channels(self, instruments):
+        return []
+
+    def parse_ws_message(self, raw):
+        return None
+
+    async def place_order(self, order):
+        return OrderResult(status="REJECTED")
+
+    async def cancel_order(self, x):
+        return False
 
 
 async def _collect_events(evt_type: str, timeout: float = 0.15) -> list[Event]:
@@ -94,10 +103,14 @@ async def test_rebalancer_alerts_on_low_balance(test_db: str) -> None:
 async def test_rebalancer_alerts_on_position_expiring(test_db: str) -> None:
     cfg = AppConfig()
     cfg.rebalancer.expiry_warning_hours = 24
-    soon = datetime.now(timezone.utc) + timedelta(hours=12)
-    ex = _FakeEx("deribit", balance=5000.0, positions=[
-        {"instrument": "BTC-…-C", "size": 1.0, "avg_price": 100, "expiry": soon.isoformat()}
-    ])
+    soon = datetime.now(UTC) + timedelta(hours=12)
+    ex = _FakeEx(
+        "deribit",
+        balance=5000.0,
+        positions=[
+            {"instrument": "BTC-…-C", "size": 1.0, "avg_price": 100, "expiry": soon.isoformat()}
+        ],
+    )
     reb = Rebalancer(cfg, {"deribit": ex})
 
     q = bus.subscribe()

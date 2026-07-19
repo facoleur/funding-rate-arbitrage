@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from option_arb.exchanges.auth import (
-    AuthNotReady,
+    AuthNotReadyError,
     DeribitOAuth,
     EIP712Auth,
     NoAuth,
@@ -14,7 +14,7 @@ from option_arb.exchanges.auth import (
 @pytest.mark.asyncio
 async def test_no_auth_rejects_private_calls() -> None:
     auth = NoAuth()
-    with pytest.raises(AuthNotReady):
+    with pytest.raises(AuthNotReadyError):
         await auth.sign_rest("POST", "/private/buy", {})
 
 
@@ -45,6 +45,7 @@ async def test_deribit_oauth_fetches_and_caches_token() -> None:
 async def test_deribit_oauth_ws_message_injects_token() -> None:
     async def fake_auth(params: dict) -> dict:
         return {"access_token": "abc", "expires_in": 900}
+
     auth = DeribitOAuth("id", "secret", auth_call=fake_auth)
     out = await auth.sign_ws_message({"method": "private/cancel", "params": {"order_id": "x"}})
     assert out["params"]["access_token"] == "abc"
@@ -63,6 +64,7 @@ def test_eip712_auth_requires_key() -> None:
 
 def test_eip712_auth_signer_address_matches_key() -> None:
     from eth_account import Account
+
     acc = Account.create()
     auth = EIP712Auth(
         session_private_key=acc.key.hex(),
@@ -79,10 +81,15 @@ def _empty_settings():
     We can't use Settings() because pydantic-settings would load the real
     .env file if present in the CWD."""
     from types import SimpleNamespace
+
     return SimpleNamespace(
-        deribit_client_id="", deribit_client_secret="",
-        derive_wallet_address="", derive_subaccount_id=0, derive_session_private_key="",
-        aevo_wallet_address="", aevo_signing_key="",
+        deribit_client_id="",
+        deribit_client_secret="",
+        derive_wallet_address="",
+        derive_subaccount_id=0,
+        derive_session_private_key="",
+        aevo_wallet_address="",
+        aevo_signing_key="",
     )
 
 

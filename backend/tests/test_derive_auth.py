@@ -29,8 +29,12 @@ def test_derive_auth_signer_matches_key() -> None:
 
 def test_derive_auth_requires_creds() -> None:
     with pytest.raises(ValueError):
-        DeriveAuth(session_private_key="", wallet_address="0x0",
-                   subaccount_id=1, constants=derive_constants.TESTNET)
+        DeriveAuth(
+            session_private_key="",
+            wallet_address="0x0",
+            subaccount_id=1,
+            constants=derive_constants.TESTNET,
+        )
 
 
 @pytest.mark.asyncio
