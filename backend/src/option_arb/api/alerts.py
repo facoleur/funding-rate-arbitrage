@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Query
 from sqlmodel import select
 
@@ -13,7 +15,7 @@ router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 async def list_alerts(
     level: AlertLevel | None = None,
     limit: int = Query(default=50, le=500),
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     stmt = select(Alert).order_by(Alert.sent_at.desc()).limit(limit)  # type: ignore[attr-defined]
     if level is not None:
         stmt = stmt.where(Alert.level == level)

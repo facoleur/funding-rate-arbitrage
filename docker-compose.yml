@@ -20,7 +20,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    command: uv run alembic upgrade head
+    command: alembic upgrade head
     environment:
       DATABASE_URL: postgresql+asyncpg://option_arb:option_arb@postgres:5432/option_arb
       ALEMBIC_DATABASE_URL: ""
@@ -37,7 +37,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    command: uv run uvicorn option_arb.main:app --host 0.0.0.0 --port 8000
+    command: uvicorn option_arb.main:app --host 0.0.0.0 --port 8000
     environment:
       DATABASE_URL: postgresql+asyncpg://option_arb:option_arb@postgres:5432/option_arb
     ports:
@@ -55,7 +55,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    command: uv run python -m option_arb.worker
+    command: python -m option_arb.worker
     environment:
       DATABASE_URL: postgresql+asyncpg://option_arb:option_arb@postgres:5432/option_arb
     volumes:
@@ -71,7 +71,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    command: uv run python -m option_arb.services.executor
+    command: python -m option_arb.services.executor
     environment:
       DATABASE_URL: postgresql+asyncpg://option_arb:option_arb@postgres:5432/option_arb
     volumes:

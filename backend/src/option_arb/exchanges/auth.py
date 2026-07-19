@@ -17,19 +17,21 @@ Signing is INTENTIONALLY STUBBED for Derive/Aevo — the framework is here,
 but the exact EIP-712 domain / typed-data schema per exchange must be
 filled in against their live docs before going live. See `_todo_sign_action`.
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 log = logging.getLogger(__name__)
 
 
-class AuthNotReady(RuntimeError):
+class AuthNotReadyError(RuntimeError):
     """Raised when a private call is made but no authenticator is configured
     or the authenticator has not been initialized (e.g. token missing)."""
 
@@ -63,21 +65,22 @@ class Authenticator(ABC):
 
 
 class NoAuth(Authenticator):
-    """Public-only. Any private call fails with AuthNotReady."""
+    """Public-only. Any private call fails with AuthNotReadyError."""
 
     async def sign_rest(self, method: str, path: str, body: dict[str, Any] | None) -> RestSignature:
-        raise AuthNotReady("no authenticator configured")
+        raise AuthNotReadyError("no authenticator configured")
 
     async def authenticate_ws(self, ws: Any) -> None:
         return None
 
     async def sign_ws_message(self, msg: dict[str, Any]) -> dict[str, Any]:
-        raise AuthNotReady("no authenticator configured")
+        raise AuthNotReadyError("no authenticator configured")
 
 
 # ------------------------------------------------------------------
 # Deribit — OAuth 2.0 client_credentials
 # ------------------------------------------------------------------
+
 
 class DeribitOAuth(Authenticator):
     """OAuth flow: POST public/auth with grant_type=client_credentials once,
@@ -87,7 +90,9 @@ class DeribitOAuth(Authenticator):
 
     TOKEN_LEEWAY_SEC = 60  # refresh 60s before expiry
 
-    def __init__(self, client_id: str, client_secret: str, *, auth_call=None) -> None:
+    def __init__(
+        self, client_id: str, client_secret: str, *, auth_call: Callable[..., Any] | None = None
+    ) -> None:
         if not client_id or not client_secret:
             raise ValueError("deribit client_id/secret required")
         self.client_id = client_id
@@ -99,7 +104,7 @@ class DeribitOAuth(Authenticator):
         # Injected by the DeribitExchange constructor so we don't hold a RestClient here.
         self._auth_call = auth_call
 
-    def bind_auth_call(self, auth_call) -> None:
+    def bind_auth_call(self, auth_call: Callable[..., Any]) -> None:
         """Called by DeribitExchange once it has its RestClient wired."""
         self._auth_call = auth_call
 
@@ -111,13 +116,15 @@ class DeribitOAuth(Authenticator):
             if self._token and time.time() < self._expires_at - self.TOKEN_LEEWAY_SEC:
                 return self._token
             if self._auth_call is None:
-                raise AuthNotReady("deribit auth_call not bound to a RestClient")
+                raise AuthNotReadyError("deribit auth_call not bound to a RestClient")
             log.info("deribit: fetching new access_token")
-            result = await self._auth_call({
-                "grant_type": "client_credentials",
-                "client_id": self.client_id,
-                "client_secret": self.client_secret,
-            })
+            result = await self._auth_call(
+                {
+                    "grant_type": "client_credentials",
+                    "client_id": self.client_id,
+                    "client_secret": self.client_secret,
+                }
+            )
             self._token = result["access_token"]
             self._expires_at = time.time() + int(result.get("expires_in", 900))
             return self._token
@@ -144,6 +151,7 @@ class DeribitOAuth(Authenticator):
 # EIP-712 (Derive, Aevo) — Ethereum typed-data signing
 # ------------------------------------------------------------------
 
+
 class EIP712Auth(Authenticator):
     """Ethereum EIP-712 typed-data signing for options venues built on
     L2s (Derive on OP-stack, Aevo on custom chain).
@@ -163,7 +171,7 @@ class EIP712Auth(Authenticator):
       - Derive: https://docs.derive.xyz/reference/authentication
       - Aevo:   https://api-docs.aevo.xyz/reference/authentication
 
-    Until filled in, `sign_rest` / `sign_ws_message` raise `AuthNotReady`
+    Until filled in, `sign_rest` / `sign_ws_message` raise `AuthNotReadyError`
     so that the executor cleanly rejects orders instead of sending nonsense."""
 
     def __init__(
@@ -191,9 +199,11 @@ class EIP712Auth(Authenticator):
 
     @property
     def signer_address(self) -> str:
-        return self._account.address
+        return str(self._account.address)
 
-    def sign_typed_action(self, action: dict[str, Any], *, primary_type: str, types: dict) -> str:
+    def sign_typed_action(
+        self, action: dict[str, Any], *, primary_type: str, types: dict[str, Any]
+    ) -> str:
         """Produce an EIP-712 hex signature for the given action.
 
         Callers (per-exchange) build `action` in the venue-specific shape
@@ -201,6 +211,7 @@ class EIP712Auth(Authenticator):
         (`types`) that matches the venue's EIP-712 spec.
         """
         from eth_account.messages import encode_typed_data
+
         payload = {
             "types": {"EIP712Domain": _EIP712_DOMAIN_TYPE, **types},
             "primaryType": primary_type,
@@ -214,7 +225,7 @@ class EIP712Auth(Authenticator):
         }
         signable = encode_typed_data(full_message=payload)
         signed = self._account.sign_message(signable)
-        return signed.signature.hex()
+        return str(signed.signature.hex())
 
     async def sign_rest(self, method: str, path: str, body: dict[str, Any] | None) -> RestSignature:
         # The adapter must call `sign_typed_action` itself for order payloads,
@@ -223,7 +234,9 @@ class EIP712Auth(Authenticator):
         # if the venue uses them). Both Derive and Aevo sign per-action
         # rather than per-request, so we simply attach the signer identity
         # here and let the caller include the signature in the body.
-        headers = {"X-LyraWallet": self.wallet_address} if "lyra" in path or "derive" in path else {}
+        headers = (
+            {"X-LyraWallet": self.wallet_address} if "lyra" in path or "derive" in path else {}
+        )
         headers["X-Signer"] = self.signer_address
         return RestSignature(headers=headers)
 
@@ -232,7 +245,7 @@ class EIP712Auth(Authenticator):
         return None
 
     async def sign_ws_message(self, msg: dict[str, Any]) -> dict[str, Any]:
-        raise AuthNotReady("EIP712 WS message signing must be implemented per exchange")
+        raise AuthNotReadyError("EIP712 WS message signing must be implemented per exchange")
 
 
 _EIP712_DOMAIN_TYPE = [
@@ -247,7 +260,8 @@ _EIP712_DOMAIN_TYPE = [
 # Factory helpers per exchange (read from Settings)
 # ------------------------------------------------------------------
 
-def build_authenticator(exchange: str, settings, network: str = "testnet") -> Authenticator:
+
+def build_authenticator(exchange: str, settings: Any, network: str = "testnet") -> Authenticator:
     """Return the right Authenticator for an exchange given app settings.
     If credentials are missing → returns NoAuth (public-only mode)."""
     ex = exchange.lower()
@@ -260,6 +274,7 @@ def build_authenticator(exchange: str, settings, network: str = "testnet") -> Au
             return NoAuth()
         from option_arb.exchanges import derive_constants
         from option_arb.exchanges.derive_auth import DeriveAuth
+
         return DeriveAuth(
             session_private_key=settings.derive_session_private_key,
             wallet_address=settings.derive_wallet_address,
