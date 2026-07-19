@@ -57,10 +57,34 @@ async def test_alerter_respects_apr_threshold(test_db: str) -> None:
     await asyncio.sleep(0.02)  # let the alerter subscribe to the bus
     try:
         # apr below threshold → not sent to telegram, but persisted
-        await bus.publish(Event(type="opportunity_detected", level="info", message="low",
-                                payload={"apr_pct": 5, "instrument": "x", "buy_from": "a", "sell_to": "b", "max_notional_usd": 1}))
-        await bus.publish(Event(type="opportunity_detected", level="info", message="high",
-                                payload={"apr_pct": 50, "instrument": "y", "buy_from": "a", "sell_to": "b", "max_notional_usd": 100}))
+        await bus.publish(
+            Event(
+                type="opportunity_detected",
+                level="info",
+                message="low",
+                payload={
+                    "apr_pct": 5,
+                    "instrument": "x",
+                    "buy_from": "a",
+                    "sell_to": "b",
+                    "max_notional_usd": 1,
+                },
+            )
+        )
+        await bus.publish(
+            Event(
+                type="opportunity_detected",
+                level="info",
+                message="high",
+                payload={
+                    "apr_pct": 50,
+                    "instrument": "y",
+                    "buy_from": "a",
+                    "sell_to": "b",
+                    "max_notional_usd": 100,
+                },
+            )
+        )
         await asyncio.sleep(0.2)
     finally:
         await alerter.stop()

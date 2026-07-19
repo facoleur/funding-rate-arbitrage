@@ -24,7 +24,9 @@ def escape_mdv2(text: str) -> str:
     return _MDV2_SPECIAL.sub(r"\\\1", str(text))
 
 
-def deep_link(exchange: str, instrument: str, *, symbol: str | None = None, symbol_date: str | None = None) -> str | None:
+def deep_link(
+    exchange: str, instrument: str, *, symbol: str | None = None, symbol_date: str | None = None
+) -> str | None:
     """Best-effort deep link back to the exchange trading UI."""
     if exchange == "derive":
         return f"https://app.derive.xyz/trade/options?symbol={instrument}"
@@ -52,7 +54,7 @@ def format_opportunity(event: Event) -> str:
 def format_event(event: Event) -> str:
     if event.type == "opportunity_detected":
         return format_opportunity(event)
-    icon = {"info": "ℹ️", "warn": "⚠️", "error": "🚨"}.get(event.level, "•")
+    icon = {"info": "ℹ️", "warn": "⚠️", "error": "🚨"}.get(event.level, "•")  # noqa: RUF001
     return f"{icon} *{escape_mdv2(event.type)}*\n{escape_mdv2(event.message)}"
 
 
@@ -85,7 +87,7 @@ class TelegramSender:
                 log.warning("telegram %d: %s", r.status_code, r.text[:200])
                 return False
             return True
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             log.exception("telegram send failed: %s", e)
             return False
 
@@ -123,15 +125,17 @@ class Alerter:
         # persist every event to DB (audit trail)
         try:
             async with get_session() as sess:
-                sess.add(Alert(
-                    level=AlertLevel(event.level),
-                    channel="bus",
-                    message=event.message,
-                    sent_at=datetime.now(UTC),
-                    meta=json.dumps({"type": event.type, "payload": event.payload}),
-                ))
+                sess.add(
+                    Alert(
+                        level=AlertLevel(event.level),
+                        channel="bus",
+                        message=event.message,
+                        sent_at=datetime.now(UTC),
+                        meta=json.dumps({"type": event.type, "payload": event.payload}),
+                    )
+                )
                 await sess.commit()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             log.exception("alert persist failed: %s", e)
 
         # dispatch to Telegram if enabled + level passes filter

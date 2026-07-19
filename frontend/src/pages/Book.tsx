@@ -72,7 +72,7 @@ function ExchangeLink({ href, label }: { href: string; label: string }) {
   )
 }
 
-function SortIcon({ col, active, dir }: { col: string; active: boolean; dir: SortDir }) {
+function SortIcon({ col: _col, active, dir }: { col: string; active: boolean; dir: SortDir }) {
   if (!active) return <span className="ml-1 text-zinc-700">↕</span>
   return <span className="ml-1 text-zinc-300">{dir === 'asc' ? '↑' : '↓'}</span>
 }

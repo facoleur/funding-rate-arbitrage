@@ -4,13 +4,14 @@ import argparse
 import asyncio
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from option_arb.config import load_config
 from option_arb.db.models import BookSnapshot
 from option_arb.db.session import get_session, init_db
-from option_arb.exchanges.base import Instrument
+from option_arb.exchanges.base import Book, Instrument
 from option_arb.exchanges.registry import build_exchanges, close_exchanges
 
 log = logging.getLogger(__name__)
@@ -39,7 +40,7 @@ async def record(
                 for inst in instruments:
                     try:
                         book = await ex.get_orderbook_l2(inst)
-                    except Exception as e:  # noqa: BLE001
+                    except Exception as e:
                         log.warning("skip %s: %s", inst.instrument_name, e)
                         continue
                     record_dict = _book_to_dict(inst, book)
@@ -57,7 +58,7 @@ async def record(
         await close_exchanges(exchanges)
 
 
-def _book_to_dict(inst: Instrument, book) -> dict:
+def _book_to_dict(inst: Instrument, book: Book) -> dict[str, Any]:
     return {
         "exchange": inst.exchange,
         "instrument": inst.normalized_name,
@@ -67,15 +68,17 @@ def _book_to_dict(inst: Instrument, book) -> dict:
     }
 
 
-async def _persist_snapshot(inst: Instrument, d: dict) -> None:
+async def _persist_snapshot(inst: Instrument, d: dict[str, Any]) -> None:
     async with get_session() as sess:
-        sess.add(BookSnapshot(
-            exchange=inst.exchange,
-            instrument=inst.normalized_name,
-            ts=datetime.fromisoformat(d["ts"]),
-            bids_json=json.dumps(d["bids"]),
-            asks_json=json.dumps(d["asks"]),
-        ))
+        sess.add(
+            BookSnapshot(
+                exchange=inst.exchange,
+                instrument=inst.normalized_name,
+                ts=datetime.fromisoformat(d["ts"]),
+                bids_json=json.dumps(d["bids"]),
+                asks_json=json.dumps(d["asks"]),
+            )
+        )
         await sess.commit()
 
 
