@@ -33,7 +33,7 @@ class Rebalancer:
         while not self._stop.is_set():
             try:
                 await self._tick()
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 log.exception("rebalancer tick failed: %s", e)
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=interval)
@@ -55,24 +55,30 @@ class Rebalancer:
             try:
                 balance = await ex.get_balance_usd()
                 positions = await ex.get_positions()
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 log.warning("rebalancer fetch failed for %s: %s", name, e)
                 await self._mark_unhealthy(name)
-                await bus.publish(Event(
-                    type="exchange_unhealthy", level="warn",
-                    message=f"exchange {name} unreachable: {e}",
-                    payload={"exchange": name},
-                ))
+                await bus.publish(
+                    Event(
+                        type="exchange_unhealthy",
+                        level="warn",
+                        message=f"exchange {name} unreachable: {e}",
+                        payload={"exchange": name},
+                    )
+                )
                 continue
 
             await self._upsert_exchange_state(name, float(balance))
 
             if float(balance) < threshold:
-                await bus.publish(Event(
-                    type="balance_low", level="warn",
-                    message=f"{name} balance ${float(balance):.2f} < ${threshold}",
-                    payload={"exchange": name, "balance_usd": float(balance)},
-                ))
+                await bus.publish(
+                    Event(
+                        type="balance_low",
+                        level="warn",
+                        message=f"{name} balance ${float(balance):.2f} < ${threshold}",
+                        payload={"exchange": name, "balance_usd": float(balance)},
+                    )
+                )
 
             for pos in positions:
                 await self._upsert_position(name, pos, now)
@@ -80,19 +86,28 @@ class Rebalancer:
                 if exp_raw:
                     exp = _to_dt(exp_raw)
                     if exp and exp <= expiry_cutoff:
-                        await bus.publish(Event(
-                            type="position_expiring", level="warn",
-                            message=f"{name} {pos.get('instrument')} expires at {exp.isoformat()}",
-                            payload={"exchange": name, **pos},
-                        ))
+                        await bus.publish(
+                            Event(
+                                type="position_expiring",
+                                level="warn",
+                                message=f"{name} {pos.get('instrument')} expires at {exp.isoformat()}",
+                                payload={"exchange": name, **pos},
+                            )
+                        )
 
     async def _upsert_exchange_state(self, exchange: str, balance_usd: float) -> None:
         async with get_session() as sess:
             existing = await sess.get(ExchangeState, exchange)
             if existing is None:
-                sess.add(ExchangeState(exchange=exchange, balance_usd=balance_usd,
-                                        ws_status=WsStatus.CONNECTED, rest_status=RestStatus.OK,
-                                        updated_at=datetime.now(UTC)))
+                sess.add(
+                    ExchangeState(
+                        exchange=exchange,
+                        balance_usd=balance_usd,
+                        ws_status=WsStatus.CONNECTED,
+                        rest_status=RestStatus.OK,
+                        updated_at=datetime.now(UTC),
+                    )
+                )
             else:
                 existing.balance_usd = balance_usd
                 existing.rest_status = RestStatus.OK
@@ -103,8 +118,14 @@ class Rebalancer:
         async with get_session() as sess:
             existing = await sess.get(ExchangeState, exchange)
             if existing is None:
-                sess.add(ExchangeState(exchange=exchange, rest_status=RestStatus.DOWN,
-                                        ws_status=WsStatus.UNHEALTHY, updated_at=datetime.now(UTC)))
+                sess.add(
+                    ExchangeState(
+                        exchange=exchange,
+                        rest_status=RestStatus.DOWN,
+                        ws_status=WsStatus.UNHEALTHY,
+                        updated_at=datetime.now(UTC),
+                    )
+                )
             else:
                 existing.rest_status = RestStatus.DOWN
                 existing.updated_at = datetime.now(UTC)
@@ -115,18 +136,24 @@ class Rebalancer:
         if not instrument:
             return
         async with get_session() as sess:
-            row = (await sess.execute(
-                select(Position).where(Position.exchange == exchange, Position.instrument == instrument)
-            )).scalar_one_or_none()
+            row = (
+                await sess.execute(
+                    select(Position).where(
+                        Position.exchange == exchange, Position.instrument == instrument
+                    )
+                )
+            ).scalar_one_or_none()
             if row is None:
-                sess.add(Position(
-                    exchange=exchange,
-                    instrument=instrument,
-                    size=float(pos.get("size") or 0),
-                    avg_price=float(pos.get("avg_price") or 0),
-                    opened_at=now,
-                    last_seen_at=now,
-                ))
+                sess.add(
+                    Position(
+                        exchange=exchange,
+                        instrument=instrument,
+                        size=float(pos.get("size") or 0),
+                        avg_price=float(pos.get("avg_price") or 0),
+                        opened_at=now,
+                        last_seen_at=now,
+                    )
+                )
             else:
                 row.size = float(pos.get("size") or 0)
                 row.avg_price = float(pos.get("avg_price") or row.avg_price)

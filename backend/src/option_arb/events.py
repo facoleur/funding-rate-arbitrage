@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
@@ -47,11 +48,8 @@ class EventBus:
 
     async def publish(self, event: Event) -> None:
         for q in list(self._subscribers):
-            try:
+            with contextlib.suppress(asyncio.QueueFull):
                 q.put_nowait(event)
-            except asyncio.QueueFull:
-                # drop for this subscriber rather than block producers
-                pass
 
 
 bus = EventBus()

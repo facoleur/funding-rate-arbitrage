@@ -112,9 +112,7 @@ class Settings(BaseSettings):
         if self.alembic_database_url:
             return self.alembic_database_url
         # derive sync URL from async URL
-        return (self.database_url
-                .replace("+asyncpg", "+psycopg2")
-                .replace("+aiosqlite", ""))
+        return self.database_url.replace("+asyncpg", "+psycopg2").replace("+aiosqlite", "")
 
 
 def load_config(path: str | Path | None = None) -> AppConfig:

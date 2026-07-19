@@ -18,11 +18,12 @@ async def test_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncItera
     url = f"sqlite+aiosqlite:///{tmp_path}/t.db"
 
     engine = create_async_engine(url, future=True)
-    SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+    session_local = async_sessionmaker(engine, expire_on_commit=False)
 
     from option_arb.db import session as sess_mod
+
     monkeypatch.setattr(sess_mod, "engine", engine)
-    monkeypatch.setattr(sess_mod, "SessionLocal", SessionLocal)
+    monkeypatch.setattr(sess_mod, "SessionLocal", session_local)
 
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)

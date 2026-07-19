@@ -3,6 +3,7 @@
 These are load-bearing for order signing. If a value is wrong, orders
 either reject with a signature error or execute against the wrong module.
 Verify against docs.derive.xyz whenever the protocol upgrades."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

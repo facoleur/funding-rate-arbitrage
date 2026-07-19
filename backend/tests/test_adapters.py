@@ -10,8 +10,8 @@ from option_arb.exchanges.derive import DeriveExchange
 from option_arb.exchanges.http import RestClient
 from option_arb.exchanges.naming import normalize_deribit
 
-
 # ---------- WS message parsing (offline, no network) ----------
+
 
 def _rest_stub() -> RestClient:
     return RestClient("stub", "https://stub.local", rate_limit_per_sec=100)
@@ -58,10 +58,10 @@ def test_derive_parses_ws_ticker() -> None:
             "data": {
                 "timestamp": 1784344891643,
                 "instrument_ticker": {
-                    "b": "3100.5",   # bid price
-                    "B": "2.5",      # bid size
-                    "a": "3105.0",   # ask price
-                    "A": "1.0",      # ask size
+                    "b": "3100.5",  # bid price
+                    "B": "2.5",  # bid size
+                    "a": "3105.0",  # ask price
+                    "A": "1.0",  # ask size
                     "I": "60050.0",  # underlying price
                 },
             },
@@ -100,14 +100,24 @@ def test_normalize_deribit_various_shapes() -> None:
 
 # ---------- place_order should REJECT cleanly when no auth ----------
 
+
 @pytest.mark.asyncio
 async def test_place_order_rejects_without_auth() -> None:
     from option_arb.exchanges.base import OrderRequest
+
     for cls in (DeribitExchange, DeriveExchange, AevoExchange):
         ex = cls(_rest_stub())
-        r = await ex.place_order(OrderRequest(
-            exchange=ex.name, instrument="x", side="BUY",
-            size=Decimal(1), limit_price=Decimal(1), time_in_force="IOC",
-        ))
+        r = await ex.place_order(
+            OrderRequest(
+                exchange=ex.name,
+                instrument="x",
+                side="BUY",
+                size=Decimal(1),
+                limit_price=Decimal(1),
+                time_in_force="IOC",
+            )
+        )
         assert r.status == "REJECTED"
-        assert "no_auth" in (r.reason or "").lower() or "not_implemented" in (r.reason or "").lower()
+        assert (
+            "no_auth" in (r.reason or "").lower() or "not_implemented" in (r.reason or "").lower()
+        )

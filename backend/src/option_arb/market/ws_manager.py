@@ -95,7 +95,7 @@ class WsManager:
                     await self._read_loop(ws, exchange)
             except (ConnectionClosed, OSError, TimeoutError) as e:
                 log.warning("ws %s dropped: %s", exchange, e)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 log.exception("ws %s unexpected error: %s", exchange, e)
             finally:
                 state.connected = False
@@ -126,7 +126,8 @@ class WsManager:
                 if len(subscribed) < expected:
                     log.warning(
                         "ws %s: %d channels silently dropped by server (limit exceeded?)",
-                        exchange, expected - len(subscribed),
+                        exchange,
+                        expected - len(subscribed),
                     )
                 continue
             update = ex.parse_ws_message(msg)
@@ -134,7 +135,7 @@ class WsManager:
                 continue
             try:
                 await self._on_ticker(update)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 log.exception("ticker handler failed for %s: %s", exchange, e)
 
     async def _subscribe(

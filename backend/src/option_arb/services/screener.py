@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlmodel import select
@@ -12,7 +12,7 @@ from option_arb.db.models import Mode, Opportunity, OpportunityStatus, TickerSta
 from option_arb.db.session import get_session
 from option_arb.events import Event, bus
 from option_arb.market.book_cache import BookCache, CachedTicker
-from option_arb.services.comparator import Quote, compare_options, group_by_instrument
+from option_arb.services.comparator import Quote, compare_options
 
 log = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ class Screener:
         while not self._stop.is_set():
             try:
                 await self._tick()
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 log.exception("screener tick failed: %s", e)
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=interval)
@@ -65,9 +65,9 @@ class Screener:
     async def _flush_tickers(self, tickers: list[CachedTicker]) -> None:
         if "postgresql" not in settings.database_url:
             return
-        from sqlalchemy.dialects.postgresql import insert as pg_insert  # noqa: PLC0415
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         rows = [
             {
                 "exchange": t.instrument.exchange,
@@ -80,7 +80,9 @@ class Screener:
                 "bid_size": float(t.bid_size) if t.bid_size is not None else None,
                 "ask_price": float(t.ask_price) if t.ask_price is not None else None,
                 "ask_size": float(t.ask_size) if t.ask_size is not None else None,
-                "underlying_price": float(t.underlying_price) if t.underlying_price is not None else None,
+                "underlying_price": float(t.underlying_price)
+                if t.underlying_price is not None
+                else None,
                 "taker_fee_rate": float(t.instrument.taker_fee_rate),
                 "updated_at": now,
             }
@@ -91,7 +93,17 @@ class Screener:
         stmt = pg_insert(TickerState).values(rows)
         stmt = stmt.on_conflict_do_update(
             index_elements=["exchange", "instrument"],
-            set_={c: stmt.excluded[c] for c in ("bid_price", "bid_size", "ask_price", "ask_size", "underlying_price", "updated_at")},
+            set_={
+                c: stmt.excluded[c]
+                for c in (
+                    "bid_price",
+                    "bid_size",
+                    "ask_price",
+                    "ask_size",
+                    "underlying_price",
+                    "updated_at",
+                )
+            },
         )
         async with get_session() as sess:
             await sess.execute(stmt)
@@ -130,7 +142,7 @@ class Screener:
                 continue
             rows.append(
                 Opportunity(
-                    detected_at=datetime.now(tz=timezone.utc),
+                    detected_at=datetime.now(tz=UTC),
                     mode=mode,
                     instrument=s.instrument,
                     symbol=s.symbol,
@@ -177,5 +189,7 @@ class Screener:
 
 async def _count_pending() -> int:
     async with get_session() as sess:
-        res = await sess.execute(select(Opportunity).where(Opportunity.status == OpportunityStatus.PENDING))
+        res = await sess.execute(
+            select(Opportunity).where(Opportunity.status == OpportunityStatus.PENDING)
+        )
         return len(list(res.scalars()))
