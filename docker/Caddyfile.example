@@ -1,0 +1,24 @@
+# Copier sur le VPS vers /etc/caddy/Caddyfile
+# Remplacer arb.mondomaine.com par ton domaine réel
+# Caddy gère le SSL Let's Encrypt automatiquement
+
+arb.mondomaine.com {
+    # Frontend SPA (build Vite → frontend/dist/)
+    root * /opt/option_arbitrage/frontend/dist
+    encode gzip
+    try_files {path} /index.html
+
+    # Proxy API REST vers FastAPI
+    handle /api/* {
+        reverse_proxy localhost:8001
+    }
+
+    # Proxy SSE (flush immédiat obligatoire pour les event streams)
+    handle /sse/* {
+        reverse_proxy localhost:8001 {
+            flush_interval -1
+        }
+    }
+
+    file_server
+}

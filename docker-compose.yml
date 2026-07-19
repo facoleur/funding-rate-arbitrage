@@ -1,0 +1,87 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: option_arb
+      POSTGRES_PASSWORD: option_arb
+      POSTGRES_DB: option_arb
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U option_arb"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: uv run alembic upgrade head
+    environment:
+      DATABASE_URL: postgresql+asyncpg://option_arb:option_arb@postgres:5432/option_arb
+      ALEMBIC_DATABASE_URL: ""
+    volumes:
+      - ./data:/data
+      - ./config.yaml:/app/config.yaml:ro
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: uv run uvicorn option_arb.main:app --host 0.0.0.0 --port 8000
+    environment:
+      DATABASE_URL: postgresql+asyncpg://option_arb:option_arb@postgres:5432/option_arb
+    ports:
+      - "127.0.0.1:8001:8000"
+    volumes:
+      - ./data:/data
+      - ./config.yaml:/app/config.yaml:ro
+    env_file: .env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  workers:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: uv run python -m option_arb.worker
+    environment:
+      DATABASE_URL: postgresql+asyncpg://option_arb:option_arb@postgres:5432/option_arb
+    volumes:
+      - ./data:/data
+      - ./config.yaml:/app/config.yaml:ro
+    env_file: .env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  executor:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: uv run python -m option_arb.services.executor
+    environment:
+      DATABASE_URL: postgresql+asyncpg://option_arb:option_arb@postgres:5432/option_arb
+    volumes:
+      - ./data:/data
+      - ./config.yaml:/app/config.yaml:ro
+    env_file: .env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

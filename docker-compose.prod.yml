@@ -1,0 +1,23 @@
+services:
+  postgres:
+    environment:
+      POSTGRES_USER: option_arb
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: option_arb
+
+  migrate:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://option_arb:${POSTGRES_PASSWORD}@postgres:5432/option_arb
+      ALEMBIC_DATABASE_URL: postgresql://option_arb:${POSTGRES_PASSWORD}@postgres:5432/option_arb
+
+  api:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://option_arb:${POSTGRES_PASSWORD}@postgres:5432/option_arb
+
+  workers:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://option_arb:${POSTGRES_PASSWORD}@postgres:5432/option_arb
+
+  executor:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://option_arb:${POSTGRES_PASSWORD}@postgres:5432/option_arb
