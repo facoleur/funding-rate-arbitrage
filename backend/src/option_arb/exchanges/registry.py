@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from option_arb.config import AppConfig, settings
+from option_arb.config import AppConfig, ExchangeConfig, settings
 from option_arb.exchanges.aevo import AevoExchange
 from option_arb.exchanges.auth import build_authenticator
 from option_arb.exchanges.base import AbstractExchange
@@ -15,7 +15,7 @@ from option_arb.exchanges.slippage import SlippageModel
 log = logging.getLogger(__name__)
 
 
-def _build_real_exchange(name: str, ex_cfg, network: str) -> AbstractExchange:
+def _build_real_exchange(name: str, ex_cfg: ExchangeConfig, network: str) -> AbstractExchange:
     rest = RestClient(
         exchange=name,
         base_url=ex_cfg.rest_base_url,

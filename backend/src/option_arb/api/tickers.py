@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter
-from sqlmodel import select
+from sqlmodel import col, select
 
 from option_arb.db.models import TickerState
 from option_arb.db.session import get_session
@@ -16,9 +17,12 @@ router = APIRouter(prefix="/api/tickers", tags=["tickers"])
 async def list_tickers(
     underlying: str | None = None,
     exchange: str | None = None,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     stmt = select(TickerState).order_by(
-        TickerState.underlying, TickerState.expiry, TickerState.strike, TickerState.exchange
+        col(TickerState.underlying),
+        col(TickerState.expiry),
+        col(TickerState.strike),
+        col(TickerState.exchange),
     )
     if underlying:
         stmt = stmt.where(TickerState.underlying == underlying)
@@ -29,22 +33,22 @@ async def list_tickers(
     return _group_and_compute(rows)
 
 
-def _group_and_compute(rows: list[TickerState]) -> list[dict]:
+def _group_and_compute(rows: list[TickerState]) -> list[dict[str, Any]]:
     # Group by instrument
     by_instrument: dict[str, list[TickerState]] = defaultdict(list)
     for r in rows:
         by_instrument[r.instrument].append(r)
 
-    out: list[dict] = []
+    out: list[dict[str, Any]] = []
     for instrument, tickers in by_instrument.items():
         sample = tickers[0]
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         stale_threshold = timedelta(seconds=60)
 
-        exchanges: dict[str, dict] = {}
+        exchanges: dict[str, dict[str, Any]] = {}
         for t in tickers:
-            ts = t.updated_at if t.updated_at.tzinfo else t.updated_at.replace(tzinfo=timezone.utc)
+            ts = t.updated_at if t.updated_at.tzinfo else t.updated_at.replace(tzinfo=UTC)
             is_stale = (now - ts) > stale_threshold
             exchanges[t.exchange] = {
                 "bid_price": t.bid_price,
@@ -64,7 +68,8 @@ def _group_and_compute(rows: list[TickerState]) -> list[dict]:
         sell_exchange = None
 
         valid = [
-            t for t in tickers
+            t
+            for t in tickers
             if t.bid_price and t.ask_price and t.bid_price > 0 and t.ask_price > 0
         ]
         # Try all cross-exchange pairs and pick the best gross spread
@@ -92,29 +97,33 @@ def _group_and_compute(rows: list[TickerState]) -> list[dict]:
                 ask_sz = best_buy_t.ask_size or 0.0
                 bid_sz = best_sell_t.bid_size or 0.0
                 tradeable_size = min(ask_sz, bid_sz)
-                max_profit_usd = round(net / 100 * (best_buy_t.ask_price or 0.0) * tradeable_size, 2)
+                max_profit_usd = round(
+                    net / 100 * (best_buy_t.ask_price or 0.0) * tradeable_size, 2
+                )
 
         latest_ts = max(t.updated_at for t in tickers)
         if latest_ts.tzinfo is None:
-            latest_ts = latest_ts.replace(tzinfo=timezone.utc)
+            latest_ts = latest_ts.replace(tzinfo=UTC)
 
-        out.append({
-            "instrument": instrument,
-            "underlying": sample.underlying,
-            "expiry": (
-                sample.expiry.isoformat()
-                if sample.expiry.tzinfo
-                else sample.expiry.replace(tzinfo=timezone.utc).isoformat()
-            ),
-            "strike": sample.strike,
-            "option_type": sample.option_type,
-            "exchanges": exchanges,
-            "gross_spread_pct": gross_spread_pct,
-            "net_spread_pct": net_spread_pct,
-            "buy_exchange": buy_exchange,
-            "sell_exchange": sell_exchange,
-            "max_profit_usd": max_profit_usd,
-            "updated_at": latest_ts.isoformat(),
-        })
+        out.append(
+            {
+                "instrument": instrument,
+                "underlying": sample.underlying,
+                "expiry": (
+                    sample.expiry.isoformat()
+                    if sample.expiry.tzinfo
+                    else sample.expiry.replace(tzinfo=UTC).isoformat()
+                ),
+                "strike": sample.strike,
+                "option_type": sample.option_type,
+                "exchanges": exchanges,
+                "gross_spread_pct": gross_spread_pct,
+                "net_spread_pct": net_spread_pct,
+                "buy_exchange": buy_exchange,
+                "sell_exchange": sell_exchange,
+                "max_profit_usd": max_profit_usd,
+                "updated_at": latest_ts.isoformat(),
+            }
+        )
 
     return out

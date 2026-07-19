@@ -112,3 +112,21 @@ make backtest file=recordings/derive-*.jsonl  # replay through the pipeline
 ## Architecture
 
 See `AGENTS.md` for the full architecture, module map, and conventions.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm --no-deps api uv run alembic stamp head
+
+
+  docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-deps api workers executor

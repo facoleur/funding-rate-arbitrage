@@ -5,7 +5,16 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from option_arb.api import alerts, executor, health, opportunities, positions, stream, tickers, trades
+from option_arb.api import (
+    alerts,
+    executor,
+    health,
+    opportunities,
+    positions,
+    stream,
+    tickers,
+    trades,
+)
 from option_arb.db.session import init_db
 
 
