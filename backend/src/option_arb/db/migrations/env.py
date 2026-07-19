@@ -8,8 +8,8 @@ from sqlmodel import SQLModel
 
 # Import models so metadata is populated.
 from option_arb import db  # noqa: F401
-from option_arb.db import models  # noqa: F401
 from option_arb.config import settings
+from option_arb.db import models  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

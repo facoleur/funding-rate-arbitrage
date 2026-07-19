@@ -76,6 +76,16 @@ jobs:
         id: meta
         run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
+      - name: Ensure deploy path is owned by deploy user
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            mkdir -p ${{ vars.DEPLOY_PATH }}/data
+            sudo chown -R $(whoami): ${{ vars.DEPLOY_PATH }}
+
       - name: Copy config and compose files to VPS
         uses: appleboy/scp-action@v1
         with:

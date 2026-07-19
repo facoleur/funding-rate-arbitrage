@@ -38,6 +38,7 @@ dev = [
     "ruff>=0.7.0",
     "mypy>=1.13.0",
     "freezegun>=1.5.1",
+    "types-pyyaml>=6.0.12.20260518",
 ]
 
 [build-system]
@@ -64,3 +65,8 @@ ignore = ["E501"]
 python_version = "3.12"
 strict = true
 mypy_path = "src"
+exclude = ["src/option_arb/db/migrations/"]
+
+[[tool.mypy.overrides]]
+module = ["derive_action_signing", "derive_action_signing.*", "web3", "web3.*", "eth_account", "eth_account.*"]
+ignore_missing_imports = true

@@ -5,6 +5,7 @@ import json
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 import websockets
 from websockets.exceptions import ConnectionClosed
@@ -95,7 +96,7 @@ class WsManager:
                     await self._read_loop(ws, exchange)
             except (ConnectionClosed, OSError, TimeoutError) as e:
                 log.warning("ws %s dropped: %s", exchange, e)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 log.exception("ws %s unexpected error: %s", exchange, e)
             finally:
                 state.connected = False
@@ -111,7 +112,7 @@ class WsManager:
             except TimeoutError:
                 pass
 
-    async def _read_loop(self, ws: websockets.WebSocketClientProtocol, exchange: str) -> None:
+    async def _read_loop(self, ws: Any, exchange: str) -> None:
         ex = self._exchanges[exchange]
         async for raw in ws:
             try:
@@ -126,7 +127,8 @@ class WsManager:
                 if len(subscribed) < expected:
                     log.warning(
                         "ws %s: %d channels silently dropped by server (limit exceeded?)",
-                        exchange, expected - len(subscribed),
+                        exchange,
+                        expected - len(subscribed),
                     )
                 continue
             update = ex.parse_ws_message(msg)
@@ -134,12 +136,12 @@ class WsManager:
                 continue
             try:
                 await self._on_ticker(update)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 log.exception("ticker handler failed for %s: %s", exchange, e)
 
     async def _subscribe(
         self,
-        ws: websockets.WebSocketClientProtocol,
+        ws: Any,
         exchange: str,
         channels: list[str],
     ) -> None:
