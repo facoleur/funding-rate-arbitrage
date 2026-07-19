@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Query
 from sqlmodel import select
 
@@ -14,7 +16,7 @@ async def list_opportunities(
     status: OpportunityStatus | None = None,
     min_apr: float | None = None,
     limit: int = Query(default=100, le=1000),
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     stmt = select(Opportunity).order_by(Opportunity.detected_at.desc()).limit(limit)  # type: ignore[attr-defined]
     if status is not None:
         stmt = stmt.where(Opportunity.status == status)
@@ -26,15 +28,17 @@ async def list_opportunities(
 
 
 @router.get("/{opp_id}")
-async def get_opportunity(opp_id: int) -> dict:
+async def get_opportunity(opp_id: int) -> dict[str, Any]:
     async with get_session() as sess:
-        row = (await sess.execute(select(Opportunity).where(Opportunity.id == opp_id))).scalar_one_or_none()
+        row = (
+            await sess.execute(select(Opportunity).where(Opportunity.id == opp_id))
+        ).scalar_one_or_none()
     if row is None:
         raise HTTPException(404, "not found")
     return _serialize(row)
 
 
-def _serialize(o: Opportunity) -> dict:
+def _serialize(o: Opportunity) -> dict[str, Any]:
     return {
         "id": o.id,
         "detected_at": o.detected_at.isoformat(),

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal, cast
 
-from option_arb.exchanges.auth import Authenticator, AuthNotReady, DeribitOAuth, NoAuth
+from option_arb.exchanges.auth import Authenticator, AuthNotReadyError, DeribitOAuth, NoAuth
 from option_arb.exchanges.base import (
     AbstractExchange,
     Book,
@@ -58,7 +58,7 @@ class DeribitExchange(AbstractExchange):
         if method.startswith("private/") and not _skip_auth:
             try:
                 sig = await self.auth.sign_rest("POST", method, params)
-            except AuthNotReady:
+            except AuthNotReadyError:
                 raise
             params = {**params, **sig.body_extra}
         body = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
@@ -67,9 +67,7 @@ class DeribitExchange(AbstractExchange):
             raise RuntimeError(f"deribit rpc error: {resp['error']}")
         return resp["result"]
 
-    async def list_instruments(
-        self, underlying: str, max_expiries_ahead: int
-    ) -> list[Instrument]:
+    async def list_instruments(self, underlying: str, max_expiries_ahead: int) -> list[Instrument]:
         result = await self._rpc(
             "public/get_instruments",
             {"currency": underlying.upper(), "kind": "option", "expired": False},
@@ -85,7 +83,7 @@ class DeribitExchange(AbstractExchange):
         out: list[Instrument] = []
         for ts in keep_ts:
             for inst in by_expiry[ts]:
-                expiry = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
+                expiry = datetime.fromtimestamp(ts / 1000, tz=UTC)
                 strike = Decimal(str(inst["strike"]))
                 opt_type = "C" if inst["option_type"] == "call" else "P"
                 out.append(
@@ -96,7 +94,7 @@ class DeribitExchange(AbstractExchange):
                         underlying=underlying.upper(),
                         expiry=expiry,
                         strike=strike,
-                        option_type=opt_type,
+                        option_type=cast(Literal["C", "P"], opt_type),
                         maker_fee_rate=Decimal(str(inst.get("maker_commission", "0"))),
                         taker_fee_rate=Decimal(str(inst.get("taker_commission", "0"))),
                     )
@@ -113,7 +111,7 @@ class DeribitExchange(AbstractExchange):
         return Book(
             exchange=self.name,
             instrument=instrument.normalized_name,
-            ts=datetime.fromtimestamp(ticker["timestamp"] / 1000, tz=timezone.utc),
+            ts=datetime.fromtimestamp(ticker["timestamp"] / 1000, tz=UTC),
             bids=[
                 BookLevel(price=Decimal(str(p)) * underlying_px, size=Decimal(str(s)))
                 for p, s in ticker["bids"]
@@ -138,14 +136,18 @@ class DeribitExchange(AbstractExchange):
         try:
             underlying_px = Decimal(str(data["underlying_price"]))
             if underlying_px <= 0:
-                log.warning("deribit underlying_price <= 0 for %s: %s", instrument_name, data.get("underlying_price"))
+                log.warning(
+                    "deribit underlying_price <= 0 for %s: %s",
+                    instrument_name,
+                    data.get("underlying_price"),
+                )
                 return None
             best_bid = data.get("best_bid_price") or 0
             best_ask = data.get("best_ask_price") or 0
             return TickerUpdate(
                 exchange=self.name,
                 instrument=normalize_deribit(instrument_name),
-                ts=datetime.fromtimestamp(data["timestamp"] / 1000, tz=timezone.utc),
+                ts=datetime.fromtimestamp(data["timestamp"] / 1000, tz=UTC),
                 bid_price=Decimal(str(best_bid)) * underlying_px if best_bid else None,
                 ask_price=Decimal(str(best_ask)) * underlying_px if best_ask else None,
                 bid_size=Decimal(str(data.get("best_bid_amount") or 0)) or None,
@@ -173,7 +175,7 @@ class DeribitExchange(AbstractExchange):
         }
         try:
             res = await self._rpc(method, params, priority=True)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             return OrderResult(status="REJECTED", reason=str(e))
         return self._parse_order_response(res)
 
@@ -183,7 +185,7 @@ class DeribitExchange(AbstractExchange):
         try:
             await self._rpc("private/cancel", {"order_id": exchange_order_id}, priority=True)
             return True
-        except Exception:  # noqa: BLE001
+        except Exception:
             return False
 
     async def get_balance_usd(self) -> Decimal:
@@ -192,7 +194,7 @@ class DeribitExchange(AbstractExchange):
         try:
             res = await self._rpc("private/get_account_summary", {"currency": "USDC"})
             return Decimal(str(res.get("equity", 0)))
-        except Exception:  # noqa: BLE001
+        except Exception:
             return Decimal(0)
 
     async def get_positions(self) -> list[dict[str, Any]]:
@@ -201,7 +203,7 @@ class DeribitExchange(AbstractExchange):
         try:
             res = await self._rpc("private/get_positions", {"currency": "USDC", "kind": "option"})
             return list(res) if res else []
-        except Exception:  # noqa: BLE001
+        except Exception:
             return []
 
     @staticmethod

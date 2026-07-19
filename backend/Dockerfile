@@ -15,12 +15,12 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.25 /uv /uvx /usr/local/bin/
 WORKDIR /app
 
 # Install deps first for cache efficiency
-COPY backend/pyproject.toml backend/uv.lock* /app/
+COPY pyproject.toml uv.lock* /app/
 RUN uv sync --frozen --no-install-project --no-dev 2>/dev/null || uv sync --no-install-project --no-dev
 
 # Now copy source
-COPY backend/src /app/src
-COPY backend/alembic.ini /app/alembic.ini
+COPY src /app/src
+COPY alembic.ini /app/alembic.ini
 
 RUN uv sync --no-dev
 

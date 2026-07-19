@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import signal
 
 from option_arb.config import load_config
 from option_arb.db.session import init_db
+from option_arb.exchanges.base import Instrument, TickerUpdate
 from option_arb.exchanges.registry import build_exchanges, close_exchanges
 from option_arb.market.book_cache import BookCache
 from option_arb.market.ws_manager import WsManager
@@ -17,7 +19,9 @@ log = logging.getLogger(__name__)
 
 
 async def _amain() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
     log.info("worker booting…")
 
     await init_db()
@@ -25,13 +29,13 @@ async def _amain() -> None:
     exchanges = build_exchanges(cfg)
 
     # 1. bootstrap instrument metadata for every configured underlying/exchange
-    subscriptions: dict[str, list] = {}
+    subscriptions: dict[str, list[Instrument]] = {}
     cache = BookCache()
     for underlying in cfg.screener.underlyings:
         for name, ex in exchanges.items():
             try:
                 instruments = await ex.list_instruments(underlying, cfg.screener.max_expiries_ahead)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 log.warning("bootstrap %s/%s failed: %s", name, underlying, e)
                 continue
             cache.register_instruments(instruments)
@@ -55,10 +59,8 @@ async def _amain() -> None:
 
     loop = asyncio.get_event_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
+        with contextlib.suppress(NotImplementedError):
             loop.add_signal_handler(sig, _shutdown)
-        except NotImplementedError:
-            pass
 
     tasks = [
         asyncio.create_task(screener.run(), name="screener"),
@@ -76,7 +78,7 @@ async def _amain() -> None:
     log.info("worker stopped")
 
 
-async def _push(cache: BookCache, upd) -> None:
+async def _push(cache: BookCache, upd: TickerUpdate) -> None:
     cache.update(upd)
 
 

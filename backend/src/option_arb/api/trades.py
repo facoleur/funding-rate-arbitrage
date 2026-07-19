@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Query
 from sqlmodel import select
 
@@ -15,7 +17,7 @@ async def list_trades(
     status: TradeStatus | None = None,
     limit: int = Query(default=50, le=500),
     offset: int = 0,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     stmt = select(Trade).order_by(Trade.opened_at.desc()).offset(offset).limit(limit)  # type: ignore[attr-defined]
     if mode is not None:
         stmt = stmt.where(Trade.mode == mode)
@@ -27,16 +29,18 @@ async def list_trades(
 
 
 @router.get("/{trade_id}")
-async def get_trade(trade_id: int) -> dict:
+async def get_trade(trade_id: int) -> dict[str, Any]:
     async with get_session() as sess:
         row = (await sess.execute(select(Trade).where(Trade.id == trade_id))).scalar_one_or_none()
         if row is None:
             raise HTTPException(404, "not found")
-        orders = list((await sess.execute(select(Order).where(Order.trade_id == trade_id))).scalars())
+        orders = list(
+            (await sess.execute(select(Order).where(Order.trade_id == trade_id))).scalars()
+        )
     return {**_serialize(row), "orders": [_serialize_order(o) for o in orders]}
 
 
-def _serialize(t: Trade) -> dict:
+def _serialize(t: Trade) -> dict[str, Any]:
     return {
         "id": t.id,
         "opportunity_id": t.opportunity_id,
@@ -58,7 +62,7 @@ def _serialize(t: Trade) -> dict:
     }
 
 
-def _serialize_order(o: Order) -> dict:
+def _serialize_order(o: Order) -> dict[str, Any]:
     return {
         "id": o.id,
         "exchange": o.exchange,

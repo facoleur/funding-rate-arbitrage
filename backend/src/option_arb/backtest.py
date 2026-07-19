@@ -4,10 +4,12 @@ import argparse
 import asyncio
 import json
 import logging
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import Any, Literal, cast
 
 from sqlmodel import select
 
@@ -34,11 +36,11 @@ class Report:
     total_pnl_usd: float
     avg_pnl_usd: float
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return self.__dict__
 
 
-def _load_snapshots(path: Path):
+def _load_snapshots(path: Path) -> Iterator[dict[str, Any]]:
     with path.open() as f:
         for line in f:
             line = line.strip()
@@ -47,7 +49,7 @@ def _load_snapshots(path: Path):
             yield json.loads(line)
 
 
-def _snap_to_book(snap: dict) -> Book:
+def _snap_to_book(snap: dict[str, Any]) -> Book:
     return Book(
         exchange=snap["exchange"],
         instrument=snap["instrument"],
@@ -57,7 +59,7 @@ def _snap_to_book(snap: dict) -> Book:
     )
 
 
-def _instrument_from_snap(snap: dict) -> Instrument:
+def _instrument_from_snap(snap: dict[str, Any]) -> Instrument:
     """Best-effort synthesize an Instrument from a snapshot record.
 
     Assumes normalized name `{UNDERLYING}-{YYYYMMDD}-{STRIKE}-{C|P}`."""
@@ -71,7 +73,7 @@ def _instrument_from_snap(snap: dict) -> Instrument:
         underlying=underlying,
         expiry=datetime.strptime(date_str, "%Y%m%d").replace(tzinfo=UTC),
         strike=Decimal(strike),
-        option_type=side,
+        option_type=cast(Literal["C", "P"], side),
         maker_fee_rate=Decimal("0.0001"),
         taker_fee_rate=Decimal("0.0003"),
     )
@@ -87,7 +89,9 @@ async def backtest(file: Path) -> Report:
         return Report(0, 0, 0, 0, 0, 0.0, 0.0)
 
     exchanges_names = sorted({s["exchange"] for s in snaps})
-    slippage = SlippageModel(noise_stdev_bps=5, reject_prob=0.02, latency_min_sec=0, latency_max_sec=0.01)
+    slippage = SlippageModel(
+        noise_stdev_bps=5, reject_prob=0.02, latency_min_sec=0, latency_max_sec=0.01
+    )
     exchanges: dict[str, MockExchange] = {
         name: MockExchange(name, slippage=slippage) for name in exchanges_names
     }
@@ -112,23 +116,25 @@ async def backtest(file: Path) -> Report:
         exchanges[snap["exchange"]].set_book(snap["instrument"], book)
         top_bid = book.top_bid
         top_ask = book.top_ask
-        cache.update(TickerUpdate(
-            exchange=snap["exchange"],
-            instrument=snap["instrument"],
-            ts=book.ts,
-            bid_price=top_bid.price if top_bid else None,
-            bid_size=top_bid.size if top_bid else None,
-            ask_price=top_ask.price if top_ask else None,
-            ask_size=top_ask.size if top_ask else None,
-        ))
+        cache.update(
+            TickerUpdate(
+                exchange=snap["exchange"],
+                instrument=snap["instrument"],
+                ts=book.ts,
+                bid_price=top_bid.price if top_bid else None,
+                bid_size=top_bid.size if top_bid else None,
+                ask_price=top_ask.price if top_ask else None,
+                ask_size=top_ask.size if top_ask else None,
+            )
+        )
         await screener._tick()
         await executor._tick()
 
     # Build the report from DB (only backtest-tagged rows)
     async with get_session() as sess:
-        trades = list((await sess.execute(
-            select(Trade).where(Trade.mode == Mode.BACKTEST)
-        )).scalars())
+        trades = list(
+            (await sess.execute(select(Trade).where(Trade.mode == Mode.BACKTEST))).scalars()
+        )
 
     filled = [t for t in trades if t.status == TradeStatus.FILLED]
     hedged = [t for t in trades if t.status == TradeStatus.HEDGED]
@@ -148,7 +154,9 @@ async def backtest(file: Path) -> Report:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
-    ap = argparse.ArgumentParser(description="Replay recorded books through screener + mock executor.")
+    ap = argparse.ArgumentParser(
+        description="Replay recorded books through screener + mock executor."
+    )
     ap.add_argument("--file", type=Path, required=True)
     args = ap.parse_args()
 

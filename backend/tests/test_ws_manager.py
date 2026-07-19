@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -36,26 +36,44 @@ class _FakeExchange(AbstractExchange):
             return TickerUpdate(
                 exchange=self.name,
                 instrument=raw["instrument"],
-                ts=datetime.now(timezone.utc),
-                bid_price=Decimal("100"), bid_size=Decimal("1"),
-                ask_price=Decimal("101"), ask_size=Decimal("1"),
+                ts=datetime.now(UTC),
+                bid_price=Decimal("100"),
+                bid_size=Decimal("1"),
+                ask_price=Decimal("101"),
+                ask_size=Decimal("1"),
             )
         return None
 
-    async def list_instruments(self, underlying: str, max_expiries_ahead: int) -> list[Instrument]: return []  # noqa: E704
-    async def get_orderbook_l2(self, instrument): return Book(exchange=self.name, instrument="", ts=datetime.now(timezone.utc))  # noqa: E704
-    async def place_order(self, order: OrderRequest) -> OrderResult: return OrderResult(status="REJECTED")  # noqa: E704
-    async def cancel_order(self, exchange_order_id: str) -> bool: return False  # noqa: E704
-    async def get_balance_usd(self) -> Decimal: return Decimal(0)  # noqa: E704
-    async def get_positions(self) -> list[dict[str, Any]]: return []  # noqa: E704
+    async def list_instruments(self, underlying: str, max_expiries_ahead: int) -> list[Instrument]:
+        return []
+
+    async def get_orderbook_l2(self, instrument):
+        return Book(exchange=self.name, instrument="", ts=datetime.now(UTC))
+
+    async def place_order(self, order: OrderRequest) -> OrderResult:
+        return OrderResult(status="REJECTED")
+
+    async def cancel_order(self, exchange_order_id: str) -> bool:
+        return False
+
+    async def get_balance_usd(self) -> Decimal:
+        return Decimal(0)
+
+    async def get_positions(self) -> list[dict[str, Any]]:
+        return []
 
 
 def _inst(name: str = "BTC-20260101-30000-C") -> Instrument:
     return Instrument(
-        exchange="fake", instrument_name=name, normalized_name=name,
-        underlying="BTC", expiry=datetime.now(tz=timezone.utc) + timedelta(days=30),
-        strike=Decimal("30000"), option_type="C",
-        maker_fee_rate=Decimal("0"), taker_fee_rate=Decimal("0"),
+        exchange="fake",
+        instrument_name=name,
+        normalized_name=name,
+        underlying="BTC",
+        expiry=datetime.now(tz=UTC) + timedelta(days=30),
+        strike=Decimal("30000"),
+        option_type="C",
+        maker_fee_rate=Decimal("0"),
+        taker_fee_rate=Decimal("0"),
     )
 
 
@@ -100,10 +118,13 @@ async def test_subscribe_payload_uses_exchange_shape(monkeypatch) -> None:
     monkeypatch.setattr("option_arb.market.ws_manager.websockets.connect", _fake_connect)
 
     received: list[TickerUpdate] = []
+
     async def on_ticker(upd: TickerUpdate) -> None:
         received.append(upd)
 
-    mgr = WsManager({"deribit": ex}, on_ticker=on_ticker, ping_interval_sec=1000, ping_timeout_sec=1000)
+    mgr = WsManager(
+        {"deribit": ex}, on_ticker=on_ticker, ping_interval_sec=1000, ping_timeout_sec=1000
+    )
     await mgr.start({"deribit": [inst]})
     # give the read loop a chance to process the fake message + exit
     await asyncio.sleep(0.05)
@@ -129,7 +150,9 @@ async def test_ws_manager_status_reflects_connection(monkeypatch) -> None:
 
     monkeypatch.setattr("option_arb.market.ws_manager.websockets.connect", _fake_connect)
 
-    async def on_ticker(upd: TickerUpdate) -> None: return None
+    async def on_ticker(upd: TickerUpdate) -> None:
+        return None
+
     mgr = WsManager({"aevo": ex}, on_ticker=on_ticker)
     await mgr.start({"aevo": [inst]})
     # let it connect + read one message + disconnect
@@ -155,7 +178,9 @@ async def test_ws_manager_reconnects_after_drop(monkeypatch) -> None:
 
     monkeypatch.setattr("option_arb.market.ws_manager.websockets.connect", _fake_connect)
 
-    async def on_ticker(upd: TickerUpdate) -> None: return None
+    async def on_ticker(upd: TickerUpdate) -> None:
+        return None
+
     mgr = WsManager({"deribit": ex}, on_ticker=on_ticker)
     # aggressive: make backoff essentially zero for testing
     mgr._max_backoff_sec = 0.01
