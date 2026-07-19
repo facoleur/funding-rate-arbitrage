@@ -27,3 +27,21 @@ yarn-error.log*
 .env.production.local
 
 .trigger
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Local data (SQLite + recordings)
+data/*.db
+data/*.db-*
+data/EXECUTOR_DISABLED
+data/recordings/

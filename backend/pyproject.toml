@@ -1,0 +1,66 @@
+[project]
+name = "option-arb"
+version = "0.1.0"
+description = "Cross-exchange crypto option arbitrage system"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "sqlmodel>=0.0.22",
+    "asyncpg>=0.30.0",
+    "psycopg2-binary>=2.9.10",
+    "aiosqlite>=0.20.0",
+    "alembic>=1.14.0",
+    "eth-account>=0.13.0",
+    "httpx>=0.28.0",
+    "websockets>=13.1",
+    "sse-starlette>=2.1.3",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.6.0",
+    "aiolimiter>=1.2.0",
+    "pyyaml>=6.0.2",
+    "python-dotenv>=1.0.1",
+    "tenacity>=9.0.0",
+    "derive-action-signing>=0.0.13",
+]
+
+[project.scripts]
+option-arb-worker = "option_arb.worker:main"
+option-arb-executor = "option_arb.services.executor:main"
+option-arb-backtest = "option_arb.backtest:main"
+option-arb-record = "option_arb.record:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "respx>=0.21.1",
+    "ruff>=0.7.0",
+    "mypy>=1.13.0",
+    "freezegun>=1.5.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/option_arb"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"

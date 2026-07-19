@@ -1,0 +1,27 @@
+services:
+  postgres:
+    environment:
+      POSTGRES_USER: option_arb
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: option_arb
+
+  migrate:
+    image: ghcr.io/${GHCR_OWNER}/option-arb:${RELEASE_TAG:-latest}
+    environment:
+      DATABASE_URL: postgresql+asyncpg://option_arb:${POSTGRES_PASSWORD}@postgres:5432/option_arb
+      ALEMBIC_DATABASE_URL: postgresql://option_arb:${POSTGRES_PASSWORD}@postgres:5432/option_arb
+
+  api:
+    image: ghcr.io/${GHCR_OWNER}/option-arb:${RELEASE_TAG:-latest}
+    environment:
+      DATABASE_URL: postgresql+asyncpg://option_arb:${POSTGRES_PASSWORD}@postgres:5432/option_arb
+
+  workers:
+    image: ghcr.io/${GHCR_OWNER}/option-arb:${RELEASE_TAG:-latest}
+    environment:
+      DATABASE_URL: postgresql+asyncpg://option_arb:${POSTGRES_PASSWORD}@postgres:5432/option_arb
+
+  executor:
+    image: ghcr.io/${GHCR_OWNER}/option-arb:${RELEASE_TAG:-latest}
+    environment:
+      DATABASE_URL: postgresql+asyncpg://option_arb:${POSTGRES_PASSWORD}@postgres:5432/option_arb

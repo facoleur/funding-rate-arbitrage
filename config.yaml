@@ -1,0 +1,63 @@
+screener:
+  poll_interval_ms: 500
+  underlyings: ["BTC", "ETH"]
+  exchanges: ["derive", "deribit"]
+  max_expiries_ahead: 8
+  metadata_refresh_hours: 6
+
+thresholds:
+  min_apr_pct: 0.1
+  min_notional_usd: 20
+  size_threshold_usd: 100
+
+executor:
+  mode: paper # paper | live
+  order_type: ioc_limit
+  max_slippage_pct: 2
+  walk_book: true
+  poll_interval_ms: 200
+  fresh_fetch_timeout_ms: 500
+
+limits:
+  max_notional_per_trade_usd: 500
+  max_positions_open: 10
+  max_daily_loss_usd: 100
+  kill_switch_file: /data/EXECUTOR_DISABLED
+
+rebalancer:
+  poll_interval_sec: 300
+  expiry_warning_hours: 24
+  balance_low_threshold_usd: 100
+
+# --- Exchanges default to TESTNET. Flip `network: mainnet` + swap URLs
+# to go live. Every exchange requires the corresponding creds in .env.
+exchanges:
+  deribit:
+    network: mainnet
+    rest_rate_limit_per_sec: 20
+    ws_max_subscriptions: 500
+    rest_base_url: https://www.deribit.com/api/v2
+    ws_url: wss://www.deribit.com/ws/api/v2
+
+  derive:
+    # ⚠ MAINNET — real chain, real balances (paper mode still safe: MockExchange
+    # intercepts place_order, only book data is real). Flip network: testnet
+    # + swap URLs back to api-demo.lyra.finance if you have testnet creds.
+    network: mainnet
+    rest_rate_limit_per_sec: 20
+    ws_max_subscriptions: 200
+    rest_base_url: https://api.lyra.finance
+    ws_url: wss://api.lyra.finance/ws
+
+  aevo:
+    network: testnet
+    rest_rate_limit_per_sec: 10
+    ws_max_subscriptions: 100
+    rest_base_url: https://api-testnet.aevo.xyz
+    ws_url: wss://ws-testnet.aevo.xyz
+
+alerts:
+  telegram:
+    enabled: true
+    apr_threshold_pct: 10
+    levels: ["info", "warn", "error"]
