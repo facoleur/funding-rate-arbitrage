@@ -9,6 +9,10 @@ up: ## Start the full stack in background (postgres + api + workers + executor)
 prod: ## Start stack in production mode (requires POSTGRES_PASSWORD + GHCR_OWNER + RELEASE_TAG)
 	docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 
+rollback: ## Re-deploy a previous tag (usage: make rollback VERSION=v1.0.0)
+	@test -n "$(VERSION)" || (echo "Usage: make rollback VERSION=v1.0.0" && exit 1)
+	git push origin $(VERSION)
+
 release: ## Tag and push to trigger CI/CD (usage: make release VERSION=v1.2.3)
 	@test -n "$(VERSION)" || (echo "Usage: make release VERSION=v1.2.3" && exit 1)
 	@test "$$(git branch --show-current)" = "master" || (echo "Erreur: doit être sur master" && exit 1)

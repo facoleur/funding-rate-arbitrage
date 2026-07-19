@@ -11,6 +11,7 @@ Usage:
 If you only have the EOA and not the SCW address yet, first check
 https://app.derive.xyz/developers to copy the "Wallet" field.
 """
+
 from __future__ import annotations
 
 import argparse

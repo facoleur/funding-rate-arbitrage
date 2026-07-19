@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter
 from sqlmodel import select
 
@@ -10,7 +12,7 @@ router = APIRouter(prefix="/api", tags=["positions"])
 
 
 @router.get("/positions")
-async def list_positions() -> list[dict]:
+async def list_positions() -> list[dict[str, Any]]:
     async with get_session() as sess:
         rows = list((await sess.execute(select(Position))).scalars())
     return [
@@ -28,7 +30,7 @@ async def list_positions() -> list[dict]:
 
 
 @router.get("/exchanges")
-async def list_exchange_state() -> list[dict]:
+async def list_exchange_state() -> list[dict[str, Any]]:
     async with get_session() as sess:
         rows = list((await sess.execute(select(ExchangeState))).scalars())
     return [

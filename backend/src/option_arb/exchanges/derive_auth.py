@@ -11,17 +11,19 @@ Two auth surfaces:
   - Order actions carry an additional signed EIP-712-style payload (nonce,
     module_data, signature) inside the body.
 """
+
 from __future__ import annotations
 
 import logging
 from decimal import Decimal
 from typing import Any
 
-from derive_action_signing import SignedAction, TradeModuleData, utils as das_utils
+from derive_action_signing import SignedAction, TradeModuleData
+from derive_action_signing import utils as das_utils
 from eth_account.messages import encode_defunct
 from web3 import Web3
 
-from option_arb.exchanges.auth import Authenticator, AuthNotReady, RestSignature
+from option_arb.exchanges.auth import Authenticator, AuthNotReadyError, RestSignature
 from option_arb.exchanges.derive_constants import DeriveConstants
 
 log = logging.getLogger(__name__)
@@ -49,7 +51,7 @@ class DeriveAuth(Authenticator):
 
     @property
     def signer_address(self) -> str:
-        return self._account.address
+        return str(self._account.address)
 
     # -------- REST X-LYRA* headers (auth for every /private/* call) --------
 
@@ -57,14 +59,18 @@ class DeriveAuth(Authenticator):
         timestamp = str(das_utils.utc_now_ms())
         # Match the official derive_action_signing package exactly: raw .hex()
         # WITHOUT the 0x prefix, ALL-CAPS header names.
-        sig = self._web3.eth.account.sign_message(
-            encode_defunct(text=timestamp), private_key=self._session_key
-        ).signature.hex()
-        return RestSignature(headers={
-            "X-LYRAWALLET": self.wallet_address,
-            "X-LYRATIMESTAMP": timestamp,
-            "X-LYRASIGNATURE": sig,
-        })
+        sig = str(
+            self._web3.eth.account.sign_message(
+                encode_defunct(text=timestamp), private_key=self._session_key
+            ).signature.hex()
+        )
+        return RestSignature(
+            headers={
+                "X-LYRAWALLET": self.wallet_address,
+                "X-LYRATIMESTAMP": timestamp,
+                "X-LYRASIGNATURE": sig,
+            }
+        )
 
     # -------- Per-action EIP-712 signing (for /private/order) --------
 
@@ -105,7 +111,8 @@ class DeriveAuth(Authenticator):
         action.sign(self._account.key)
         # sanity check the signature — cheap and catches misconfigured constants
         action.validate_signature()
-        return action.to_json()
+        result: dict[str, Any] = action.to_json()
+        return result
 
     # -------- WS auth --------
 
@@ -117,7 +124,7 @@ class DeriveAuth(Authenticator):
 
     async def sign_ws_message(self, msg: dict[str, Any]) -> dict[str, Any]:
         # WS ordering is possible but our executor sends orders via REST.
-        raise AuthNotReady("derive WS message signing not implemented (using REST)")
+        raise AuthNotReadyError("derive WS message signing not implemented (using REST)")
 
     def ws_login_params(self) -> dict[str, str]:
         """Return params for the WS `public/login` call if we ever send private
