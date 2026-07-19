@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -20,7 +20,7 @@ def _inst(exchange: str, expiry_days: int = 30) -> Instrument:
         instrument_name="BTC-20260101-30000-C",
         normalized_name="BTC-20260101-30000-C",
         underlying="BTC",
-        expiry=datetime.now(tz=timezone.utc) + timedelta(days=expiry_days),
+        expiry=datetime.now(tz=UTC) + timedelta(days=expiry_days),
         strike=Decimal("30000"),
         option_type="C",
         maker_fee_rate=Decimal("0.0001"),
@@ -32,17 +32,29 @@ def _inst(exchange: str, expiry_days: int = 30) -> Instrument:
 async def test_screener_writes_opportunity_when_thresholds_met(test_db: str) -> None:
     cache = BookCache()
     cache.register_instruments([_inst("derive"), _inst("deribit")])
-    now = datetime.now(tz=timezone.utc)
-    cache.update(TickerUpdate(
-        exchange="derive", instrument="BTC-20260101-30000-C", ts=now,
-        bid_price=Decimal("100"), bid_size=Decimal("10"),
-        ask_price=Decimal("101"), ask_size=Decimal("10"),
-    ))
-    cache.update(TickerUpdate(
-        exchange="deribit", instrument="BTC-20260101-30000-C", ts=now,
-        bid_price=Decimal("110"), bid_size=Decimal("10"),
-        ask_price=Decimal("112"), ask_size=Decimal("10"),
-    ))
+    now = datetime.now(tz=UTC)
+    cache.update(
+        TickerUpdate(
+            exchange="derive",
+            instrument="BTC-20260101-30000-C",
+            ts=now,
+            bid_price=Decimal("100"),
+            bid_size=Decimal("10"),
+            ask_price=Decimal("101"),
+            ask_size=Decimal("10"),
+        )
+    )
+    cache.update(
+        TickerUpdate(
+            exchange="deribit",
+            instrument="BTC-20260101-30000-C",
+            ts=now,
+            bid_price=Decimal("110"),
+            bid_size=Decimal("10"),
+            ask_price=Decimal("112"),
+            ask_size=Decimal("10"),
+        )
+    )
 
     await Screener(cache, AppConfig())._tick()
 
@@ -59,17 +71,29 @@ async def test_screener_skips_when_apr_below_threshold(test_db: str) -> None:
     d = _inst("derive", expiry_days=365)
     b = _inst("deribit", expiry_days=365)
     cache.register_instruments([d, b])
-    now = datetime.now(tz=timezone.utc)
-    cache.update(TickerUpdate(
-        exchange="derive", instrument=d.normalized_name, ts=now,
-        bid_price=Decimal("100"), bid_size=Decimal("10"),
-        ask_price=Decimal("100.5"), ask_size=Decimal("10"),
-    ))
-    cache.update(TickerUpdate(
-        exchange="deribit", instrument=b.normalized_name, ts=now,
-        bid_price=Decimal("101"), bid_size=Decimal("10"),
-        ask_price=Decimal("102"), ask_size=Decimal("10"),
-    ))
+    now = datetime.now(tz=UTC)
+    cache.update(
+        TickerUpdate(
+            exchange="derive",
+            instrument=d.normalized_name,
+            ts=now,
+            bid_price=Decimal("100"),
+            bid_size=Decimal("10"),
+            ask_price=Decimal("100.5"),
+            ask_size=Decimal("10"),
+        )
+    )
+    cache.update(
+        TickerUpdate(
+            exchange="deribit",
+            instrument=b.normalized_name,
+            ts=now,
+            bid_price=Decimal("101"),
+            bid_size=Decimal("10"),
+            ask_price=Decimal("102"),
+            ask_size=Decimal("10"),
+        )
+    )
 
     await Screener(cache, AppConfig())._tick()
 

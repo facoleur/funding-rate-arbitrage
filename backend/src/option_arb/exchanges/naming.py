@@ -1,12 +1,22 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 _MONTHS = {
-    "JAN": "01", "FEB": "02", "MAR": "03", "APR": "04", "MAY": "05", "JUN": "06",
-    "JUL": "07", "AUG": "08", "SEP": "09", "OCT": "10", "NOV": "11", "DEC": "12",
+    "JAN": "01",
+    "FEB": "02",
+    "MAR": "03",
+    "APR": "04",
+    "MAY": "05",
+    "JUN": "06",
+    "JUL": "07",
+    "AUG": "08",
+    "SEP": "09",
+    "OCT": "10",
+    "NOV": "11",
+    "DEC": "12",
 }
 
 _DERIBIT_RE = re.compile(r"^([A-Z]+)-(\d{1,2})([A-Z]{3})(\d{2})-(\d+)-(C|P)$")
@@ -30,7 +40,7 @@ def normalize_from_parts(
     """Build the canonical normalized name from parts."""
     if option_type not in ("C", "P"):
         raise ValueError(f"option_type must be C or P, got {option_type}")
-    exp_utc = expiry.astimezone(timezone.utc) if expiry.tzinfo else expiry
+    exp_utc = expiry.astimezone(UTC) if expiry.tzinfo else expiry
     date_str = exp_utc.strftime("%Y%m%d")
     strike_str = format(strike.normalize(), "f").rstrip("0").rstrip(".")
     if "." not in strike_str:

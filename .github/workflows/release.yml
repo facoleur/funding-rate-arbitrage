@@ -76,6 +76,16 @@ jobs:
         id: meta
         run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
+      - name: Ensure deploy path is owned by deploy user
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            mkdir -p ${{ vars.DEPLOY_PATH }}/data
+            sudo chown -R $(whoami): ${{ vars.DEPLOY_PATH }}
+
       - name: Copy config and compose files to VPS
         uses: appleboy/scp-action@v1
         with:
@@ -130,20 +140,20 @@ jobs:
 
             # ⚠️ Kill executor avant tout restart pour éviter les positions orphelines
             touch data/EXECUTOR_DISABLED
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+            docker-compose -f docker-compose.yml -f docker-compose.prod.yml \
               stop executor 2>/dev/null || true
             sleep 3
 
             # Pull la nouvelle image depuis GHCR
             RELEASE_TAG=${{ steps.meta.outputs.tag }} \
-              docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+              docker-compose -f docker-compose.yml -f docker-compose.prod.yml pull
 
             # Migrations (one-shot, attend que postgres soit healthy)
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+            docker-compose -f docker-compose.yml -f docker-compose.prod.yml \
               up --no-deps migrate
 
             # Restart api et workers
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+            docker-compose -f docker-compose.yml -f docker-compose.prod.yml \
               up -d --no-deps api workers
 
             # Reload Caddy pour servir le nouveau dist/
@@ -151,7 +161,7 @@ jobs:
 
             # Re-activer l'executor
             rm -f data/EXECUTOR_DISABLED
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+            docker-compose -f docker-compose.yml -f docker-compose.prod.yml \
               up -d --no-deps executor
 
             # Nettoyer les anciennes images (garder 3)

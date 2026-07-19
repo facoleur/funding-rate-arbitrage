@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 
@@ -28,8 +28,8 @@ class Quote:
 @dataclass(frozen=True)
 class Spread:
     normalized_name: str
-    symbol: str            # underlying, e.g. "BTC"
-    instrument: str        # same as normalized_name for now
+    symbol: str  # underlying, e.g. "BTC"
+    instrument: str  # same as normalized_name for now
     strike: Decimal
     option_type: str
     expiry: datetime
@@ -69,7 +69,7 @@ def compare_options(
     and return a Spread when the net spread is positive.
 
     Ports the semantics of the TS `compareOptions` from the deleted prototype."""
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     results: list[Spread] = []
 
     for quotes in groups:
@@ -82,10 +82,7 @@ def compare_options(
 
         valid = [q for q in quotes if _is_valid(q)]
         # apply size floor: filter out illiquid quotes just like TS did
-        valid = [
-            q for q in valid
-            if q.bid_price * q.bid_qty >= size_threshold_usd
-        ]
+        valid = [q for q in valid if q.bid_price * q.bid_qty >= size_threshold_usd]
         if len(valid) < 2:
             continue
 
@@ -105,7 +102,7 @@ def compare_options(
             continue
 
         q0 = quotes[0]
-        expiry_utc = q0.expiry if q0.expiry.tzinfo else q0.expiry.replace(tzinfo=timezone.utc)
+        expiry_utc = q0.expiry if q0.expiry.tzinfo else q0.expiry.replace(tzinfo=UTC)
         days_to_exp = max((expiry_utc - now).total_seconds() / 86400.0, 1e-6)
         apr = (net_diff_pct / Decimal(str(days_to_exp))) * Decimal(365)
 
