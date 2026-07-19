@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -36,9 +36,7 @@ class AevoExchange(AbstractExchange):
         self.ws_url = ws_url
         self.auth = auth or NoAuth()
 
-    async def list_instruments(
-        self, underlying: str, max_expiries_ahead: int
-    ) -> list[Instrument]:
+    async def list_instruments(self, underlying: str, max_expiries_ahead: int) -> list[Instrument]:
         markets = await self.rest.get(
             "/markets",
             params={"asset": underlying.upper(), "instrument_type": "OPTION"},
@@ -54,7 +52,7 @@ class AevoExchange(AbstractExchange):
         out: list[Instrument] = []
         for ts in keep_ts:
             for inst in by_expiry[ts]:
-                expiry = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
+                expiry = datetime.fromtimestamp(ts / 1000, tz=UTC)
                 strike = Decimal(str(inst["strike"]))
                 opt_type_raw = inst.get("option_type", "").upper()
                 opt_type = "C" if opt_type_raw in ("C", "CALL") else "P"
@@ -76,9 +74,7 @@ class AevoExchange(AbstractExchange):
     async def get_orderbook_l2(self, instrument: Instrument) -> Book:
         # Aevo's /instrument/{name} returns best bid/ask (depth 1).
         # For deeper book use /orderbook (if available). Depth-1 fallback:
-        data = await self.rest.get(
-            f"/instrument/{instrument.instrument_name}", priority=True
-        )
+        data = await self.rest.get(f"/instrument/{instrument.instrument_name}", priority=True)
         bids: list[BookLevel] = []
         asks: list[BookLevel] = []
         bb = data.get("best_bid") or {}
@@ -90,7 +86,7 @@ class AevoExchange(AbstractExchange):
         return Book(
             exchange=self.name,
             instrument=instrument.normalized_name,
-            ts=datetime.now(tz=timezone.utc),
+            ts=datetime.now(tz=UTC),
             bids=bids,
             asks=asks,
         )
@@ -110,12 +106,14 @@ class AevoExchange(AbstractExchange):
             return TickerUpdate(
                 exchange=self.name,
                 instrument=instrument_name,
-                ts=datetime.now(tz=timezone.utc),
+                ts=datetime.now(tz=UTC),
                 bid_price=Decimal(str(bb["price"])) if bb.get("price") else None,
                 ask_price=Decimal(str(ba["price"])) if ba.get("price") else None,
                 bid_size=Decimal(str(bb.get("amount") or 0)) or None,
                 ask_size=Decimal(str(ba.get("amount") or 0)) or None,
-                underlying_price=Decimal(str(data["index_price"])) if data.get("index_price") else None,
+                underlying_price=Decimal(str(data["index_price"]))
+                if data.get("index_price")
+                else None,
             )
         except (KeyError, ValueError) as e:
             log.debug("skip malformed aevo ticker: %s", e)

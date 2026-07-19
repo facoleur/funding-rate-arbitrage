@@ -1,0 +1,36 @@
+exclude: \.env$
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-json
+        exclude: frontend/tsconfig.*\.json$
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.12.2
+    hooks:
+      - id: ruff-format
+        files: ^backend/
+      - id: ruff
+        args: [--fix]
+        files: ^backend/
+
+  - repo: local
+    hooks:
+      - id: frontend-lint-staged
+        name: frontend eslint
+        entry: bash -c 'cd frontend && npx lint-staged'
+        language: system
+        pass_filenames: false
+        files: ^frontend/.*\.(ts|tsx)$
+
+      - id: frontend-tsc
+        name: frontend typecheck
+        entry: bash -c 'cd frontend && npx tsc --noEmit'
+        language: system
+        pass_filenames: false
+        files: ^frontend/.*\.(ts|tsx)$

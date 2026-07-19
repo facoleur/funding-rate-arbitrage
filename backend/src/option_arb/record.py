@@ -4,7 +4,7 @@ import argparse
 import asyncio
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 from option_arb.config import load_config
@@ -39,7 +39,7 @@ async def record(
                 for inst in instruments:
                     try:
                         book = await ex.get_orderbook_l2(inst)
-                    except Exception as e:  # noqa: BLE001
+                    except Exception as e:
                         log.warning("skip %s: %s", inst.instrument_name, e)
                         continue
                     record_dict = _book_to_dict(inst, book)
@@ -69,13 +69,15 @@ def _book_to_dict(inst: Instrument, book) -> dict:
 
 async def _persist_snapshot(inst: Instrument, d: dict) -> None:
     async with get_session() as sess:
-        sess.add(BookSnapshot(
-            exchange=inst.exchange,
-            instrument=inst.normalized_name,
-            ts=datetime.fromisoformat(d["ts"]),
-            bids_json=json.dumps(d["bids"]),
-            asks_json=json.dumps(d["asks"]),
-        ))
+        sess.add(
+            BookSnapshot(
+                exchange=inst.exchange,
+                instrument=inst.normalized_name,
+                ts=datetime.fromisoformat(d["ts"]),
+                bids_json=json.dumps(d["bids"]),
+                asks_json=json.dumps(d["asks"]),
+            )
+        )
         await sess.commit()
 
 

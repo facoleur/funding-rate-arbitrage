@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter
 from sqlmodel import select
@@ -39,12 +39,12 @@ def _group_and_compute(rows: list[TickerState]) -> list[dict]:
     for instrument, tickers in by_instrument.items():
         sample = tickers[0]
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         stale_threshold = timedelta(seconds=60)
 
         exchanges: dict[str, dict] = {}
         for t in tickers:
-            ts = t.updated_at if t.updated_at.tzinfo else t.updated_at.replace(tzinfo=timezone.utc)
+            ts = t.updated_at if t.updated_at.tzinfo else t.updated_at.replace(tzinfo=UTC)
             is_stale = (now - ts) > stale_threshold
             exchanges[t.exchange] = {
                 "bid_price": t.bid_price,
@@ -64,7 +64,8 @@ def _group_and_compute(rows: list[TickerState]) -> list[dict]:
         sell_exchange = None
 
         valid = [
-            t for t in tickers
+            t
+            for t in tickers
             if t.bid_price and t.ask_price and t.bid_price > 0 and t.ask_price > 0
         ]
         # Try all cross-exchange pairs and pick the best gross spread
@@ -92,29 +93,33 @@ def _group_and_compute(rows: list[TickerState]) -> list[dict]:
                 ask_sz = best_buy_t.ask_size or 0.0
                 bid_sz = best_sell_t.bid_size or 0.0
                 tradeable_size = min(ask_sz, bid_sz)
-                max_profit_usd = round(net / 100 * (best_buy_t.ask_price or 0.0) * tradeable_size, 2)
+                max_profit_usd = round(
+                    net / 100 * (best_buy_t.ask_price or 0.0) * tradeable_size, 2
+                )
 
         latest_ts = max(t.updated_at for t in tickers)
         if latest_ts.tzinfo is None:
-            latest_ts = latest_ts.replace(tzinfo=timezone.utc)
+            latest_ts = latest_ts.replace(tzinfo=UTC)
 
-        out.append({
-            "instrument": instrument,
-            "underlying": sample.underlying,
-            "expiry": (
-                sample.expiry.isoformat()
-                if sample.expiry.tzinfo
-                else sample.expiry.replace(tzinfo=timezone.utc).isoformat()
-            ),
-            "strike": sample.strike,
-            "option_type": sample.option_type,
-            "exchanges": exchanges,
-            "gross_spread_pct": gross_spread_pct,
-            "net_spread_pct": net_spread_pct,
-            "buy_exchange": buy_exchange,
-            "sell_exchange": sell_exchange,
-            "max_profit_usd": max_profit_usd,
-            "updated_at": latest_ts.isoformat(),
-        })
+        out.append(
+            {
+                "instrument": instrument,
+                "underlying": sample.underlying,
+                "expiry": (
+                    sample.expiry.isoformat()
+                    if sample.expiry.tzinfo
+                    else sample.expiry.replace(tzinfo=UTC).isoformat()
+                ),
+                "strike": sample.strike,
+                "option_type": sample.option_type,
+                "exchanges": exchanges,
+                "gross_spread_pct": gross_spread_pct,
+                "net_spread_pct": net_spread_pct,
+                "buy_exchange": buy_exchange,
+                "sell_exchange": sell_exchange,
+                "max_profit_usd": max_profit_usd,
+                "updated_at": latest_ts.isoformat(),
+            }
+        )
 
     return out

@@ -79,9 +79,7 @@ class RestClient:
 
         normal_rate = max(1, rate_limit_per_sec - priority_reserve_per_sec)
         self._normal_limiter = AsyncLimiter(max_rate=normal_rate, time_period=1.0)
-        self._priority_limiter = AsyncLimiter(
-            max_rate=priority_reserve_per_sec, time_period=1.0
-        )
+        self._priority_limiter = AsyncLimiter(max_rate=priority_reserve_per_sec, time_period=1.0)
 
         self._breaker = CircuitBreaker()
         self._client = httpx.AsyncClient(
@@ -116,7 +114,7 @@ class RestClient:
             async with limiter:
                 try:
                     resp = await self._client.request(method, path, **kwargs)
-                except (httpx.TimeoutException, httpx.TransportError) as e:
+                except (httpx.TimeoutException, httpx.TransportError):
                     self._breaker.record_failure()
                     if attempt >= self.max_retries:
                         raise

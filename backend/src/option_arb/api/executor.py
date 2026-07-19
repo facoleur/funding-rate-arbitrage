@@ -29,13 +29,18 @@ async def state() -> dict:
 
     today_midnight = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     async with get_session() as sess:
-        open_count = (await sess.execute(
-            select(func.count()).select_from(Trade).where(Trade.status.in_(ACTIVE_TRADE_STATES))  # type: ignore[attr-defined]
-        )).scalar_one()
-        daily_pnl = (await sess.execute(
-            select(func.coalesce(func.sum(Trade.net_pnl_usd), 0.0))
-            .where(Trade.opened_at >= today_midnight)
-        )).scalar_one()
+        open_count = (
+            await sess.execute(
+                select(func.count()).select_from(Trade).where(Trade.status.in_(ACTIVE_TRADE_STATES))  # type: ignore[attr-defined]
+            )
+        ).scalar_one()
+        daily_pnl = (
+            await sess.execute(
+                select(func.coalesce(func.sum(Trade.net_pnl_usd), 0.0)).where(
+                    Trade.opened_at >= today_midnight
+                )
+            )
+        ).scalar_one()
 
     return {
         "status": "KILLED" if killed else "RUNNING",

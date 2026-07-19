@@ -32,7 +32,9 @@ async def get_trade(trade_id: int) -> dict:
         row = (await sess.execute(select(Trade).where(Trade.id == trade_id))).scalar_one_or_none()
         if row is None:
             raise HTTPException(404, "not found")
-        orders = list((await sess.execute(select(Order).where(Order.trade_id == trade_id))).scalars())
+        orders = list(
+            (await sess.execute(select(Order).where(Order.trade_id == trade_id))).scalars()
+        )
     return {**_serialize(row), "orders": [_serialize_order(o) for o in orders]}
 
 

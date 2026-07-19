@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -51,26 +51,29 @@ class MockExchange(AbstractExchange):
         for i in instruments:
             self._instruments[i.instrument_name] = i
 
-    async def list_instruments(
-        self, underlying: str, max_expiries_ahead: int
-    ) -> list[Instrument]:
+    async def list_instruments(self, underlying: str, max_expiries_ahead: int) -> list[Instrument]:
         if self.upstream is not None:
             instruments = await self.upstream.list_instruments(underlying, max_expiries_ahead)
             # cache them so `place_order` can look them up later
             for inst in instruments:
                 self._instruments[inst.instrument_name] = inst
             return instruments
-        return [
-            i for i in self._instruments.values() if i.underlying == underlying.upper()
-        ][: max_expiries_ahead * 4]
+        return [i for i in self._instruments.values() if i.underlying == underlying.upper()][
+            : max_expiries_ahead * 4
+        ]
 
     async def get_orderbook_l2(self, instrument: Instrument) -> Book:
         if instrument.instrument_name in self._books:
             return self._books[instrument.instrument_name]
         if self.upstream is not None:
             return await self.upstream.get_orderbook_l2(instrument)
-        return Book(exchange=self.name, instrument=instrument.normalized_name,
-                    ts=datetime.now(timezone.utc), bids=[], asks=[])
+        return Book(
+            exchange=self.name,
+            instrument=instrument.normalized_name,
+            ts=datetime.now(UTC),
+            bids=[],
+            asks=[],
+        )
 
     def ws_channels(self, instruments: list[Instrument]) -> list[str]:
         # Proxy to upstream so WsManager subscribes to the real venue in
@@ -107,12 +110,14 @@ class MockExchange(AbstractExchange):
         return []
 
 
-def make_book(exchange: str, instrument: str, bids: list[tuple[str, str]], asks: list[tuple[str, str]]) -> Book:
+def make_book(
+    exchange: str, instrument: str, bids: list[tuple[str, str]], asks: list[tuple[str, str]]
+) -> Book:
     """Helper for tests / manual replay."""
     return Book(
         exchange=exchange,
         instrument=instrument,
-        ts=datetime.now(timezone.utc),
+        ts=datetime.now(UTC),
         bids=[BookLevel(price=Decimal(p), size=Decimal(s)) for p, s in bids],
         asks=[BookLevel(price=Decimal(p), size=Decimal(s)) for p, s in asks],
     )

@@ -29,12 +29,14 @@ async def stream(request: Request) -> EventSourceResponse:
                     continue
                 yield {
                     "event": event.type,
-                    "data": json.dumps({
-                        "level": event.level,
-                        "message": event.message,
-                        "ts": event.ts.isoformat(),
-                        "payload": event.payload,
-                    }),
+                    "data": json.dumps(
+                        {
+                            "level": event.level,
+                            "message": event.message,
+                            "ts": event.ts.isoformat(),
+                            "payload": event.payload,
+                        }
+                    ),
                 }
         finally:
             bus.unsubscribe(q)

@@ -1,19 +1,19 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 
 import sqlalchemy as sa
 from sqlmodel import Field, SQLModel
 
 
-class Mode(str, Enum):
+class Mode(StrEnum):
     LIVE = "live"
     PAPER = "paper"
     BACKTEST = "backtest"
 
 
-class OpportunityStatus(str, Enum):
+class OpportunityStatus(StrEnum):
     PENDING = "PENDING"
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
@@ -21,7 +21,7 @@ class OpportunityStatus(str, Enum):
     EXPIRED = "EXPIRED"
 
 
-class TradeStatus(str, Enum):
+class TradeStatus(StrEnum):
     PLACING = "PLACING"
     LEG1_FILLED = "LEG1_FILLED"
     LEG2_FILLED = "LEG2_FILLED"
@@ -32,7 +32,7 @@ class TradeStatus(str, Enum):
     FAILED = "FAILED"
 
 
-class OrderStatus(str, Enum):
+class OrderStatus(StrEnum):
     PLACING = "PLACING"
     FILLED = "FILLED"
     PARTIAL = "PARTIAL"
@@ -40,29 +40,29 @@ class OrderStatus(str, Enum):
     CANCELLED = "CANCELLED"
 
 
-class OrderKind(str, Enum):
+class OrderKind(StrEnum):
     IOC_LIMIT = "ioc_limit"
     MARKET_OUT = "market_out"
 
 
-class Side(str, Enum):
+class Side(StrEnum):
     BUY = "BUY"
     SELL = "SELL"
 
 
-class WsStatus(str, Enum):
+class WsStatus(StrEnum):
     CONNECTED = "CONNECTED"
     RECONNECTING = "RECONNECTING"
     UNHEALTHY = "UNHEALTHY"
 
 
-class RestStatus(str, Enum):
+class RestStatus(StrEnum):
     OK = "OK"
     RATE_LIMITED = "RATE_LIMITED"
     DOWN = "DOWN"
 
 
-class AlertLevel(str, Enum):
+class AlertLevel(StrEnum):
     INFO = "info"
     WARN = "warn"
     ERROR = "error"
@@ -216,9 +216,7 @@ class TickerState(SQLModel, table=True):
     ask_size: float | None = None
     underlying_price: float | None = None
     taker_fee_rate: float
-    updated_at: datetime = Field(
-        sa_column=sa.Column(sa.DateTime(timezone=True), nullable=False)
-    )
+    updated_at: datetime = Field(sa_column=sa.Column(sa.DateTime(timezone=True), nullable=False))
 
 
 class BookSnapshot(SQLModel, table=True):
@@ -227,6 +225,8 @@ class BookSnapshot(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     exchange: str = Field(index=True)
     instrument: str = Field(index=True)
-    ts: datetime = Field(sa_column=sa.Column(sa.DateTime(timezone=True), nullable=False, index=True))
+    ts: datetime = Field(
+        sa_column=sa.Column(sa.DateTime(timezone=True), nullable=False, index=True)
+    )
     bids_json: str
     asks_json: str

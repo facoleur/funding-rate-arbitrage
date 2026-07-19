@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import signal
 
@@ -17,7 +18,9 @@ log = logging.getLogger(__name__)
 
 
 async def _amain() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
     log.info("worker booting…")
 
     await init_db()
@@ -31,7 +34,7 @@ async def _amain() -> None:
         for name, ex in exchanges.items():
             try:
                 instruments = await ex.list_instruments(underlying, cfg.screener.max_expiries_ahead)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 log.warning("bootstrap %s/%s failed: %s", name, underlying, e)
                 continue
             cache.register_instruments(instruments)
@@ -55,10 +58,8 @@ async def _amain() -> None:
 
     loop = asyncio.get_event_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
+        with contextlib.suppress(NotImplementedError):
             loop.add_signal_handler(sig, _shutdown)
-        except NotImplementedError:
-            pass
 
     tasks = [
         asyncio.create_task(screener.run(), name="screener"),

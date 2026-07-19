@@ -87,7 +87,9 @@ async def backtest(file: Path) -> Report:
         return Report(0, 0, 0, 0, 0, 0.0, 0.0)
 
     exchanges_names = sorted({s["exchange"] for s in snaps})
-    slippage = SlippageModel(noise_stdev_bps=5, reject_prob=0.02, latency_min_sec=0, latency_max_sec=0.01)
+    slippage = SlippageModel(
+        noise_stdev_bps=5, reject_prob=0.02, latency_min_sec=0, latency_max_sec=0.01
+    )
     exchanges: dict[str, MockExchange] = {
         name: MockExchange(name, slippage=slippage) for name in exchanges_names
     }
@@ -112,23 +114,25 @@ async def backtest(file: Path) -> Report:
         exchanges[snap["exchange"]].set_book(snap["instrument"], book)
         top_bid = book.top_bid
         top_ask = book.top_ask
-        cache.update(TickerUpdate(
-            exchange=snap["exchange"],
-            instrument=snap["instrument"],
-            ts=book.ts,
-            bid_price=top_bid.price if top_bid else None,
-            bid_size=top_bid.size if top_bid else None,
-            ask_price=top_ask.price if top_ask else None,
-            ask_size=top_ask.size if top_ask else None,
-        ))
+        cache.update(
+            TickerUpdate(
+                exchange=snap["exchange"],
+                instrument=snap["instrument"],
+                ts=book.ts,
+                bid_price=top_bid.price if top_bid else None,
+                bid_size=top_bid.size if top_bid else None,
+                ask_price=top_ask.price if top_ask else None,
+                ask_size=top_ask.size if top_ask else None,
+            )
+        )
         await screener._tick()
         await executor._tick()
 
     # Build the report from DB (only backtest-tagged rows)
     async with get_session() as sess:
-        trades = list((await sess.execute(
-            select(Trade).where(Trade.mode == Mode.BACKTEST)
-        )).scalars())
+        trades = list(
+            (await sess.execute(select(Trade).where(Trade.mode == Mode.BACKTEST))).scalars()
+        )
 
     filled = [t for t in trades if t.status == TradeStatus.FILLED]
     hedged = [t for t in trades if t.status == TradeStatus.HEDGED]
@@ -148,7 +152,9 @@ async def backtest(file: Path) -> Report:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
-    ap = argparse.ArgumentParser(description="Replay recorded books through screener + mock executor.")
+    ap = argparse.ArgumentParser(
+        description="Replay recorded books through screener + mock executor."
+    )
     ap.add_argument("--file", type=Path, required=True)
     args = ap.parse_args()
 

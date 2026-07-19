@@ -44,12 +44,12 @@ ACTIVE_TRADE_STATES = (
 
 class Executor:
     """State machine per PENDING opportunity:
-      1. kill-switches
-      2. fresh REST L2 refetch on both venues
-      3. walk book → recompute walked_size + APR net of slippage
-      4. place both IOC limits in parallel
-      5. handle {both filled | single leg | none}
-      6. persist every transition to trades + orders
+    1. kill-switches
+    2. fresh REST L2 refetch on both venues
+    3. walk book → recompute walked_size + APR net of slippage
+    4. place both IOC limits in parallel
+    5. handle {both filled | single leg | none}
+    6. persist every transition to trades + orders
     """
 
     def __init__(
@@ -72,7 +72,7 @@ class Executor:
         while not self._stop.is_set():
             try:
                 await self._tick()
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 log.exception("executor tick failed: %s", e)
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=interval)
@@ -87,7 +87,9 @@ class Executor:
 
     async def _tick(self) -> None:
         async with get_session() as sess:
-            stmt = select(Opportunity).where(Opportunity.status == OpportunityStatus.PENDING).limit(20)
+            stmt = (
+                select(Opportunity).where(Opportunity.status == OpportunityStatus.PENDING).limit(20)
+            )
             pending = list((await sess.execute(stmt)).scalars())
         for opp in pending:
             await self._process(opp)
@@ -97,11 +99,14 @@ class Executor:
         killed_reason = await self._kill_switch_check()
         if killed_reason:
             await self._reject(opp, killed_reason)
-            await bus.publish(Event(
-                type="kill_switch_tripped", level="warn",
-                message=f"opp {opp.id} rejected: {killed_reason}",
-                payload={"opportunity_id": opp.id},
-            ))
+            await bus.publish(
+                Event(
+                    type="kill_switch_tripped",
+                    level="warn",
+                    message=f"opp {opp.id} rejected: {killed_reason}",
+                    payload={"opportunity_id": opp.id},
+                )
+            )
             return
 
         # 2. fresh L2 refetch — parallel
@@ -125,7 +130,7 @@ class Executor:
                 ),
                 timeout=timeout,
             )
-        except (TimeoutError, Exception) as e:  # noqa: BLE001
+        except (TimeoutError, Exception) as e:
             await self._reject(opp, f"stale_book:{type(e).__name__}")
             return
 
@@ -157,11 +162,14 @@ class Executor:
             await sess.commit()
             await sess.refresh(trade)
 
-        await bus.publish(Event(
-            type="trade_opened", level="info",
-            message=f"trade {trade.id} placing {walked_size} {opp.instrument}",
-            payload={"trade_id": trade.id, "opportunity_id": opp.id},
-        ))
+        await bus.publish(
+            Event(
+                type="trade_opened",
+                level="info",
+                message=f"trade {trade.id} placing {walked_size} {opp.instrument}",
+                payload={"trade_id": trade.id, "opportunity_id": opp.id},
+            )
+        )
 
         # 4. place both IOC limits in parallel
         slip = Decimal(str(self.config.executor.max_slippage_pct)) / Decimal(100)
@@ -169,19 +177,28 @@ class Executor:
         sell_limit = walked_bid * (Decimal(1) - slip)
 
         buy_req = OrderRequest(
-            exchange=opp.buy_from, instrument=buy_inst.instrument_name,
-            side="BUY", size=walked_size, limit_price=buy_limit, time_in_force="IOC",
+            exchange=opp.buy_from,
+            instrument=buy_inst.instrument_name,
+            side="BUY",
+            size=walked_size,
+            limit_price=buy_limit,
+            time_in_force="IOC",
         )
         sell_req = OrderRequest(
-            exchange=opp.sell_to, instrument=sell_inst.instrument_name,
-            side="SELL", size=walked_size, limit_price=sell_limit, time_in_force="IOC",
+            exchange=opp.sell_to,
+            instrument=sell_inst.instrument_name,
+            side="SELL",
+            size=walked_size,
+            limit_price=sell_limit,
+            time_in_force="IOC",
         )
 
         buy_order = await self._create_order(trade.id, buy_req, OrderKind.IOC_LIMIT)
         sell_order = await self._create_order(trade.id, sell_req, OrderKind.IOC_LIMIT)
 
         buy_res, sell_res = await asyncio.gather(
-            buy_ex.place_order(buy_req), sell_ex.place_order(sell_req),
+            buy_ex.place_order(buy_req),
+            sell_ex.place_order(sell_req),
             return_exceptions=True,
         )
         if isinstance(buy_res, BaseException):
@@ -211,17 +228,24 @@ class Executor:
             return "kill_switch_file"
 
         async with get_session() as sess:
-            open_count = (await sess.execute(
-                select(func.count()).select_from(Trade).where(Trade.status.in_(ACTIVE_TRADE_STATES))  # type: ignore[attr-defined]
-            )).scalar_one()
+            open_count = (
+                await sess.execute(
+                    select(func.count())
+                    .select_from(Trade)
+                    .where(Trade.status.in_(ACTIVE_TRADE_STATES))  # type: ignore[attr-defined]
+                )
+            ).scalar_one()
             if open_count >= limits.max_positions_open:
                 return f"max_positions_open({open_count})"
 
             midnight = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-            daily_pnl = (await sess.execute(
-                select(func.coalesce(func.sum(Trade.net_pnl_usd), 0.0))
-                .where(Trade.opened_at >= midnight)
-            )).scalar_one()
+            daily_pnl = (
+                await sess.execute(
+                    select(func.coalesce(func.sum(Trade.net_pnl_usd), 0.0)).where(
+                        Trade.opened_at >= midnight
+                    )
+                )
+            ).scalar_one()
             if float(daily_pnl or 0) <= -limits.max_daily_loss_usd:
                 return f"max_daily_loss({daily_pnl:.2f})"
 
@@ -308,7 +332,9 @@ class Executor:
             order = await sess.get(Order, order_id)
             if not order:
                 return
-            order.status = OrderStatus(res.status if res.status in {s.value for s in OrderStatus} else "REJECTED")
+            order.status = OrderStatus(
+                res.status if res.status in {s.value for s in OrderStatus} else "REJECTED"
+            )
             order.filled_price = float(res.filled_price) if res.filled_price else None
             order.filled_size = float(res.filled_size) if res.filled_size else None
             order.exchange_order_id = res.exchange_order_id
@@ -319,7 +345,10 @@ class Executor:
     async def _finalize_filled(
         self, trade_id: int, opp: Opportunity, buy_res: OrderResult, sell_res: OrderResult
     ) -> None:
-        pnl = float(sell_res.filled_size * sell_res.filled_price - buy_res.filled_size * buy_res.filled_price)
+        pnl = float(
+            sell_res.filled_size * sell_res.filled_price
+            - buy_res.filled_size * buy_res.filled_price
+        )
         async with get_session() as sess:
             trade = await sess.get(Trade, trade_id)
             opp_row = await sess.get(Opportunity, opp.id)
@@ -333,11 +362,14 @@ class Executor:
                 trade.net_pnl_usd = pnl
                 opp_row.status = OpportunityStatus.EXECUTED
                 await sess.commit()
-        await bus.publish(Event(
-            type="trade_filled", level="info",
-            message=f"trade {trade_id} filled pnl=${pnl:.2f}",
-            payload={"trade_id": trade_id, "pnl_usd": pnl},
-        ))
+        await bus.publish(
+            Event(
+                type="trade_filled",
+                level="info",
+                message=f"trade {trade_id} filled pnl=${pnl:.2f}",
+                payload={"trade_id": trade_id, "pnl_usd": pnl},
+            )
+        )
 
     async def _finalize_failed(
         self, trade_id: int, opp: Opportunity, buy_res: OrderResult, sell_res: OrderResult
@@ -352,11 +384,14 @@ class Executor:
                 opp_row.status = OpportunityStatus.REJECTED
                 opp_row.rejection_reason = "both_legs_failed"
                 await sess.commit()
-        await bus.publish(Event(
-            type="trade_failed", level="info",
-            message=f"trade {trade_id} failed: both legs rejected",
-            payload={"trade_id": trade_id},
-        ))
+        await bus.publish(
+            Event(
+                type="trade_failed",
+                level="info",
+                message=f"trade {trade_id} failed: both legs rejected",
+                payload={"trade_id": trade_id},
+            )
+        )
 
     async def _market_out(
         self,
@@ -394,28 +429,32 @@ class Executor:
         ex = self.exchanges[ex_name]
         try:
             book = await ex.get_orderbook_l2(inst)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             await self._mark_stuck(trade.id, f"market_out_book_fetch: {e}")
             return
 
         mid = _mid_or(entry_price, book)
         limit = mid * (Decimal("0.95") if side == "SELL" else Decimal("1.05"))
-        req = OrderRequest(exchange=ex_name, instrument=inst.instrument_name,
-                           side=side, size=filled_size, limit_price=limit, time_in_force="IOC")
+        req = OrderRequest(
+            exchange=ex_name,
+            instrument=inst.instrument_name,
+            side=side,
+            size=filled_size,
+            limit_price=limit,
+            time_in_force="IOC",
+        )
         order_row = await self._create_order(trade.id, req, OrderKind.MARKET_OUT)
         try:
             res = await ex.place_order(req)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             res = OrderResult(status="REJECTED", reason=str(e))
         await self._update_order(order_row.id, res)
 
         if res.status in ("FILLED", "PARTIAL") and res.filled_size > 0:
             # compute hedge PnL
             hedge_pnl = float((res.filled_price - entry_price) * res.filled_size)
-            if side == "SELL":
-                pnl = hedge_pnl  # we bought at entry_price and sold at res.filled_price
-            else:
-                pnl = -hedge_pnl  # we sold at entry_price and bought back at res.filled_price
+            # SELL: bought at entry, sold at filled → positive; BUY hedge: reversed
+            pnl = hedge_pnl if side == "SELL" else -hedge_pnl
             async with get_session() as sess:
                 t = await sess.get(Trade, trade.id)
                 opp_row = await sess.get(Opportunity, opp.id)
@@ -426,11 +465,14 @@ class Executor:
                     t.error = "single_leg_hedged"
                     opp_row.status = OpportunityStatus.EXECUTED
                     await sess.commit()
-            await bus.publish(Event(
-                type="trade_filled", level="warn",
-                message=f"trade {trade.id} hedged pnl=${pnl:.2f}",
-                payload={"trade_id": trade.id, "pnl_usd": pnl, "hedged": True},
-            ))
+            await bus.publish(
+                Event(
+                    type="trade_filled",
+                    level="warn",
+                    message=f"trade {trade.id} hedged pnl=${pnl:.2f}",
+                    payload={"trade_id": trade.id, "pnl_usd": pnl, "hedged": True},
+                )
+            )
         else:
             await self._mark_stuck(trade.id, f"market_out_rejected:{res.reason}")
 
@@ -441,14 +483,18 @@ class Executor:
                 t.status = TradeStatus.STUCK
                 t.error = reason
                 await sess.commit()
-        await bus.publish(Event(
-            type="trade_stuck", level="error",
-            message=f"trade {trade_id} STUCK: {reason} — MANUAL INTERVENTION REQUIRED",
-            payload={"trade_id": trade_id, "reason": reason},
-        ))
+        await bus.publish(
+            Event(
+                type="trade_stuck",
+                level="error",
+                message=f"trade {trade_id} STUCK: {reason} — MANUAL INTERVENTION REQUIRED",
+                payload={"trade_id": trade_id, "reason": reason},
+            )
+        )
 
 
 # ---------- helpers ----------
+
 
 def _walk(size: Decimal, levels: list[BookLevel]) -> tuple[Decimal, Decimal]:
     if not levels or size <= 0:
@@ -494,11 +540,13 @@ def _mid_or(fallback: Decimal, book: Book) -> Decimal:
 
 # ---------- entry-point for executor container ----------
 
+
 async def _amain() -> None:
     logging.basicConfig(level=logging.INFO)
     await init_db()
     cfg = load_config()
     from option_arb.exchanges.registry import build_exchanges, close_exchanges
+
     exchanges = build_exchanges(cfg)
     try:
         exec_ = Executor(cfg, exchanges)

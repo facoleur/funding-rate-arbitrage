@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from option_arb.exchanges.naming import normalize_deribit, normalize_from_parts
@@ -15,7 +15,7 @@ def _q(exchange: str, bid: str, ask: str, qty: str = "10", fee: str = "0.0003") 
         underlying="BTC",
         strike=Decimal("30000"),
         option_type="C",
-        expiry=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        expiry=datetime(2026, 1, 1, tzinfo=UTC),
         taker_fee_rate=Decimal(fee),
         bid_price=Decimal(bid),
         bid_qty=Decimal(qty),
@@ -32,7 +32,7 @@ def test_normalize_deribit() -> None:
 def test_normalize_from_parts() -> None:
     name = normalize_from_parts(
         "BTC",
-        datetime(2025, 10, 25, tzinfo=timezone.utc),
+        datetime(2025, 10, 25, tzinfo=UTC),
         Decimal("30000"),
         "C",
     )
@@ -48,9 +48,9 @@ def test_group_by_instrument() -> None:
 
 
 def test_spread_detected_when_cross_venue_and_positive_net() -> None:
-    now = datetime(2025, 1, 1, tzinfo=timezone.utc)
-    a = _q("derive", "100", "101")     # ask 101
-    b = _q("deribit", "110", "112")    # bid 110 → spread = (110-101)/101 ≈ 8.91%
+    now = datetime(2025, 1, 1, tzinfo=UTC)
+    a = _q("derive", "100", "101")  # ask 101
+    b = _q("deribit", "110", "112")  # bid 110 → spread = (110-101)/101 ≈ 8.91%
     spreads = compare_options([[a, b]], now=now)
     assert len(spreads) == 1
     s = spreads[0]
@@ -84,7 +84,7 @@ def test_fees_erase_thin_spread() -> None:
 
 
 def test_apr_scales_with_time_to_expiry() -> None:
-    now = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    now = datetime(2025, 1, 1, tzinfo=UTC)
     exp_soon = now + timedelta(days=1)
     exp_later = now + timedelta(days=365)
 

@@ -28,7 +28,9 @@ async def list_opportunities(
 @router.get("/{opp_id}")
 async def get_opportunity(opp_id: int) -> dict:
     async with get_session() as sess:
-        row = (await sess.execute(select(Opportunity).where(Opportunity.id == opp_id))).scalar_one_or_none()
+        row = (
+            await sess.execute(select(Opportunity).where(Opportunity.id == opp_id))
+        ).scalar_one_or_none()
     if row is None:
         raise HTTPException(404, "not found")
     return _serialize(row)

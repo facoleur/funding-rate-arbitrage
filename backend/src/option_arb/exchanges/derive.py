@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -43,9 +43,7 @@ class DeriveExchange(AbstractExchange):
         # already limits notional per trade so this is a backstop)
         self.default_max_fee_usdc: Decimal = Decimal("1000")
 
-    async def list_instruments(
-        self, underlying: str, max_expiries_ahead: int
-    ) -> list[Instrument]:
+    async def list_instruments(self, underlying: str, max_expiries_ahead: int) -> list[Instrument]:
         resp = await self.rest.post(
             "public/get_instruments",
             json={
@@ -66,7 +64,7 @@ class DeriveExchange(AbstractExchange):
         for ts in keep_ts:
             for inst in by_expiry[ts]:
                 details = inst["option_details"]
-                expiry = datetime.fromtimestamp(ts, tz=timezone.utc)
+                expiry = datetime.fromtimestamp(ts, tz=UTC)
                 strike = Decimal(str(details["strike"]))
                 opt_type = "C" if details["option_type"] in ("call", "C") else "P"
                 name = inst["instrument_name"]
@@ -87,7 +85,9 @@ class DeriveExchange(AbstractExchange):
                         maker_fee_rate=Decimal(str(inst.get("maker_fee_rate", "0"))),
                         taker_fee_rate=Decimal(str(inst.get("taker_fee_rate", "0"))),
                         asset_address=inst.get("base_asset_address"),
-                        asset_sub_id=int(inst["base_asset_sub_id"]) if inst.get("base_asset_sub_id") is not None else None,
+                        asset_sub_id=int(inst["base_asset_sub_id"])
+                        if inst.get("base_asset_sub_id") is not None
+                        else None,
                     )
                 )
         return out
@@ -108,15 +108,37 @@ class DeriveExchange(AbstractExchange):
                 priority=True,
             )
             r_book = book["result"]
-            bids = [BookLevel(price=Decimal(str(p)), size=Decimal(str(s))) for p, s in r_book["bids"]]
-            asks = [BookLevel(price=Decimal(str(p)), size=Decimal(str(s))) for p, s in r_book["asks"]]
+            bids = [
+                BookLevel(price=Decimal(str(p)), size=Decimal(str(s))) for p, s in r_book["bids"]
+            ]
+            asks = [
+                BookLevel(price=Decimal(str(p)), size=Decimal(str(s))) for p, s in r_book["asks"]
+            ]
         except Exception:
-            bids = [BookLevel(price=Decimal(str(r["best_bid_price"])), size=Decimal(str(r["best_bid_amount"])))] if r.get("best_bid_price") else []
-            asks = [BookLevel(price=Decimal(str(r["best_ask_price"])), size=Decimal(str(r["best_ask_amount"])))] if r.get("best_ask_price") else []
+            bids = (
+                [
+                    BookLevel(
+                        price=Decimal(str(r["best_bid_price"])),
+                        size=Decimal(str(r["best_bid_amount"])),
+                    )
+                ]
+                if r.get("best_bid_price")
+                else []
+            )
+            asks = (
+                [
+                    BookLevel(
+                        price=Decimal(str(r["best_ask_price"])),
+                        size=Decimal(str(r["best_ask_amount"])),
+                    )
+                ]
+                if r.get("best_ask_price")
+                else []
+            )
         return Book(
             exchange=self.name,
             instrument=instrument.normalized_name,
-            ts=datetime.now(tz=timezone.utc),
+            ts=datetime.now(tz=UTC),
             bids=bids,
             asks=asks,
         )
@@ -140,15 +162,15 @@ class DeriveExchange(AbstractExchange):
         data = params.get("data") or {}
         ticker = data.get("instrument_ticker") or {}
         try:
-            bid_px = ticker.get("b")   # bid price (string)
-            ask_px = ticker.get("a")   # ask price (string)
-            bid_sz = ticker.get("B")   # bid size (string)
-            ask_sz = ticker.get("A")   # ask size (string)
+            bid_px = ticker.get("b")  # bid price (string)
+            ask_px = ticker.get("a")  # ask price (string)
+            bid_sz = ticker.get("B")  # bid size (string)
+            ask_sz = ticker.get("A")  # ask size (string)
             underlying = ticker.get("I")  # index/underlying price (string)
             return TickerUpdate(
                 exchange=self.name,
                 instrument=instrument_name,
-                ts=datetime.now(tz=timezone.utc),
+                ts=datetime.now(tz=UTC),
                 bid_price=Decimal(str(bid_px)) if bid_px else None,
                 ask_price=Decimal(str(ask_px)) if ask_px else None,
                 bid_size=Decimal(str(bid_sz)) if bid_sz else None,
@@ -178,7 +200,7 @@ class DeriveExchange(AbstractExchange):
                 max_fee=self.default_max_fee_usdc,
                 is_bid=(order.side == "BUY"),
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             return OrderResult(status="REJECTED", reason=f"derive_sign_failed:{e}")
 
         body = {
@@ -192,8 +214,10 @@ class DeriveExchange(AbstractExchange):
 
         try:
             sig = await self.auth.sign_rest("POST", "/private/order", body)
-            resp = await self.rest.post("/private/order", json=body, headers=sig.headers, priority=True)
-        except Exception as e:  # noqa: BLE001
+            resp = await self.rest.post(
+                "/private/order", json=body, headers=sig.headers, priority=True
+            )
+        except Exception as e:
             return OrderResult(status="REJECTED", reason=str(e))
 
         return self._parse_order_response(resp)
@@ -227,12 +251,15 @@ class DeriveExchange(AbstractExchange):
             sig = await self.auth.sign_rest("POST", "/private/cancel", {})
             await self.rest.post(
                 "/private/cancel",
-                json={"order_id": exchange_order_id, "subaccount_id": getattr(self.auth, "subaccount_id", 0)},
+                json={
+                    "order_id": exchange_order_id,
+                    "subaccount_id": getattr(self.auth, "subaccount_id", 0),
+                },
                 headers=sig.headers,
                 priority=True,
             )
             return True
-        except Exception:  # noqa: BLE001
+        except Exception:
             return False
 
     async def get_balance_usd(self) -> Decimal:
@@ -247,7 +274,7 @@ class DeriveExchange(AbstractExchange):
             )
             r = resp.get("result") or {}
             return Decimal(str(r.get("collaterals_value") or 0))
-        except Exception:  # noqa: BLE001
+        except Exception:
             return Decimal(0)
 
     async def get_positions(self) -> list[dict[str, Any]]:
@@ -261,5 +288,5 @@ class DeriveExchange(AbstractExchange):
                 headers=sig.headers,
             )
             return list(resp.get("result") or [])
-        except Exception:  # noqa: BLE001
+        except Exception:
             return []
