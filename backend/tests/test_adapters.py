@@ -96,6 +96,38 @@ def test_normalize_deribit_various_shapes() -> None:
     assert normalize_deribit("BTC-1JAN26-30000-C") == "BTC-20260101-30000-C"
     # ETH put
     assert normalize_deribit("ETH-15DEC25-4000-P") == "ETH-20251215-4000-P"
+    # linear USDC — _USDC stripped, same canonical name as inverse
+    assert normalize_deribit("BTC_USDC-25OCT25-30000-C") == "BTC-20251025-30000-C"
+    assert normalize_deribit("ETH_USDC-15DEC25-4000-P") == "ETH-20251215-4000-P"
+
+
+def test_deribit_linear_name_and_no_price_multiplication() -> None:
+    ex = DeribitExchange(_rest_stub(), linear=True)
+    assert ex.name == "deribit_linear"
+
+    raw = {
+        "jsonrpc": "2.0",
+        "method": "subscription",
+        "params": {
+            "channel": "ticker.BTC_USDC-25OCT25-30000-C.100ms",
+            "data": {
+                "instrument_name": "BTC_USDC-25OCT25-30000-C",
+                "underlying_price": 60000.0,
+                # linear prices are already in USD — must NOT be multiplied
+                "best_bid_price": 3000.0,
+                "best_ask_price": 3600.0,
+                "best_bid_amount": 1.5,
+                "best_ask_amount": 2.0,
+                "timestamp": 1_700_000_000_000,
+            },
+        },
+    }
+    upd = ex.parse_ws_message(raw)
+    assert upd is not None
+    assert upd.exchange == "deribit_linear"
+    assert upd.instrument == "BTC-20251025-30000-C"
+    assert upd.bid_price == Decimal("3000.0")  # no 60000
+    assert upd.ask_price == Decimal("3600.0")
 
 
 # ---------- place_order should REJECT cleanly when no auth ----------

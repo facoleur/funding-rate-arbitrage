@@ -22,8 +22,10 @@ def _build_real_exchange(name: str, ex_cfg: ExchangeConfig, network: str) -> Abs
         rate_limit_per_sec=ex_cfg.rest_rate_limit_per_sec,
     )
     auth = build_authenticator(name, settings, network=network)
-    if name == "deribit":
-        return DeribitExchange(rest, ws_url=ex_cfg.ws_url, auth=auth)
+    if name in ("deribit", "deribit_linear"):
+        return DeribitExchange(
+            rest, ws_url=ex_cfg.ws_url, auth=auth, linear=(name == "deribit_linear")
+        )
     if name == "derive":
         return DeriveExchange(rest, ws_url=ex_cfg.ws_url, auth=auth)
     if name == "aevo":

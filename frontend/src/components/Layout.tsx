@@ -1,5 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { useSSE } from '../hooks/useSSE'
+import { fetchStatus } from '../api/status'
 
 const links = [
   { to: '/', label: 'Opportunités', end: true },
@@ -9,8 +11,27 @@ const links = [
   { to: '/executor', label: 'Executor' },
 ]
 
+function Dot({ on, pulse }: { on: boolean; pulse?: boolean }) {
+  return (
+    <span
+      className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${
+        on ? 'bg-emerald-500' : 'bg-red-500'
+      } ${pulse ? 'animate-pulse' : ''}`}
+    />
+  )
+}
+
 export default function Layout() {
   const sseStatus = useSSE()
+  const { data: appStatus } = useQuery({
+    queryKey: ['status'],
+    queryFn: fetchStatus,
+    refetchInterval: 10_000,
+    retry: false,
+  })
+
+  const executorRunning = appStatus?.executor === 'RUNNING'
+  const mode = appStatus?.mode
 
   return (
     <div className="flex h-screen bg-zinc-950 text-zinc-100">
@@ -38,17 +59,39 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
-        <div className="mt-auto px-4 flex items-center gap-2">
-          <span
-            className={`h-2 w-2 rounded-full ${
-              sseStatus === 'connected'
-                ? 'bg-emerald-500'
-                : sseStatus === 'connecting'
-                  ? 'bg-yellow-500 animate-pulse'
-                  : 'bg-red-500'
-            }`}
-          />
-          <span className="text-xs text-zinc-500">SSE</span>
+
+        <div className="mt-auto px-4 space-y-2">
+          {/* SSE */}
+          <div className="flex items-center gap-2">
+            <Dot
+              on={sseStatus === 'connected'}
+              pulse={sseStatus === 'connecting'}
+            />
+            <span className="text-xs text-zinc-500">SSE</span>
+          </div>
+
+          {/* Executor */}
+          {appStatus && (
+            <div className="flex items-center gap-2">
+              <Dot on={executorRunning} />
+              <span className={`text-xs ${executorRunning ? 'text-zinc-400' : 'text-red-400'}`}>
+                {executorRunning ? 'Executor' : 'KILLED'}
+                {mode && <span className="text-zinc-600"> · {mode}</span>}
+              </span>
+            </div>
+          )}
+
+          {/* WS par exchange */}
+          {appStatus &&
+            Object.entries(appStatus.exchanges).map(([name, ex]) => (
+              <div key={name} className="flex items-center gap-2">
+                <Dot on={ex.live} />
+                <span className="text-xs text-zinc-600">
+                  {name}
+                  <span className="ml-1 text-zinc-700">{ex.instruments}</span>
+                </span>
+              </div>
+            ))}
         </div>
       </aside>
       <main className="flex-1 overflow-auto p-6">

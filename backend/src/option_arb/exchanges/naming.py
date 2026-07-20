@@ -19,7 +19,7 @@ _MONTHS = {
     "DEC": "12",
 }
 
-_DERIBIT_RE = re.compile(r"^([A-Z]+)-(\d{1,2})([A-Z]{3})(\d{2})-(\d+)-(C|P)$")
+_DERIBIT_RE = re.compile(r"^([A-Z]+)(?:_USDC)?-(\d{1,2})([A-Z]{3})(\d{2})-(\d+)-(C|P)$")
 
 
 def normalize_deribit(instrument: str) -> str:

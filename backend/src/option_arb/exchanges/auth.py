@@ -265,7 +265,7 @@ def build_authenticator(exchange: str, settings: Any, network: str = "testnet") 
     """Return the right Authenticator for an exchange given app settings.
     If credentials are missing → returns NoAuth (public-only mode)."""
     ex = exchange.lower()
-    if ex == "deribit":
+    if ex in ("deribit", "deribit_linear"):
         if not settings.deribit_client_id or not settings.deribit_client_secret:
             return NoAuth()
         return DeribitOAuth(settings.deribit_client_id, settings.deribit_client_secret)

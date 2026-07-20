@@ -34,11 +34,14 @@ class DeribitExchange(AbstractExchange):
         rest: RestClient,
         ws_url: str = "wss://www.deribit.com/ws/api/v2",
         auth: Authenticator | None = None,
+        linear: bool = False,
     ) -> None:
         self.rest = rest
         self.ws_url = ws_url
         self.auth = auth or NoAuth()
-        # If the auth is DeribitOAuth, bind the /public/auth call so it can refresh tokens.
+        self._linear = linear
+        if linear:
+            self.name = "deribit_linear"
         if isinstance(self.auth, DeribitOAuth):
             self.auth.bind_auth_call(self._call_public_auth)
 
@@ -68,9 +71,10 @@ class DeribitExchange(AbstractExchange):
         return resp["result"]
 
     async def list_instruments(self, underlying: str, max_expiries_ahead: int) -> list[Instrument]:
+        currency = f"{underlying.upper()}_USDC" if self._linear else underlying.upper()
         result = await self._rpc(
             "public/get_instruments",
-            {"currency": underlying.upper(), "kind": "option", "expired": False},
+            {"currency": currency, "kind": "option", "expired": False},
         )
 
         by_expiry: dict[int, list[dict[str, Any]]] = {}
@@ -108,16 +112,17 @@ class DeribitExchange(AbstractExchange):
             priority=True,
         )
         underlying_px = Decimal(str(ticker["underlying_price"]))
+        multiplier = Decimal("1") if self._linear else underlying_px
         return Book(
             exchange=self.name,
             instrument=instrument.normalized_name,
             ts=datetime.fromtimestamp(ticker["timestamp"] / 1000, tz=UTC),
             bids=[
-                BookLevel(price=Decimal(str(p)) * underlying_px, size=Decimal(str(s)))
+                BookLevel(price=Decimal(str(p)) * multiplier, size=Decimal(str(s)))
                 for p, s in ticker["bids"]
             ],
             asks=[
-                BookLevel(price=Decimal(str(p)) * underlying_px, size=Decimal(str(s)))
+                BookLevel(price=Decimal(str(p)) * multiplier, size=Decimal(str(s)))
                 for p, s in ticker["asks"]
             ],
         )
@@ -142,14 +147,15 @@ class DeribitExchange(AbstractExchange):
                     data.get("underlying_price"),
                 )
                 return None
+            multiplier = Decimal("1") if self._linear else underlying_px
             best_bid = data.get("best_bid_price") or 0
             best_ask = data.get("best_ask_price") or 0
             return TickerUpdate(
                 exchange=self.name,
                 instrument=normalize_deribit(instrument_name),
                 ts=datetime.fromtimestamp(data["timestamp"] / 1000, tz=UTC),
-                bid_price=Decimal(str(best_bid)) * underlying_px if best_bid else None,
-                ask_price=Decimal(str(best_ask)) * underlying_px if best_ask else None,
+                bid_price=Decimal(str(best_bid)) * multiplier if best_bid else None,
+                ask_price=Decimal(str(best_ask)) * multiplier if best_ask else None,
                 bid_size=Decimal(str(data.get("best_bid_amount") or 0)) or None,
                 ask_size=Decimal(str(data.get("best_ask_amount") or 0)) or None,
                 underlying_price=underlying_px,

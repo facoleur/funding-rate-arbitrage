@@ -1,7 +1,7 @@
 screener:
   poll_interval_ms: 500
   underlyings: ["BTC", "ETH"]
-  exchanges: ["derive", "deribit"]
+  exchanges: ["derive", "deribit", "deribit_linear"]
   max_expiries_ahead: 8
   metadata_refresh_hours: 6
 
@@ -31,6 +31,13 @@ rebalancer:
 
 exchanges:
   deribit:
+    network: mainnet
+    rest_rate_limit_per_sec: 20
+    ws_max_subscriptions: 500
+    rest_base_url: https://www.deribit.com/api/v2
+    ws_url: wss://www.deribit.com/ws/api/v2
+
+  deribit_linear:
     network: mainnet
     rest_rate_limit_per_sec: 20
     ws_max_subscriptions: 500
