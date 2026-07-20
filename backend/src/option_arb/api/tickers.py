@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter
@@ -24,6 +24,8 @@ async def list_tickers(
         col(TickerState.strike),
         col(TickerState.exchange),
     )
+    today = date.today()
+    stmt = stmt.where(TickerState.expiry >= today)
     if underlying:
         stmt = stmt.where(TickerState.underlying == underlying)
     if exchange:

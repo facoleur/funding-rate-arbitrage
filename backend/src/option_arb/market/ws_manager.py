@@ -88,6 +88,7 @@ class WsManager:
                     url,
                     ping_interval=self._ping_interval_sec,
                     ping_timeout=self._ping_timeout_sec,
+                    max_size=2**23,  # 8MB — Deribit ack for 974 channels dépasse 32KB par défaut
                 ) as ws:
                     state.connected = True
                     state.reconnect_attempts = 0
@@ -147,24 +148,26 @@ class WsManager:
     ) -> None:
         if not channels:
             return
-        # Deribit uses JSON-RPC; Derive similar; Aevo uses `op:subscribe`.
-        # We send both shapes — the server ignores unknown formats.
-        if exchange == "deribit":
-            payload = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "public/subscribe",
-                "params": {"channels": channels},
-            }
-        elif exchange == "derive":
-            payload = {
-                "method": "subscribe",
-                "params": {"channels": channels},
-                "id": "1",
-            }
-        else:  # aevo & fallback
-            payload = {"op": "subscribe", "data": channels}
-        await ws.send(json.dumps(payload))
+        # Deribit rejects messages >32KB — split into batches of 200 channels.
+        batch_size = 200 if exchange == "deribit" else len(channels)
+        for i in range(0, len(channels), batch_size):
+            batch = channels[i : i + batch_size]
+            if exchange == "deribit":
+                payload = {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "public/subscribe",
+                    "params": {"channels": batch},
+                }
+            elif exchange == "derive":
+                payload = {
+                    "method": "subscribe",
+                    "params": {"channels": batch},
+                    "id": "1",
+                }
+            else:  # aevo & fallback
+                payload = {"op": "subscribe", "data": batch}
+            await ws.send(json.dumps(payload))
         log.info("subscribed %d channels on %s", len(channels), exchange)
 
     async def add_subscription(self, exchange: str, channel: str) -> None:

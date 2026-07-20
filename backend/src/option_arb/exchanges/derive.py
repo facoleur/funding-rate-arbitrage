@@ -287,6 +287,9 @@ class DeriveExchange(AbstractExchange):
                 json={"subaccount_id": self.auth.subaccount_id},
                 headers=sig.headers,
             )
-            return list(resp.get("result") or [])
+            result = resp.get("result") or {}
+            if isinstance(result, dict):
+                return list(result.get("positions") or [])
+            return list(result)
         except Exception:
             return []

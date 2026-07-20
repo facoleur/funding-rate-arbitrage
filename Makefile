@@ -32,6 +32,9 @@ live: ## Start stack in LIVE trading mode (requires typed confirmation)
 
 # ---------- Local dev ----------
 
+dev: ## Start full local dev stack with hot reload
+	docker compose -f docker-compose.dev.yml up --build
+
 db: ## Start only Postgres
 	docker compose up -d postgres
 
@@ -91,5 +94,5 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 .PHONY: up prod release down logs live db db-shell dev-api dev-worker dev-executor \
-        migrate migrate-new test lint format typecheck record backtest \
+        dev migrate migrate-new test lint format typecheck record backtest \
         kill resume help

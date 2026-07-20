@@ -8,76 +8,71 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_dev_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U option_arb"]
       interval: 5s
       timeout: 3s
       retries: 10
-    restart: unless-stopped
 
   migrate:
     build:
       context: ./backend
-    command: alembic upgrade head
     environment:
       DATABASE_URL: postgresql+asyncpg://option_arb:option_arb@postgres:5432/option_arb
-      ALEMBIC_DATABASE_URL: ""
-    volumes:
-      - ./data:/data
-      - ./config.yaml:/app/config.yaml:ro
-    env_file: .env
     depends_on:
       postgres:
         condition: service_healthy
+    command: alembic upgrade head
     restart: "no"
 
   api:
     build:
       context: ./backend
-    command: uvicorn option_arb.main:app --host 0.0.0.0 --port 8000
     environment:
       DATABASE_URL: postgresql+asyncpg://option_arb:option_arb@postgres:5432/option_arb
+      CONFIG_PATH: /app/config.yaml
+    volumes:
+      - ./backend/src:/app/src   # hot reload
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/data
+      - backend_venv:/app/.venv  # préserve le .venv de l'image
     ports:
       - "127.0.0.1:8001:8000"
-    volumes:
-      - ./data:/data
-      - ./config.yaml:/app/config.yaml:ro
-    env_file: .env
     depends_on:
       migrate:
         condition: service_completed_successfully
+    command: uvicorn option_arb.main:app --host 0.0.0.0 --port 8000 --reload
     restart: unless-stopped
 
   workers:
     build:
       context: ./backend
-    command: python -m option_arb.worker
     environment:
       DATABASE_URL: postgresql+asyncpg://option_arb:option_arb@postgres:5432/option_arb
+      CONFIG_PATH: /app/config.yaml
     volumes:
-      - ./data:/data
+      - ./backend/src:/app/src   # hot reload
       - ./config.yaml:/app/config.yaml:ro
-    env_file: .env
+      - ./data:/data
+      - backend_venv:/app/.venv
     depends_on:
       migrate:
         condition: service_completed_successfully
+    command: python -m watchfiles "python -m option_arb.worker" /app/src
     restart: unless-stopped
 
-  executor:
-    build:
-      context: ./backend
-    command: python -m option_arb.services.executor
-    environment:
-      DATABASE_URL: postgresql+asyncpg://option_arb:option_arb@postgres:5432/option_arb
+  frontend:
+    image: node:22-alpine
+    working_dir: /app
     volumes:
-      - ./data:/data
-      - ./config.yaml:/app/config.yaml:ro
-    env_file: .env
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-    restart: unless-stopped
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    ports:
+      - "127.0.0.1:5173:5173"
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
 
 volumes:
-  postgres_data:
+  postgres_dev_data:
+  backend_venv:
+  frontend_node_modules:
