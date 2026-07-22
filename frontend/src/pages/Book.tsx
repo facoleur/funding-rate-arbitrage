@@ -55,6 +55,7 @@ function deriveUrl(instrument: string): string {
 
 const EXCHANGE_ABBR: Record<string, string> = {
   deribit: 'Db',
+  deribit_linear: 'DL',
   derive: 'Dr',
 }
 
@@ -252,6 +253,9 @@ export default function Book() {
                         <span>{row.instrument}</span>
                         {row.exchanges['deribit'] && dUrl && (
                           <ExchangeLink href={dUrl} label="Deribit" />
+                        )}
+                        {row.exchanges['deribit_linear'] && dUrl && (
+                          <ExchangeLink href={dUrl} label="deribit_linear" />
                         )}
                         {row.exchanges['derive'] && (
                           <ExchangeLink href={deriveUrl(row.instrument)} label="Derive" />

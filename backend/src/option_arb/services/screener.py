@@ -111,12 +111,17 @@ class Screener:
 
     async def _tick(self) -> None:
         await self._flush_tickers(self.cache.snapshot())
+        now = datetime.now(UTC)
         by_name = self.cache.by_normalized_name()
         groups: list[list[Quote]] = []
         for _, tickers in by_name.items():
             if len(tickers) < 2:
                 continue  # need at least 2 venues to compare
-            quotes = [q for q in (_cached_to_quote(t) for t in tickers) if q is not None]
+            quotes = [
+                q
+                for q in (_cached_to_quote(t) for t in tickers)
+                if q is not None and q.expiry > now
+            ]
             if len(quotes) >= 2:
                 groups.append(quotes)
 

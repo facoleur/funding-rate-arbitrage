@@ -23,6 +23,7 @@ class _ConnState:
     subscriptions: set[str] = field(default_factory=set)
     connected: bool = False
     reconnect_attempts: int = 0
+    ack_total: int = 0
 
 
 class WsManager:
@@ -120,16 +121,16 @@ class WsManager:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
                 continue
-            # Log subscription acknowledgements to detect silently dropped channels
+            # Log subscription acknowledgements (batched — each ACK covers one batch)
             if "result" in msg and isinstance(msg.get("result"), list) and msg.get("id") == 1:
                 subscribed = msg["result"]
-                expected = len(self._states[exchange].subscriptions)
-                log.info("ws %s: subscribe ack %d/%d channels", exchange, len(subscribed), expected)
-                if len(subscribed) < expected:
-                    log.warning(
-                        "ws %s: %d channels silently dropped by server (limit exceeded?)",
+                state = self._states[exchange]
+                state.ack_total += len(subscribed)
+                if state.ack_total >= len(state.subscriptions):
+                    log.info(
+                        "ws %s: all %d channels confirmed",
                         exchange,
-                        expected - len(subscribed),
+                        state.ack_total,
                     )
                 continue
             update = ex.parse_ws_message(msg)
@@ -149,7 +150,7 @@ class WsManager:
         if not channels:
             return
         # Deribit rejects messages >32KB — split into batches of 200 channels.
-        batch_size = 200 if exchange == "deribit" else len(channels)
+        batch_size = 200 if exchange.startswith("deribit") else len(channels)
         for i in range(0, len(channels), batch_size):
             batch = channels[i : i + batch_size]
             if exchange == "deribit":

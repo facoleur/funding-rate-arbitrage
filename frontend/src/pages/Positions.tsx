@@ -29,17 +29,32 @@ function ExchangeCard({
       </div>
 
       <div className="mb-4 grid grid-cols-3 gap-3 text-xs">
-        <div>
-          <p className="text-zinc-500">Balance USD</p>
-          <p className="text-lg font-medium text-zinc-100">${ex.balance_usd.toFixed(2)}</p>
+        <div className="col-span-2">
+          <p className="text-zinc-500 mb-1">Balances</p>
+          {Object.keys(ex.balances).length === 0 ? (
+            <p className="text-zinc-600 italic">—</p>
+          ) : (
+            <div className="flex flex-col gap-0.5">
+              {Object.entries(ex.balances).map(([token, amount]) => (
+                <div key={token} className="flex items-baseline gap-1.5">
+                  <span className="text-zinc-400 uppercase tracking-wide text-[10px]">{token}</span>
+                  <span className="text-base font-medium text-zinc-100 tabular-nums">
+                    {amount < 1 ? amount.toFixed(6) : amount.toFixed(2)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-        <div>
-          <p className="text-zinc-500">Margin used</p>
-          <p className="text-lg font-medium text-zinc-100">${ex.margin_used_usd.toFixed(2)}</p>
-        </div>
-        <div>
-          <p className="text-zinc-500">Positions</p>
-          <p className="text-lg font-medium text-zinc-100">{ownPositions.length}</p>
+        <div className="flex flex-col gap-2">
+          <div>
+            <p className="text-zinc-500">Margin used</p>
+            <p className="text-lg font-medium text-zinc-100">${ex.margin_used_usd.toFixed(2)}</p>
+          </div>
+          <div>
+            <p className="text-zinc-500">Positions</p>
+            <p className="text-lg font-medium text-zinc-100">{ownPositions.length}</p>
+          </div>
         </div>
       </div>
 

@@ -103,8 +103,8 @@ class MockExchange(AbstractExchange):
     async def cancel_order(self, exchange_order_id: str) -> bool:
         return True
 
-    async def get_balance_usd(self) -> Decimal:
-        return Decimal(10_000)  # arbitrary paper balance
+    async def get_balances(self) -> dict[str, Decimal]:
+        return {"USDC": Decimal(10_000)}
 
     async def get_positions(self) -> list[dict[str, Any]]:
         return []

@@ -118,7 +118,9 @@ class AbstractExchange(ABC):
     async def cancel_order(self, exchange_order_id: str) -> bool: ...
 
     @abstractmethod
-    async def get_balance_usd(self) -> Decimal: ...
+    async def get_balances(self) -> dict[str, Decimal]:
+        """Return per-token balances, e.g. {"BTC": Decimal("0.05"), "USDC": Decimal("50")}."""
+        ...
 
     @abstractmethod
     async def get_positions(self) -> list[dict[str, Any]]:

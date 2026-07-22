@@ -131,8 +131,8 @@ class DeribitOAuth(Authenticator):
 
     async def sign_rest(self, method: str, path: str, body: dict[str, Any] | None) -> RestSignature:
         token = await self._ensure_token()
-        # Deribit accepts token either via Authorization header or via body param
-        return RestSignature(headers={"Authorization": f"Bearer {token}"})
+        # Deribit JSON-RPC: include access_token in the params object (body_extra)
+        return RestSignature(body_extra={"access_token": token})
 
     async def authenticate_ws(self, ws: Any) -> None:
         # For Deribit WS: send public/auth as JSON-RPC and wait for the reply.

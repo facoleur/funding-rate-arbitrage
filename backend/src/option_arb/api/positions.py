@@ -37,6 +37,7 @@ async def list_exchange_state() -> list[dict[str, Any]]:
         {
             "exchange": e.exchange,
             "balance_usd": e.balance_usd,
+            "balances": e.balances or {},
             "margin_used_usd": e.margin_used_usd,
             "ws_status": e.ws_status.value,
             "rest_status": e.rest_status.value,

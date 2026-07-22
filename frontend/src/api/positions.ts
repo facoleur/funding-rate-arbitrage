@@ -13,6 +13,7 @@ export interface Position {
 export interface ExchangeState {
   exchange: string
   balance_usd: number
+  balances: Record<string, number>
   margin_used_usd: number
   ws_status: 'CONNECTED' | 'RECONNECTING' | 'UNHEALTHY'
   rest_status: 'OK' | 'RATE_LIMITED' | 'DOWN'

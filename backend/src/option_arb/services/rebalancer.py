@@ -54,7 +54,7 @@ class Rebalancer:
 
         for name, ex in self.exchanges.items():
             try:
-                balance = await ex.get_balance_usd()
+                balances = await ex.get_balances()
                 positions = await ex.get_positions()
             except Exception as e:
                 log.warning("rebalancer fetch failed for %s: %s", name, e)
@@ -69,15 +69,19 @@ class Rebalancer:
                 )
                 continue
 
-            await self._upsert_exchange_state(name, float(balance))
+            # balance_usd = USDC only (no forced conversion of BTC/ETH)
+            balance_usd = float(balances.get("USDC", 0))
+            await self._upsert_exchange_state(
+                name, balance_usd, {k: float(v) for k, v in balances.items()}
+            )
 
-            if float(balance) < threshold:
+            if threshold > 0 and balance_usd > 0 and balance_usd < threshold:
                 await bus.publish(
                     Event(
                         type="balance_low",
                         level="warn",
-                        message=f"{name} balance ${float(balance):.2f} < ${threshold}",
-                        payload={"exchange": name, "balance_usd": float(balance)},
+                        message=f"{name} USDC ${balance_usd:.2f} < ${threshold}",
+                        payload={"exchange": name, "balance_usd": balance_usd},
                     )
                 )
 
@@ -96,7 +100,9 @@ class Rebalancer:
                             )
                         )
 
-    async def _upsert_exchange_state(self, exchange: str, balance_usd: float) -> None:
+    async def _upsert_exchange_state(
+        self, exchange: str, balance_usd: float, balances: dict[str, float]
+    ) -> None:
         async with get_session() as sess:
             existing = await sess.get(ExchangeState, exchange)
             if existing is None:
@@ -104,6 +110,7 @@ class Rebalancer:
                     ExchangeState(
                         exchange=exchange,
                         balance_usd=balance_usd,
+                        balances=balances,
                         ws_status=WsStatus.CONNECTED,
                         rest_status=RestStatus.OK,
                         updated_at=datetime.now(UTC),
@@ -111,6 +118,7 @@ class Rebalancer:
                 )
             else:
                 existing.balance_usd = balance_usd
+                existing.balances = balances
                 existing.rest_status = RestStatus.OK
                 existing.updated_at = datetime.now(UTC)
             await sess.commit()

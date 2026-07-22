@@ -71,11 +71,18 @@ class DeribitExchange(AbstractExchange):
         return resp["result"]
 
     async def list_instruments(self, underlying: str, max_expiries_ahead: int) -> list[Instrument]:
-        currency = f"{underlying.upper()}_USDC" if self._linear else underlying.upper()
-        result = await self._rpc(
-            "public/get_instruments",
-            {"currency": currency, "kind": "option", "expired": False},
-        )
+        if self._linear:
+            result = await self._rpc(
+                "public/get_instruments",
+                {"currency": "USDC", "kind": "option", "expired": False},
+            )
+            prefix = f"{underlying.upper()}_USDC-"
+            result = [inst for inst in result if inst["instrument_name"].startswith(prefix)]
+        else:
+            result = await self._rpc(
+                "public/get_instruments",
+                {"currency": underlying.upper(), "kind": "option", "expired": False},
+            )
 
         by_expiry: dict[int, list[dict[str, Any]]] = {}
         for inst in result:
@@ -194,23 +201,34 @@ class DeribitExchange(AbstractExchange):
         except Exception:
             return False
 
-    async def get_balance_usd(self) -> Decimal:
+    async def get_balances(self) -> dict[str, Decimal]:
         if isinstance(self.auth, NoAuth):
-            return Decimal(0)
-        try:
-            res = await self._rpc("private/get_account_summary", {"currency": "USDC"})
-            return Decimal(str(res.get("equity", 0)))
-        except Exception:
-            return Decimal(0)
+            return {}
+        currencies = ["USDC"] if self._linear else ["BTC", "ETH"]
+        out: dict[str, Decimal] = {}
+        for currency in currencies:
+            try:
+                res = await self._rpc("private/get_account_summary", {"currency": currency})
+                out[currency] = Decimal(str(res.get("equity", 0)))
+            except Exception as e:
+                log.warning("deribit get_account_summary(%s) failed: %s", currency, e)
+        return out
 
     async def get_positions(self) -> list[dict[str, Any]]:
         if isinstance(self.auth, NoAuth):
             return []
-        try:
-            res = await self._rpc("private/get_positions", {"currency": "USDC", "kind": "option"})
-            return list(res) if res else []
-        except Exception:
-            return []
+        currencies = ["USDC"] if self._linear else ["BTC", "ETH"]
+        positions: list[dict[str, Any]] = []
+        for currency in currencies:
+            try:
+                res = await self._rpc(
+                    "private/get_positions", {"currency": currency, "kind": "option"}
+                )
+                if res:
+                    positions.extend(res)
+            except Exception as e:
+                log.warning("deribit get_positions(%s) failed: %s", currency, e)
+        return positions
 
     @staticmethod
     def _parse_order_response(res: dict[str, Any]) -> OrderResult:

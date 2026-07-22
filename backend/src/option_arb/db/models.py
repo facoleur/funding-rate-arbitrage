@@ -178,6 +178,10 @@ class ExchangeState(SQLModel, table=True):
 
     exchange: str = Field(primary_key=True)
     balance_usd: float = 0.0
+    balances: dict[str, float] = Field(
+        default_factory=dict,
+        sa_column=sa.Column(sa.JSON, nullable=False, server_default="{}"),
+    )
     margin_used_usd: float = 0.0
     ws_status: WsStatus = WsStatus.RECONNECTING
     rest_status: RestStatus = RestStatus.OK

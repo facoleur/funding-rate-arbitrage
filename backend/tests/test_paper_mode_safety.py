@@ -70,8 +70,8 @@ class _SpyRealExchange(AbstractExchange):
         self.cancel_order_called += 1
         return True
 
-    async def get_balance_usd(self):
-        return Decimal(10_000)
+    async def get_balances(self) -> dict[str, Decimal]:
+        return {"USDC": Decimal(10_000)}
 
     async def get_positions(self):
         return []

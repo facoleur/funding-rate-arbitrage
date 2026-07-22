@@ -28,10 +28,10 @@ class _FakeEx(AbstractExchange):
         self._positions = positions
         self._raise = raise_
 
-    async def get_balance_usd(self) -> Decimal:
+    async def get_balances(self) -> dict[str, Decimal]:
         if self._raise:
             raise RuntimeError("down")
-        return Decimal(str(self._balance))
+        return {"USDC": Decimal(str(self._balance))}
 
     async def get_positions(self) -> list[dict[str, Any]]:
         if self._raise:

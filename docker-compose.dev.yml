@@ -32,6 +32,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://option_arb:option_arb@postgres:5432/option_arb
       CONFIG_PATH: /app/config.yaml
+    env_file: .env
     volumes:
       - ./backend/src:/app/src   # hot reload
       - ./config.yaml:/app/config.yaml:ro
@@ -51,6 +52,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://option_arb:option_arb@postgres:5432/option_arb
       CONFIG_PATH: /app/config.yaml
+    env_file: .env
     volumes:
       - ./backend/src:/app/src   # hot reload
       - ./config.yaml:/app/config.yaml:ro
@@ -60,6 +62,24 @@ services:
       migrate:
         condition: service_completed_successfully
     command: python -m watchfiles "python -m option_arb.worker" /app/src
+    restart: unless-stopped
+
+  executor:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://option_arb:option_arb@postgres:5432/option_arb
+      CONFIG_PATH: /app/config.yaml
+    env_file: .env
+    volumes:
+      - ./backend/src:/app/src
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/data
+      - backend_venv:/app/.venv
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: python -m watchfiles "python -m option_arb.services.executor" /app/src
     restart: unless-stopped
 
   frontend:

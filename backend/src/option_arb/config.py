@@ -123,6 +123,13 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         candidates.append(Path(path))
     else:
         candidates += [Path(settings.config_path), Path("config.yaml"), _REPO_ROOT / "config.yaml"]
+    if not path:
+        # config.local.yaml (gitignored) takes priority — safe for local overrides
+        candidates = [
+            Path("config.local.yaml"),
+            _REPO_ROOT / "config.local.yaml",
+            *candidates,
+        ]
     for cand in candidates:
         if cand.exists():
             with cand.open() as f:

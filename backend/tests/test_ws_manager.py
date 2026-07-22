@@ -56,8 +56,8 @@ class _FakeExchange(AbstractExchange):
     async def cancel_order(self, exchange_order_id: str) -> bool:
         return False
 
-    async def get_balance_usd(self) -> Decimal:
-        return Decimal(0)
+    async def get_balances(self) -> dict[str, Decimal]:
+        return {}
 
     async def get_positions(self) -> list[dict[str, Any]]:
         return []

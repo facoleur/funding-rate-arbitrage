@@ -262,9 +262,9 @@ class DeriveExchange(AbstractExchange):
         except Exception:
             return False
 
-    async def get_balance_usd(self) -> Decimal:
+    async def get_balances(self) -> dict[str, Decimal]:
         if isinstance(self.auth, NoAuth) or not isinstance(self.auth, DeriveAuth):
-            return Decimal(0)
+            return {}
         try:
             sig = await self.auth.sign_rest("POST", "/private/get_subaccount", {})
             resp = await self.rest.post(
@@ -273,9 +273,19 @@ class DeriveExchange(AbstractExchange):
                 headers=sig.headers,
             )
             r = resp.get("result") or {}
-            return Decimal(str(r.get("collaterals_value") or 0))
-        except Exception:
-            return Decimal(0)
+            collaterals = r.get("collaterals") or []
+            out: dict[str, Decimal] = {}
+            for col in collaterals:
+                asset = col.get("asset_name") or col.get("currency") or "USDC"
+                amount = Decimal(str(col.get("amount") or col.get("collateral_value") or 0))
+                out[asset] = out.get(asset, Decimal(0)) + amount
+            if not out:
+                total = Decimal(str(r.get("collaterals_value") or 0))
+                out["USDC"] = total
+            return out
+        except Exception as e:
+            log.warning("derive get_balances failed: %s", e)
+            return {}
 
     async def get_positions(self) -> list[dict[str, Any]]:
         if isinstance(self.auth, NoAuth) or not isinstance(self.auth, DeriveAuth):

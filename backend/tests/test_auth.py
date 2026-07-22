@@ -36,8 +36,8 @@ async def test_deribit_oauth_fetches_and_caches_token() -> None:
     sig1 = await auth.sign_rest("POST", "/private/buy", {})
     sig2 = await auth.sign_rest("POST", "/private/sell", {})
 
-    assert sig1.headers["Authorization"] == "Bearer tok_1"
-    assert sig2.headers["Authorization"] == "Bearer tok_1"  # cached
+    assert sig1.body_extra["access_token"] == "tok_1"
+    assert sig2.body_extra["access_token"] == "tok_1"  # cached
     assert len(calls) == 1
 
 
