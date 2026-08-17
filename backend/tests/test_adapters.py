@@ -74,21 +74,17 @@ def test_derive_parses_ws_ticker() -> None:
     assert upd.ask_price == Decimal("3105.0")
 
 
-def test_aevo_parses_ws_ticker() -> None:
+def test_aevo_ws_channels_empty() -> None:
+    # Aevo has no WS option ticker channels — REST polling is used instead.
     ex = AevoExchange(_rest_stub())
-    raw = {
-        "channel": "ticker:BTC-20260101-30000-C",
-        "data": {
-            "bid": {"price": "3100.5", "amount": "2.5"},
-            "ask": {"price": "3105.0", "amount": "1.0"},
-            "index_price": "60000.0",
-        },
-    }
-    upd = ex.parse_ws_message(raw)
-    assert upd is not None
-    assert upd.instrument == "BTC-20260101-30000-C"
-    assert upd.bid_price == Decimal("3100.5")
-    assert upd.ask_price == Decimal("3105.0")
+    assert ex.ws_channels([]) == []
+    assert ex.parse_ws_message({"channel": "ticker:BTC-20260101-30000-C", "data": {}}) is None
+
+
+def test_aevo_normalized_name() -> None:
+    # Aevo native name BTC-17AUG26-56000-C → canonical BTC-20260817-56000-C
+    assert normalize_deribit("BTC-17AUG26-56000-C") == "BTC-20260817-56000-C"
+    assert normalize_deribit("ETH-04SEP26-2000-P") == "ETH-20260904-2000-P"
 
 
 def test_normalize_deribit_various_shapes() -> None:

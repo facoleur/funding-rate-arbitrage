@@ -99,9 +99,9 @@ def _group_and_compute(rows: list[TickerState]) -> list[dict[str, Any]]:
                 ask_sz = best_buy_t.ask_size or 0.0
                 bid_sz = best_sell_t.bid_size or 0.0
                 tradeable_size = min(ask_sz, bid_sz)
-                max_profit_usd = round(
-                    net / 100 * (best_buy_t.ask_price or 0.0) * tradeable_size, 2
-                )
+                ask_price = best_buy_t.ask_price or 0.0
+                max_notional_usd = round(tradeable_size * ask_price, 2)
+                max_profit_usd = round(net / 100 * ask_price * tradeable_size, 2)
 
         latest_ts = max(t.updated_at for t in tickers)
         if latest_ts.tzinfo is None:
@@ -123,6 +123,7 @@ def _group_and_compute(rows: list[TickerState]) -> list[dict[str, Any]]:
                 "net_spread_pct": net_spread_pct,
                 "buy_exchange": buy_exchange,
                 "sell_exchange": sell_exchange,
+                "max_notional_usd": max_notional_usd if net_spread_pct is not None else None,
                 "max_profit_usd": max_profit_usd,
                 "updated_at": latest_ts.isoformat(),
             }

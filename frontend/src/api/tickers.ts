@@ -22,6 +22,7 @@ export interface BookRow {
   net_spread_pct: number | null
   buy_exchange: string | null
   sell_exchange: string | null
+  max_notional_usd: number | null
   max_profit_usd: number | null
   updated_at: string
 }

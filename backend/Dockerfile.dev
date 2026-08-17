@@ -4,7 +4,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     UV_LINK_MODE=copy \
-    UV_COMPILE_BYTECODE=1
+    PYTHONPATH=/app/src
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       curl ca-certificates libpq5 \
@@ -17,10 +17,4 @@ WORKDIR /app
 COPY pyproject.toml uv.lock* /app/
 RUN uv sync --frozen --no-install-project --no-dev 2>/dev/null || uv sync --no-install-project --no-dev
 
-COPY src /app/src
-COPY alembic.ini /app/alembic.ini
-RUN uv sync --no-dev
-
 ENV PATH="/app/.venv/bin:${PATH}"
-
-CMD ["uvicorn", "option_arb.main:app", "--host", "0.0.0.0", "--port", "8000"]

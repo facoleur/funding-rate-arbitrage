@@ -14,7 +14,7 @@ function fmtDate(iso: string) {
 }
 
 function PnL({ value }: { value: number | null }) {
-  if (value == null) return <span className="text-zinc-600">—</span>
+  if (value == null) return <span className="text-zinc-500">—</span>
   const cls = value >= 0 ? 'text-emerald-400' : 'text-red-400'
   return <span className={cls}>{value >= 0 ? '+' : ''}{value.toFixed(2)}</span>
 }
@@ -93,7 +93,7 @@ export default function Trades() {
               <tbody>
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={11} className="pt-4 text-center text-zinc-600">
+                    <td colSpan={11} className="pt-4 text-center text-zinc-500">
                       Aucun trade
                     </td>
                   </tr>

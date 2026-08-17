@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchTickers, type BookRow } from '../api/tickers'
 
-type SortCol = 'expiry' | 'strike' | 'gross' | 'net' | 'profit' | 'age'
+type SortCol = 'expiry' | 'strike' | 'gross' | 'net' | 'profit' | 'notional' | 'age'
 type SortDir = 'asc' | 'desc'
 
 function fmtExpiry(iso: string) {
@@ -21,7 +21,7 @@ function fmtAge(iso: string) {
 }
 
 function fmtPrice(v: number | null) {
-  if (v == null) return <span className="text-zinc-700">—</span>
+  if (v == null) return <span className="text-zinc-500">—</span>
   return <span>{v.toFixed(2)}</span>
 }
 
@@ -53,10 +53,17 @@ function deriveUrl(instrument: string): string {
   return `https://app.derive.xyz/trade/${instrument}`
 }
 
+function aevoUrl(instrument: string): string | null {
+  const dName = toDeribitInstrument(instrument)
+  if (!dName) return null
+  return `https://app.aevo.xyz/trade/${dName}`
+}
+
 const EXCHANGE_ABBR: Record<string, string> = {
   deribit: 'Db',
   deribit_linear: 'DL',
   derive: 'Dr',
+  aevo: 'Av',
 }
 
 function ExchangeLink({ href, label }: { href: string; label: string }) {
@@ -74,7 +81,7 @@ function ExchangeLink({ href, label }: { href: string; label: string }) {
 }
 
 function SortIcon({ col: _col, active, dir }: { col: string; active: boolean; dir: SortDir }) {
-  if (!active) return <span className="ml-1 text-zinc-700">↕</span>
+  if (!active) return <span className="ml-1 text-zinc-600">↕</span>
   return <span className="ml-1 text-zinc-300">{dir === 'asc' ? '↑' : '↓'}</span>
 }
 
@@ -103,6 +110,9 @@ function sortRows(rows: BookRow[], col: SortCol | null, dir: SortDir): BookRow[]
     } else if (col === 'profit') {
       av = a.max_profit_usd ?? -Infinity
       bv = b.max_profit_usd ?? -Infinity
+    } else if (col === 'notional') {
+      av = a.max_notional_usd ?? -Infinity
+      bv = b.max_notional_usd ?? -Infinity
     } else {
       av = new Date(a.updated_at).getTime()
       bv = new Date(b.updated_at).getTime()
@@ -136,7 +146,7 @@ export default function Book() {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
     } else {
       setSortCol(col)
-      setSortDir(col === 'net' || col === 'gross' || col === 'profit' ? 'desc' : 'asc')
+      setSortDir(col === 'net' || col === 'gross' || col === 'profit' || col === 'notional' ? 'desc' : 'asc')
     }
   }
 
@@ -190,7 +200,7 @@ export default function Book() {
         {sortCol && (
           <button
             onClick={() => setSortCol(null)}
-            className="text-xs text-zinc-600 hover:text-zinc-400"
+            className="text-xs text-zinc-400 hover:text-zinc-200"
           >
             Reset tri
           </button>
@@ -201,40 +211,41 @@ export default function Book() {
       {isError && <p className="text-xs text-red-400">Erreur de chargement</p>}
 
       {!isLoading && rows.length === 0 && !isError && (
-        <p className="text-xs text-zinc-600">
+        <p className="text-xs text-zinc-500">
           Aucune donnée. Attends ~1s après le démarrage du container workers.
         </p>
       )}
 
       {rows.length > 0 && (
         <div className="overflow-auto max-h-[calc(100vh-11rem)]">
-          <table className="w-full text-xs border-separate border-spacing-0">
+          <table className="w-full text-xs border-separate border-spacing-0 whitespace-nowrap">
             <thead className="sticky top-0 z-10 bg-zinc-950">
-              <tr className="border-b border-zinc-800 text-left text-zinc-500">
-                <th className="pb-2 pr-3">Instrument</th>
+              <tr className="border-b border-zinc-800 text-center text-zinc-500">
+                <th className="pb-2 pr-3 text-left sticky left-0 bg-zinc-950 z-20">Instrument</th>
                 {thSort('expiry', 'Expiry')}
-                {thSort('strike', 'Strike', 'text-right')}
+                {thSort('strike', 'Strike')}
                 <th className="pb-2 pr-3">Type</th>
                 {allExchanges.map((ex) => (
-                  <th key={ex} className="pb-2 pr-3 text-right" colSpan={2}>
+                  <th key={ex} className="pb-2 pr-3" colSpan={2}>
                     {ex}
                   </th>
                 ))}
-                {thSort('gross', 'Gross%', 'text-right')}
-                {thSort('net', 'Net%', 'text-right')}
-                {thSort('profit', 'Profit$', 'text-right')}
+                {thSort('gross', 'Gross%')}
+                {thSort('net', 'Net%')}
+                {thSort('notional', 'Cap. dispo$')}
+                {thSort('profit', 'Profit$')}
                 <th className="pb-2 pr-3">Arb</th>
                 {thSort('age', 'Age')}
               </tr>
-              <tr className="border-b border-zinc-800/50 text-zinc-600">
-                <th colSpan={4} />
+              <tr className="border-b border-zinc-800/50 text-center text-zinc-500">
+                <th className="sticky left-0 bg-zinc-950 z-20" /><th colSpan={3} />
                 {allExchanges.map((ex) => (
                   <>
-                    <th key={ex + '-bid'} className="pb-1 pr-2 text-right font-normal">bid</th>
-                    <th key={ex + '-ask'} className="pb-1 pr-3 text-right font-normal">ask</th>
+                    <th key={ex + '-bid'} className="pb-1 pr-2 font-normal">bid</th>
+                    <th key={ex + '-ask'} className="pb-1 pr-3 font-normal">ask</th>
                   </>
                 ))}
-                <th colSpan={5} />
+                <th colSpan={6} />
               </tr>
             </thead>
             <tbody>
@@ -242,13 +253,14 @@ export default function Book() {
                 const hasArb = row.net_spread_pct !== null && row.net_spread_pct > 0
                 const hasGross = row.gross_spread_pct !== null && row.gross_spread_pct > 0
                 const dUrl = deribitUrl(row.instrument, row.underlying)
+                const avUrl = aevoUrl(row.instrument)
 
                 return (
                   <tr
                     key={row.instrument}
                     className={`border-b border-zinc-800/40 ${hasArb ? 'bg-emerald-950/20' : ''}`}
                   >
-                    <td className="py-1 pr-3 font-medium text-zinc-200">
+                    <td className="py-1 pr-3 font-medium text-zinc-200 whitespace-nowrap sticky left-0 bg-zinc-950 z-10">
                       <div className="flex items-center gap-1.5">
                         <span>{row.instrument}</span>
                         {row.exchanges['deribit'] && dUrl && (
@@ -259,6 +271,9 @@ export default function Book() {
                         )}
                         {row.exchanges['derive'] && (
                           <ExchangeLink href={deriveUrl(row.instrument)} label="Derive" />
+                        )}
+                        {row.exchanges['aevo'] && avUrl && (
+                          <ExchangeLink href={avUrl} label="aevo" />
                         )}
                       </div>
                     </td>
@@ -283,7 +298,7 @@ export default function Book() {
                                 ? 'text-zinc-600'
                                 : isSellLeg
                                   ? 'text-emerald-300 font-semibold bg-emerald-950/40'
-                                  : 'text-emerald-400/60'
+                                  : 'text-emerald-400'
                             }`}
                             title={stale ? 'Données > 60s' : undefined}
                           >
@@ -298,7 +313,7 @@ export default function Book() {
                                 ? 'text-zinc-600'
                                 : isBuyLeg
                                   ? 'text-sky-300 font-semibold bg-sky-950/40'
-                                  : 'text-red-400/60'
+                                  : 'text-red-400'
                             }`}
                             title={stale ? 'Données > 60s' : undefined}
                           >
@@ -308,13 +323,16 @@ export default function Book() {
                         </>
                       )
                     })}
-                    <td className={`py-1 pr-3 text-right ${hasGross ? 'text-zinc-300' : 'text-zinc-600'}`}>
+                    <td className={`py-1 pr-3 text-right ${hasGross ? 'text-zinc-300' : 'text-zinc-500'}`}>
                       {row.gross_spread_pct !== null ? `${row.gross_spread_pct.toFixed(2)}%` : '—'}
                     </td>
-                    <td className={`py-1 pr-3 text-right font-medium ${hasArb ? 'text-emerald-400' : 'text-zinc-700'}`}>
+                    <td className={`py-1 pr-3 text-right font-medium ${hasArb ? 'text-emerald-400' : 'text-zinc-500'}`}>
                       {row.net_spread_pct !== null ? `${row.net_spread_pct.toFixed(2)}%` : '—'}
                     </td>
-                    <td className={`py-1 pr-3 text-right font-medium ${hasArb ? 'text-emerald-300' : 'text-zinc-700'}`}>
+                    <td className={`py-1 pr-3 text-right ${hasArb ? 'text-zinc-300' : 'text-zinc-600'}`}>
+                      {row.max_notional_usd !== null ? `$${row.max_notional_usd.toFixed(2)}` : '—'}
+                    </td>
+                    <td className={`py-1 pr-3 text-right font-medium ${hasArb ? 'text-emerald-300' : 'text-zinc-500'}`}>
                       {row.max_profit_usd !== null ? `$${row.max_profit_usd.toFixed(2)}` : '—'}
                     </td>
                     <td className="py-1 pr-3 text-xs text-zinc-500">
@@ -324,7 +342,7 @@ export default function Book() {
                         </span>
                       ) : '—'}
                     </td>
-                    <td className="py-1 text-zinc-600">{fmtAge(row.updated_at)}</td>
+                    <td className="py-1 text-zinc-500">{fmtAge(row.updated_at)}</td>
                   </tr>
                 )
               })}

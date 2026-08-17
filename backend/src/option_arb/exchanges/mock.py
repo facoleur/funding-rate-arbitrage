@@ -100,14 +100,24 @@ class MockExchange(AbstractExchange):
         book = await self.get_orderbook_l2(instrument)
         return await self.slippage.simulate(order, book)
 
+    async def poll_tickers(self, instruments: list[Instrument]) -> list[TickerUpdate]:
+        if self.upstream is not None and hasattr(self.upstream, "poll_tickers"):
+            result = await self.upstream.poll_tickers(instruments)
+            return list(result)
+        return []
+
     async def cancel_order(self, exchange_order_id: str) -> bool:
         return True
 
     async def get_balances(self) -> dict[str, Decimal]:
-        return {"USDC": Decimal(10_000)}
+        if self.upstream is None:
+            return {}
+        return await self.upstream.get_balances()
 
     async def get_positions(self) -> list[dict[str, Any]]:
-        return []
+        if self.upstream is None:
+            return []
+        return await self.upstream.get_positions()
 
 
 def make_book(

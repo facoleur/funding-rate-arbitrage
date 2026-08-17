@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -16,6 +17,7 @@ from option_arb.exchanges.base import (
     TickerUpdate,
 )
 from option_arb.exchanges.http import RestClient
+from option_arb.exchanges.naming import normalize_deribit
 
 log = logging.getLogger(__name__)
 
@@ -60,7 +62,7 @@ class AevoExchange(AbstractExchange):
                     Instrument(
                         exchange=self.name,
                         instrument_name=inst["instrument_name"],
-                        normalized_name=inst["instrument_name"],
+                        normalized_name=normalize_deribit(inst["instrument_name"]),
                         underlying=underlying.upper(),
                         expiry=expiry,
                         strike=strike,
@@ -92,32 +94,34 @@ class AevoExchange(AbstractExchange):
         )
 
     def ws_channels(self, instruments: list[Instrument]) -> list[str]:
-        return [f"ticker:{i.instrument_name}" for i in instruments]
+        # Aevo WS does not expose option ticker channels — REST polling used instead.
+        return []
 
     def parse_ws_message(self, raw: dict[str, Any]) -> TickerUpdate | None:
-        channel = raw.get("channel") or ""
-        if not channel.startswith("ticker:"):
-            return None
-        data = raw.get("data") or {}
-        instrument_name = channel.split(":", 1)[1]
-        try:
-            bb = data.get("bid") or {}
-            ba = data.get("ask") or {}
-            return TickerUpdate(
-                exchange=self.name,
-                instrument=instrument_name,
-                ts=datetime.now(tz=UTC),
-                bid_price=Decimal(str(bb["price"])) if bb.get("price") else None,
-                ask_price=Decimal(str(ba["price"])) if ba.get("price") else None,
-                bid_size=Decimal(str(bb.get("amount") or 0)) or None,
-                ask_size=Decimal(str(ba.get("amount") or 0)) or None,
-                underlying_price=Decimal(str(data["index_price"]))
-                if data.get("index_price")
-                else None,
-            )
-        except (KeyError, ValueError) as e:
-            log.debug("skip malformed aevo ticker: %s", e)
-            return None
+        return None
+
+    async def poll_tickers(self, instruments: list[Instrument]) -> list[TickerUpdate]:
+        """REST fallback: fetch top-of-book for all instruments concurrently."""
+        results = await asyncio.gather(
+            *[self._fetch_ticker(inst) for inst in instruments],
+            return_exceptions=True,
+        )
+        return [r for r in results if isinstance(r, TickerUpdate)]
+
+    async def _fetch_ticker(self, inst: Instrument) -> TickerUpdate:
+        data = await self.rest.get(f"/instrument/{inst.instrument_name}")
+        bb = data.get("best_bid") or {}
+        ba = data.get("best_ask") or {}
+        return TickerUpdate(
+            exchange=self.name,
+            instrument=inst.normalized_name,
+            ts=datetime.now(tz=UTC),
+            bid_price=Decimal(str(bb["price"])) if bb.get("price") else None,
+            ask_price=Decimal(str(ba["price"])) if ba.get("price") else None,
+            bid_size=Decimal(str(bb["amount"])) if bb.get("amount") else None,
+            ask_size=Decimal(str(ba["amount"])) if ba.get("amount") else None,
+            underlying_price=Decimal(str(data["index_price"])) if data.get("index_price") else None,
+        )
 
     async def place_order(self, order: OrderRequest) -> OrderResult:
         if isinstance(self.auth, NoAuth):

@@ -7,6 +7,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Literal
 
+import sqlalchemy as sa
 from sqlalchemy import func
 from sqlmodel import select
 
@@ -89,7 +90,11 @@ class Executor:
     async def _tick(self) -> None:
         async with get_session() as sess:
             stmt = (
-                select(Opportunity).where(Opportunity.status == OpportunityStatus.PENDING).limit(20)
+                select(Opportunity)
+                .where(Opportunity.status == OpportunityStatus.PENDING)
+                # prioritize by estimated gross profit in USD (notional * spread%)
+                .order_by(sa.text("max_notional_usd * spread_pct DESC"))
+                .limit(20)
             )
             pending = list((await sess.execute(stmt)).scalars())
         for opp in pending:
@@ -110,7 +115,14 @@ class Executor:
             )
             return
 
-        # 2. fresh L2 refetch — parallel
+        # 2. trade_enabled check per exchange
+        for ex_name in (opp.buy_from, opp.sell_to):
+            ex_cfg = self.config.exchanges.get(ex_name)
+            if ex_cfg and not ex_cfg.trade_enabled:
+                await self._reject(opp, f"trading_disabled({ex_name})")
+                return
+
+        # 3. fresh L2 refetch — parallel
         buy_ex = self.exchanges.get(opp.buy_from)
         sell_ex = self.exchanges.get(opp.sell_to)
         if not buy_ex or not sell_ex:
@@ -558,6 +570,22 @@ async def _amain() -> None:
     exchanges = build_exchanges(cfg)
     try:
         exec_ = Executor(cfg, exchanges)
+        for underlying in cfg.screener.underlyings:
+            for name, ex in exchanges.items():
+                try:
+                    instruments = await ex.list_instruments(
+                        underlying, cfg.screener.max_expiries_ahead
+                    )
+                    for inst in instruments:
+                        exec_.register_instrument(name, inst)
+                    log.info(
+                        "executor bootstrap: %s/%s → %d instruments",
+                        name,
+                        underlying,
+                        len(instruments),
+                    )
+                except Exception as e:
+                    log.warning("executor bootstrap %s/%s failed: %s", name, underlying, e)
         await exec_.run()
     finally:
         await close_exchanges(exchanges)

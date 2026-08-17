@@ -1,0 +1,15 @@
+{$CADDY_DOMAIN:-:80} {
+    handle /api/* {
+        reverse_proxy api:8000
+    }
+    handle /sse/* {
+        reverse_proxy api:8000 {
+            flush_interval -1
+        }
+    }
+    handle {
+        root * /srv/frontend
+        try_files {path} /index.html
+        file_server
+    }
+}

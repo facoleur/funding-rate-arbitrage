@@ -8,6 +8,8 @@ const links = [
   { to: '/trades', label: 'Trades' },
   { to: '/positions', label: 'Positions' },
   { to: '/book', label: 'Book' },
+  { to: '/history', label: 'Historique' },
+  { to: '/funding', label: 'Funding' },
   { to: '/executor', label: 'Executor' },
 ]
 
@@ -76,7 +78,7 @@ export default function Layout() {
               <Dot on={executorRunning} />
               <span className={`text-xs ${executorRunning ? 'text-zinc-400' : 'text-red-400'}`}>
                 {executorRunning ? 'Executor' : 'KILLED'}
-                {mode && <span className="text-zinc-600"> · {mode}</span>}
+                {mode && <span className="text-zinc-500"> · {mode}</span>}
               </span>
             </div>
           )}
@@ -84,11 +86,29 @@ export default function Layout() {
           {/* WS par exchange */}
           {appStatus &&
             Object.entries(appStatus.exchanges).map(([name, ex]) => (
-              <div key={name} className="flex items-center gap-2">
+              <div
+                key={name}
+                className="flex items-center gap-2"
+                title={[
+                  ex.rest_base_url && `REST: ${ex.rest_base_url}`,
+                  ex.ws_url && `WS:   ${ex.ws_url}`,
+                ]
+                  .filter(Boolean)
+                  .join('\n')}
+              >
                 <Dot on={ex.live} />
-                <span className="text-xs text-zinc-600">
+                {ex.network && (
+                  <span
+                    className={`text-[9px] font-bold ${
+                      ex.network === 'mainnet' ? 'text-amber-400' : 'text-sky-500'
+                    }`}
+                  >
+                    {ex.network === 'mainnet' ? 'MAIN' : 'TEST'}
+                  </span>
+                )}
+                <span className="text-xs text-zinc-500">
                   {name}
-                  <span className="ml-1 text-zinc-700">{ex.instruments}</span>
+                  <span className="ml-1 text-zinc-500">{ex.instruments}</span>
                 </span>
               </div>
             ))}

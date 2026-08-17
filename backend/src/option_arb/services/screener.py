@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from sqlmodel import select
@@ -62,6 +62,9 @@ class Screener:
     async def stop(self) -> None:
         self._stop.set()
 
+    # asyncpg caps bound parameters at 32767; TickerState has 13 columns → 2520 rows/batch
+    _FLUSH_BATCH = 2520
+
     async def _flush_tickers(self, tickers: list[CachedTicker]) -> None:
         if "postgresql" not in settings.database_url:
             return
@@ -90,23 +93,25 @@ class Screener:
         ]
         if not rows:
             return
-        stmt = pg_insert(TickerState).values(rows)
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["exchange", "instrument"],
-            set_={
-                c: stmt.excluded[c]
-                for c in (
-                    "bid_price",
-                    "bid_size",
-                    "ask_price",
-                    "ask_size",
-                    "underlying_price",
-                    "updated_at",
-                )
-            },
-        )
         async with get_session() as sess:
-            await sess.execute(stmt)
+            for i in range(0, len(rows), self._FLUSH_BATCH):
+                batch = rows[i : i + self._FLUSH_BATCH]
+                stmt = pg_insert(TickerState).values(batch)
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=["exchange", "instrument"],
+                    set_={
+                        c: stmt.excluded[c]
+                        for c in (
+                            "bid_price",
+                            "bid_size",
+                            "ask_price",
+                            "ask_size",
+                            "underlying_price",
+                            "updated_at",
+                        )
+                    },
+                )
+                await sess.execute(stmt)
             await sess.commit()
 
     async def _tick(self) -> None:
@@ -145,10 +150,13 @@ class Screener:
                 continue
             if s.max_notional_usd < min_notional:
                 continue
+            ex_cfg = self.config.exchanges.get(s.buy_from)
+            network = ex_cfg.network if ex_cfg else "mainnet"
             rows.append(
                 Opportunity(
                     detected_at=datetime.now(tz=UTC),
                     mode=mode,
+                    network=network,
                     instrument=s.instrument,
                     symbol=s.symbol,
                     expiry=s.expiry,
@@ -159,6 +167,7 @@ class Screener:
                     top_ask=float(s.buy_ask),
                     top_bid=float(s.sell_bid),
                     spread_pct=float(s.net_spread_pct),
+                    fee_pct=float(s.fee_pct),
                     apr_pct=float(s.apr_pct),
                     max_notional_usd=float(s.max_notional_usd),
                     status=OpportunityStatus.PENDING,
@@ -168,13 +177,46 @@ class Screener:
         if not rows:
             return
 
+        cutoff = datetime.now(UTC) - timedelta(hours=1)
+        new_rows: list[Opportunity] = []
         async with get_session() as sess:
-            # de-dup: skip if an identical PENDING opp exists in the last poll interval
             for row in rows:
-                sess.add(row)
+                existing = (
+                    await sess.execute(
+                        select(Opportunity).where(
+                            Opportunity.instrument == row.instrument,
+                            Opportunity.buy_from == row.buy_from,
+                            Opportunity.sell_to == row.sell_to,
+                            Opportunity.status == OpportunityStatus.PENDING,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if existing is not None:
+                    existing.top_ask = row.top_ask
+                    existing.top_bid = row.top_bid
+                    existing.spread_pct = row.spread_pct
+                    existing.fee_pct = row.fee_pct
+                    existing.apr_pct = row.apr_pct
+                    existing.max_notional_usd = row.max_notional_usd
+                    continue
+                # don't recreate if already seen recently (any status)
+                recent = (
+                    await sess.execute(
+                        select(Opportunity).where(
+                            Opportunity.instrument == row.instrument,
+                            Opportunity.buy_from == row.buy_from,
+                            Opportunity.sell_to == row.sell_to,
+                            Opportunity.detected_at >= cutoff,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if recent is None:
+                    sess.add(row)
+                    new_rows.append(row)
             await sess.commit()
 
-        for row in rows:
+        for row in new_rows:
+            max_profit_usd = round(row.spread_pct / 100 * row.max_notional_usd, 2)
             await bus.publish(
                 Event(
                     type="opportunity_detected",
@@ -186,10 +228,12 @@ class Screener:
                         "buy_from": row.buy_from,
                         "sell_to": row.sell_to,
                         "max_notional_usd": row.max_notional_usd,
+                        "max_profit_usd": max_profit_usd,
                     },
                 )
             )
-        log.info("wrote %d new opportunities", len(rows))
+        if new_rows:
+            log.info("wrote %d new opportunities", len(new_rows))
 
 
 async def _count_pending() -> int:

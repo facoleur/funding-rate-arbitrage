@@ -6,10 +6,11 @@ Reference doc: **`backend/AGENTS.md`** and root **`AGENTS.md`** / **`CLAUDE.md`*
 ## Repo layout (quick)
 
 - `src/option_arb/` — application code (see `backend/AGENTS.md` for module map)
-- `tests/` — pytest suite (69 tests currently green)
+- `tests/` — pytest suite (74 tests currently green)
 - `pyproject.toml` — uv-managed deps
 - `alembic.ini` + `src/option_arb/db/migrations/` — schema migrations
-- `Dockerfile` — image used by every backend container
+- `Dockerfile` — prod image (source baked in, used by `docker-compose.yml`)
+- `Dockerfile.dev` — dev image (deps only; source mounted at runtime via `docker-compose.dev.yml`)
 - `scripts/` — one-off helpers (e.g. `derive_bootstrap.py`)
 
 ## Prereqs
@@ -77,7 +78,7 @@ make down
 | `make test` / `lint` / `format` / `typecheck` | pytest, ruff, mypy |
 | `make kill` / `make resume` | executor kill-switch |
 | `make backtest file=…` / `make record ex=… dur=…` | offline replay + recording |
-| `make up` / `make down` / `make paper` / `make live` | dockerized stack |
+| `make up` / `make down` / `make dev` / `make live` | dockerized stack (dev = hot-reload) |
 
 Run `make help` for the full annotated list.
 

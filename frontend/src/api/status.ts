@@ -4,6 +4,9 @@ export interface ExchangeStatus {
   instruments: number
   last_update: string | null
   live: boolean
+  network: 'mainnet' | 'testnet' | null
+  rest_base_url: string | null
+  ws_url: string | null
 }
 
 export interface AppStatus {

@@ -1,76 +1,54 @@
-# Frontend REQUIREMENTS
+# Frontend — état actuel
 
-Cahier des charges du frontend monitoring pour le système d'arbitrage d'options. Le frontend n'est pas encore implémenté — ce fichier définit le périmètre et le contrat à respecter quand il le sera.
+Le frontend est implémenté. Stack : **Vite + React 19 + TypeScript + TanStack Query + React Router DOM + Tailwind CSS**.
 
-## Stack pressenti
+Servi via nginx dans le container Docker `frontend` (port 3000 → port 80 interne). Le container est inclus dans `docker-compose.yml` et `docker-compose.dev.yml`.
 
-TanStack Start (Vinxi + Vite + React 19) + TanStack Router file-based + TanStack Query + Tailwind. À valider au moment de démarrer le frontend, pas maintenant. Le squelette Next.js actuel dans `frontend/` sera remplacé.
+## Contraintes (toujours en vigueur)
 
-## Contraintes non négociables
+- **Read-only du backend** via API REST + SSE. Jamais d'accès direct à Postgres.
+- **Pas d'auth.** Bind sur `127.0.0.1` uniquement en local / Caddy en prod.
+- **Monitoring pur** : pas d'actions de trading depuis l'UI. Seules actions autorisées : kill / resume executor.
+- **Minimal et précis** : tables + indicateurs simples, pas de charts complexes.
 
-- **Read-only du backend** via API REST + SSE. **JAMAIS d'accès direct SQLite.**
-- **Pas d'auth.** Bind sur `127.0.0.1` uniquement en local.
-- **Monitoring pur** : PAS d'actions de trading depuis l'UI. Les seules actions autorisées sont admin (kill / resume executor).
-- **Minimal et précis** : pas de dashboards fancy, pas de charts complexes. Tables + indicateurs simples.
+## Pages implémentées (7)
 
-## Pages MVP (4)
-
-### 1. `/` — Opportunités live
-
-- Table temps réel des opportunités `PENDING` + récentes.
-- Colonnes : symbole, expiry, buy_from, sell_to, top_ask, top_bid, spread%, APR%, max_size, status, timestamp.
-- Filtres : min APR, min notional, ticker (BTC/ETH), exchange pair.
-- Update via SSE (`opportunity_detected` event) + fallback polling 5s.
-- Highlight visuel des opps qui vont être exécutées (APR > threshold).
-
-### 2. `/trades` — Historique
-
-- Table des trades avec status (`FILLED`, `HEDGED`, `STUCK`, `FAILED`).
-- Colonnes : opened_at, instrument, buy_ex/sell_ex, size, fill prices, slippage%, PnL, mode (live/paper/backtest).
-- Filtre par mode (live | paper | backtest).
-- Filtre par status.
-- Pagination (50 par page).
-- Update via SSE (`trade_*` events).
-
-### 3. `/positions` — État par exchange
-
-- Card par exchange : balance USD, margin used, positions ouvertes (count).
-- Sous-table positions ouvertes : instrument, size, avg_price, expiry (highlight rouge si <24h).
-- Statuts connectivité : WS status (CONNECTED / RECONNECTING / UNHEALTHY), REST status.
-- Update polling 10s.
-
-### 4. `/executor` — État + admin
-
-- Status executor : `RUNNING` / `KILLED`, dernier heartbeat.
-- Config actuelle (readonly display) : min_apr, min_notional, max_notional_per_trade, max_positions, max_daily_loss.
-- État kill-switches : nb positions ouvertes, PnL journalier, fichier KILL présent.
-- Boutons : `Kill` (POST /api/executor/kill), `Resume` (POST /api/executor/resume). Confirmation modale.
-- Alertes récentes (dernières 50) depuis table `alerts`.
-
-## Contract API à consommer
-
-| Endpoint | Méthode | Description |
+| Route | Fichier | Description |
 |---|---|---|
-| `/api/opportunities?status=&min_apr=&limit=` | GET | Liste opps avec filtres |
+| `/` | `Opportunities.tsx` | Table des opps PENDING + récentes, update SSE + polling 5s |
+| `/book` | `Book.tsx` | Carnets d'ordres live par exchange |
+| `/trades` | `Trades.tsx` | Historique des trades, filtres mode/status, pagination |
+| `/history` | `History.tsx` | Historique des opportunités |
+| `/positions` | `Positions.tsx` | État par exchange : balance, positions ouvertes, WS status |
+| `/executor` | `Executor.tsx` | État executor + kill-switches + boutons Kill/Resume |
+| `/funding` | `Funding.tsx` | Données de funding rates |
+
+## Composants partagés
+
+- `Layout.tsx` — sidebar + navigation
+- `StatusBadge.tsx` — badges status colorés
+- `ConfirmModal.tsx` — modale de confirmation (Kill/Resume)
+
+## Contract API consommé
+
+| Endpoint | Méthode | Usage |
+|---|---|---|
+| `/api/opportunities?status=&min_apr=&limit=` | GET | Opportunities.tsx, History.tsx |
 | `/api/opportunities/:id` | GET | Détail opp |
-| `/api/trades?mode=&status=&limit=&offset=` | GET | Liste trades paginée |
+| `/api/trades?mode=&status=&limit=&offset=` | GET | Trades.tsx |
 | `/api/trades/:id` | GET | Détail trade + orders |
-| `/api/positions` | GET | Positions ouvertes par exchange |
-| `/api/exchanges` | GET | État exchanges (balance, WS/REST status) |
-| `/api/executor/state` | GET | Status executor + kill-switches state |
-| `/api/executor/kill` | POST | Active kill-switch |
-| `/api/executor/resume` | POST | Désactive kill-switch |
-| `/api/alerts?level=&limit=` | GET | Historique alerts |
-| `/api/stream` | GET (SSE) | Push events |
+| `/api/positions` | GET | Positions.tsx |
+| `/api/exchanges` | GET | Positions.tsx (WS/REST status) |
+| `/api/executor/state` | GET | Executor.tsx |
+| `/api/executor/kill` | POST | Executor.tsx (bouton Kill) |
+| `/api/executor/resume` | POST | Executor.tsx (bouton Resume) |
+| `/api/perp-hedge/state` | GET | état hedger BTC-PERP (enabled, paused, config) |
+| `/api/perp-hedge/pause` | POST | pause le hedger (crée kill switch file) |
+| `/api/perp-hedge/resume` | POST | reprend le hedger (supprime kill switch file) |
+| `/api/alerts?level=&limit=` | GET | Executor.tsx (alertes récentes) |
+| `/api/stream` | GET (SSE) | Push events temps réel |
+| `/health` | GET | StatusBadge, monitoring |
 
-## Events SSE à consommer
+## Events SSE consommés
 
-`opportunity_detected`, `trade_opened`, `trade_filled`, `trade_failed`, `trade_stuck`, `kill_switch_tripped`, `position_expiring`, `balance_low`, `exchange_unhealthy`.
-
-## Layout
-
-Sidebar minimale (4 liens), main content full-width, dark mode par défaut.
-
-## Non-goals
-
-Mobile-first, i18n, accessibilité fine (usage personnel local), animations, graphes de courbes (une simple sparkline PnL suffit).
+`opportunity_detected`, `trade_opened`, `trade_filled`, `trade_failed`, `trade_stuck`, `kill_switch_tripped`, `position_expiring`, `balance_low`, `exchange_unhealthy`, `perp_hedge_rebalanced`.

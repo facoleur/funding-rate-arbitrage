@@ -18,7 +18,7 @@ chmod 600 .env
 
 uv sync          # install Python deps
 make bootstrap   # start Postgres, run migrations, verify config
-make test        # 60+ tests should pass
+make test        # 74+ tests should pass
 ```
 
 ## Running in paper mode (safe, no real orders)
@@ -113,23 +113,6 @@ make backtest file=recordings/derive-*.jsonl  # replay through the pipeline
 
 See `AGENTS.md` for the full architecture, module map, and conventions.
 
+## Deployment (VPS)
 
-
-
-
-
-
-
-
-
-
-
-
-
-sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
-
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-
-sudo apt update && sudo apt install caddy
+See `docker/README.md` for production VPS setup (Caddy + Let's Encrypt + Docker Compose).

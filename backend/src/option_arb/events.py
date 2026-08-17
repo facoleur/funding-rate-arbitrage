@@ -16,6 +16,7 @@ EventType = Literal[
     "position_expiring",
     "balance_low",
     "exchange_unhealthy",
+    "perp_hedge_rebalanced",
 ]
 
 Level = Literal["info", "warn", "error"]

@@ -48,21 +48,30 @@ class RebalancerConfig(BaseModel):
 
 
 class ExchangeConfig(BaseModel):
-    rest_rate_limit_per_sec: int
-    ws_max_subscriptions: int
+    rest_rate_limit_per_sec: int = 10
+    ws_max_subscriptions: int = 100
     rest_base_url: str
     ws_url: str
     network: Literal["mainnet", "testnet"] = "testnet"
+    trade_enabled: bool = True
 
 
 class TelegramConfig(BaseModel):
     enabled: bool = True
     apr_threshold_pct: float = 10.0
     levels: list[str] = Field(default_factory=lambda: ["info", "warn", "error"])
+    opportunity_cooldown_hours: float = 1.0
 
 
 class AlertsConfig(BaseModel):
     telegram: TelegramConfig = Field(default_factory=TelegramConfig)
+
+
+class PerpHedgeConfig(BaseModel):
+    enabled: bool = False
+    rebalance_threshold_usd: float = 5.0
+    poll_interval_sec: int = 60
+    kill_switch_file: str = "/data/PERP_HEDGE_DISABLED"
 
 
 class AppConfig(BaseModel):
@@ -73,6 +82,7 @@ class AppConfig(BaseModel):
     rebalancer: RebalancerConfig = Field(default_factory=RebalancerConfig)
     exchanges: dict[str, ExchangeConfig] = Field(default_factory=dict)
     alerts: AlertsConfig = Field(default_factory=AlertsConfig)
+    perp_hedge: PerpHedgeConfig = Field(default_factory=PerpHedgeConfig)
 
 
 class Settings(BaseSettings):
@@ -115,27 +125,47 @@ class Settings(BaseSettings):
         return self.database_url.replace("+asyncpg", "+psycopg2").replace("+aiosqlite", "")
 
 
+def _deep_merge(base: dict[str, object], override: dict[str, object]) -> dict[str, object]:
+    result: dict[str, object] = dict(base)
+    for k, v in override.items():
+        base_v = result.get(k)
+        if isinstance(base_v, dict) and isinstance(v, dict):
+            result[k] = _deep_merge(base_v, v)
+        else:
+            result[k] = v
+    return result
+
+
 def load_config(path: str | Path | None = None) -> AppConfig:
     settings = Settings()
     # Try, in order: explicit arg → CONFIG_PATH env → CWD/config.yaml → repo root/config.yaml
-    candidates: list[Path] = []
+    base_candidates: list[Path] = []
     if path:
-        candidates.append(Path(path))
+        base_candidates.append(Path(path))
     else:
-        candidates += [Path(settings.config_path), Path("config.yaml"), _REPO_ROOT / "config.yaml"]
-    if not path:
-        # config.local.yaml (gitignored) takes priority — safe for local overrides
-        candidates = [
-            Path("config.local.yaml"),
-            _REPO_ROOT / "config.local.yaml",
-            *candidates,
+        base_candidates += [
+            Path(settings.config_path),
+            Path("config.yaml"),
+            _REPO_ROOT / "config.yaml",
         ]
-    for cand in candidates:
+
+    raw: dict[str, object] = {}
+    for cand in base_candidates:
         if cand.exists():
             with cand.open() as f:
                 raw = yaml.safe_load(f) or {}
-            return AppConfig.model_validate(raw)
-    return AppConfig()
+            break
+
+    if not path:
+        # config.local.yaml (gitignored) is deep-merged on top — safe for local overrides
+        for local in [Path("config.local.yaml"), _REPO_ROOT / "config.local.yaml"]:
+            if local.exists():
+                with local.open() as f:
+                    local_raw = yaml.safe_load(f) or {}
+                raw = _deep_merge(raw, local_raw)
+                break
+
+    return AppConfig.model_validate(raw) if raw else AppConfig()
 
 
 settings = Settings()

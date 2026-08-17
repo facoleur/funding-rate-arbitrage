@@ -3,7 +3,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: option_arb
-      POSTGRES_PASSWORD: option_arb
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-option_arb}
       POSTGRES_DB: option_arb
     ports:
       - "127.0.0.1:5432:5432"
@@ -21,12 +21,21 @@ services:
       context: ./backend
     command: alembic upgrade head
     environment:
-      DATABASE_URL: postgresql+asyncpg://option_arb:option_arb@postgres:5432/option_arb
-      ALEMBIC_DATABASE_URL: ""
+      DATABASE_URL: postgresql+asyncpg://option_arb:${POSTGRES_PASSWORD:-option_arb}@postgres:5432/option_arb
+      ALEMBIC_DATABASE_URL: postgresql+psycopg2://option_arb:${POSTGRES_PASSWORD:-option_arb}@postgres:5432/option_arb
+      BOT_TOKEN: ${BOT_TOKEN:-}
+      CHAT_ID: ${CHAT_ID:-}
+      DERIBIT_CLIENT_ID: ${DERIBIT_CLIENT_ID:-}
+      DERIBIT_CLIENT_SECRET: ${DERIBIT_CLIENT_SECRET:-}
+      DERIVE_WALLET_ADDRESS: ${DERIVE_WALLET_ADDRESS:-}
+      DERIVE_SUBACCOUNT_ID: ${DERIVE_SUBACCOUNT_ID:-0}
+      DERIVE_SESSION_PRIVATE_KEY: ${DERIVE_SESSION_PRIVATE_KEY:-}
+      AEVO_WALLET_ADDRESS: ${AEVO_WALLET_ADDRESS:-}
+      AEVO_ACCOUNT: ${AEVO_ACCOUNT:-}
+      AEVO_SIGNING_KEY: ${AEVO_SIGNING_KEY:-}
     volumes:
       - ./data:/data
       - ./config.yaml:/app/config.yaml:ro
-    env_file: .env
     depends_on:
       postgres:
         condition: service_healthy
@@ -37,13 +46,22 @@ services:
       context: ./backend
     command: uvicorn option_arb.main:app --host 0.0.0.0 --port 8000
     environment:
-      DATABASE_URL: postgresql+asyncpg://option_arb:option_arb@postgres:5432/option_arb
+      DATABASE_URL: postgresql+asyncpg://option_arb:${POSTGRES_PASSWORD:-option_arb}@postgres:5432/option_arb
+      BOT_TOKEN: ${BOT_TOKEN:-}
+      CHAT_ID: ${CHAT_ID:-}
+      DERIBIT_CLIENT_ID: ${DERIBIT_CLIENT_ID:-}
+      DERIBIT_CLIENT_SECRET: ${DERIBIT_CLIENT_SECRET:-}
+      DERIVE_WALLET_ADDRESS: ${DERIVE_WALLET_ADDRESS:-}
+      DERIVE_SUBACCOUNT_ID: ${DERIVE_SUBACCOUNT_ID:-0}
+      DERIVE_SESSION_PRIVATE_KEY: ${DERIVE_SESSION_PRIVATE_KEY:-}
+      AEVO_WALLET_ADDRESS: ${AEVO_WALLET_ADDRESS:-}
+      AEVO_ACCOUNT: ${AEVO_ACCOUNT:-}
+      AEVO_SIGNING_KEY: ${AEVO_SIGNING_KEY:-}
     ports:
       - "127.0.0.1:8001:8000"
     volumes:
       - ./data:/data
       - ./config.yaml:/app/config.yaml:ro
-    env_file: .env
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -54,11 +72,20 @@ services:
       context: ./backend
     command: python -m option_arb.worker
     environment:
-      DATABASE_URL: postgresql+asyncpg://option_arb:option_arb@postgres:5432/option_arb
+      DATABASE_URL: postgresql+asyncpg://option_arb:${POSTGRES_PASSWORD:-option_arb}@postgres:5432/option_arb
+      BOT_TOKEN: ${BOT_TOKEN:-}
+      CHAT_ID: ${CHAT_ID:-}
+      DERIBIT_CLIENT_ID: ${DERIBIT_CLIENT_ID:-}
+      DERIBIT_CLIENT_SECRET: ${DERIBIT_CLIENT_SECRET:-}
+      DERIVE_WALLET_ADDRESS: ${DERIVE_WALLET_ADDRESS:-}
+      DERIVE_SUBACCOUNT_ID: ${DERIVE_SUBACCOUNT_ID:-0}
+      DERIVE_SESSION_PRIVATE_KEY: ${DERIVE_SESSION_PRIVATE_KEY:-}
+      AEVO_WALLET_ADDRESS: ${AEVO_WALLET_ADDRESS:-}
+      AEVO_ACCOUNT: ${AEVO_ACCOUNT:-}
+      AEVO_SIGNING_KEY: ${AEVO_SIGNING_KEY:-}
     volumes:
       - ./data:/data
       - ./config.yaml:/app/config.yaml:ro
-    env_file: .env
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -69,15 +96,43 @@ services:
       context: ./backend
     command: python -m option_arb.services.executor
     environment:
-      DATABASE_URL: postgresql+asyncpg://option_arb:option_arb@postgres:5432/option_arb
+      DATABASE_URL: postgresql+asyncpg://option_arb:${POSTGRES_PASSWORD:-option_arb}@postgres:5432/option_arb
+      BOT_TOKEN: ${BOT_TOKEN:-}
+      CHAT_ID: ${CHAT_ID:-}
+      DERIBIT_CLIENT_ID: ${DERIBIT_CLIENT_ID:-}
+      DERIBIT_CLIENT_SECRET: ${DERIBIT_CLIENT_SECRET:-}
+      DERIVE_WALLET_ADDRESS: ${DERIVE_WALLET_ADDRESS:-}
+      DERIVE_SUBACCOUNT_ID: ${DERIVE_SUBACCOUNT_ID:-0}
+      DERIVE_SESSION_PRIVATE_KEY: ${DERIVE_SESSION_PRIVATE_KEY:-}
+      AEVO_WALLET_ADDRESS: ${AEVO_WALLET_ADDRESS:-}
+      AEVO_ACCOUNT: ${AEVO_ACCOUNT:-}
+      AEVO_SIGNING_KEY: ${AEVO_SIGNING_KEY:-}
     volumes:
       - ./data:/data
       - ./config.yaml:/app/config.yaml:ro
-    env_file: .env
     depends_on:
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "0.0.0.0:80:80"
+      - "0.0.0.0:443:443"
+      - "0.0.0.0:443:443/udp"
+    environment:
+      CADDY_DOMAIN: ${CADDY_DOMAIN:-:80}
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./frontend/dist:/srv/frontend:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    restart: unless-stopped
+
 volumes:
   postgres_data:
+  caddy_data:
+  caddy_config:

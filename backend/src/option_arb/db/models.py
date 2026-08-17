@@ -92,7 +92,10 @@ class Opportunity(SQLModel, table=True):
     walked_bid: float | None = None
     walked_size: float | None = None
 
-    spread_pct: float
+    network: str = "mainnet"  # "mainnet" | "testnet"
+
+    spread_pct: float  # net of fees
+    fee_pct: float = 0.0  # sum of buy + sell taker fees as %
     apr_pct: float
     max_notional_usd: float
 

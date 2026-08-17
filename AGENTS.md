@@ -17,12 +17,19 @@ option_arbitrage/
 │   ├── src/option_arb/
 │   ├── tests/
 │   ├── pyproject.toml
-│   └── Dockerfile
-├── frontend/                    # TanStack Start (not yet built)
-│   └── REQUIREMENTS.md
+│   ├── Dockerfile               # prod image (single-stage, source baked in)
+│   └── Dockerfile.dev           # dev image (deps only, source mounted via volume)
+├── frontend/                    # Vite + React + TanStack Query (built)
+│   ├── REQUIREMENTS.md          # pages, stack, API contract
+│   ├── src/pages/               # Book, Executor, Funding, History, Opportunities, Positions, Trades
+│   ├── Dockerfile               # prod: build → nginx
+│   └── Dockerfile.dev           # dev: node image, source mounted
+├── docs/
+│   └── deribit-vs-derive-options.md  # pricing traps, settlement, auth latency per exchange
 ├── data/                        # (formerly SQLite; now unused for runtime — pg volume owns state)
-├── docker/                      # reserved for shared image layers if needed
-├── docker-compose.yml           # postgres + api + workers + executor
+├── docker/                      # VPS deployment (Caddyfile.example, README)
+├── docker-compose.yml           # prod: postgres + migrate + api + workers + executor + frontend
+├── docker-compose.dev.yml       # dev: same stack, source mounted, watchfiles hot-reload
 ├── Makefile                     # canonical local entry-points
 ├── config.yaml                  # runtime knobs (thresholds, limits, kill-switches)
 └── .env.example
@@ -31,10 +38,10 @@ option_arbitrage/
 ## Current state
 
 - **Backend Python (`backend/`)** — all phases 1-12 landed.
-  - REST + WS adapters for Deribit / Derive / Aevo (public data working; private orders reject cleanly until auth credentials provided).
-  - Screener, executor (with 4 kill-switches + market-out on single-leg fill), rebalancer (monitoring only), alerter (Telegram), MockExchange with SlippageModel, backtest + record CLIs.
-  - 60 tests passing.
-- **Frontend (`frontend/`)** — not built. Spec in `frontend/REQUIREMENTS.md`. Target: TanStack Start, read-only via REST + SSE, no auth, localhost only.
+  - REST + WS adapters for Deribit (inverse + linear) / Derive (public + private). Aevo: removed from screener (no WS option channels, REST polling only, auth deferred) — config kept for future use.
+  - Screener, executor (with 4 kill-switches + market-out on single-leg fill), rebalancer (monitoring only), alerter (Telegram), perp hedger (BTC-PERPETUAL short on Deribit inverse to neutralize BTC collateral), MockExchange with SlippageModel, backtest + record CLIs.
+  - 74 tests passing.
+- **Frontend (`frontend/`)** — built. Vite + React + TanStack Query + React Router, 7 pages. Served via nginx in the `frontend` Docker container. Spec in `frontend/REQUIREMENTS.md`.
 - **Trigger.dev + Telegram TS legacy** — deleted. Telegram is re-implemented in `backend/src/option_arb/services/alerter.py`.
 
 ## Target architecture
@@ -46,6 +53,7 @@ Data plane
 ├── screener        WS tickers → in-memory book_cache → detect → write opportunities
 ├── executor        picks PENDING opps → REST L2 refresh → 2 IOC limits → market-out on fail
 ├── rebalancer      monitors positions/balances/expiries — alerts only, no auto action
+├── perp_hedger     maintains BTC-PERPETUAL short to hedge Deribit inverse BTC collateral
 └── alerter         Telegram (+ future channels) via asyncio event bus
 
 Storage
@@ -53,7 +61,7 @@ Storage
                     SQLite is retained ONLY for pytest (fast, isolated per test).
 
 API surface
-└── FastAPI         REST for lists/detail + admin kill/resume
+└── FastAPI         REST for lists/detail + admin kill/resume + perp-hedge pause/resume
                     SSE /api/stream for live push events
 ```
 
@@ -62,9 +70,9 @@ API surface
 ### Data fetching strategy
 
 1. **REST bootstrap (every 6h)** — instrument metadata.
-2. **WebSocket tickers (permanent)** — one connection per exchange, top-bid/ask push into `book_cache`.
+2. **WebSocket tickers (permanent)** — one connection per exchange for those that support it (Deribit inverse, Deribit linear, Derive). **Aevo removed from screener** (no WS option channels, REST polling per-instrument too expensive).
 3. **Screener** — reads cache in-memory every 500ms, groups by normalized name, writes `opportunities` PENDING.
-4. **Executor** — before placing, does a fresh REST L2 fetch on both venues (200ms timeout), walks the book, re-verifies APR net of slippage, then places IOC limits.
+4. **Executor** — before placing, does a fresh REST L2 fetch on both venues (500ms timeout), walks the book, re-verifies APR net of slippage, then places IOC limits.
 
 ### Authentication (per exchange)
 
@@ -74,9 +82,9 @@ Every adapter takes an optional `Authenticator` (see `backend/src/option_arb/exc
 |---|---|---|---|
 | Deribit | OAuth 2.0 `client_credentials` | `DeribitOAuth` | ✅ implemented — token fetch + refresh (~1h TTL) |
 | Derive (Lyra V2) | Session-key signing (custom digest: `keccak(0x1901 \|\| DOMAIN_SEPARATOR \|\| action_hash)`) | `DeriveAuth` (wraps official `derive_action_signing` lib) | ✅ implemented — signs trades + `X-LYRA*` REST headers |
-| Aevo | EIP-712 signing key | — (public-only for now) | ⏳ deferred |
+| Aevo | REST polling (no WS option channels) | `NoAuth` | ⚠️ public data only via REST polling; private auth ⏳ deferred. Removed from screener. |
 
-Runtime is **testnet by default** for every exchange (see `config.yaml`). Flip `network: mainnet` + swap the `rest_base_url` / `ws_url` in `config.yaml` to go live.
+All exchanges are currently configured as **mainnet** in `config.yaml`. Flip `network: testnet` + swap the `rest_base_url` / `ws_url` to use testnet.
 
 **Deribit** (see `AGENTS.md` step-by-step or `.env.example`):
 - UI → Account → API → Add new key with scopes `trade:read_write` + `wallet:read_write`; IP allowlist recommended.
@@ -101,7 +109,7 @@ Storage rules (both):
 - **Prices** in quote currency (USD). Deribit returns bid/ask in underlying units — the adapter multiplies by `underlying_price` to convert.
 - **Fees** applied as `taker_fee_rate` (fraction) on both legs.
 - **APR** = `(net_spread_pct / days_to_expiry) * 365`.
-- **Liquidity floor**: `bid_price * bid_qty >= size_threshold_usd` (default $100).
+- **Liquidity floor**: `bid_price * bid_qty >= size_threshold_usd` (default $50).
 - **Decimal, not float** for prices in the comparator + executor.
 - **Modes**: every opportunity / trade tagged `mode ∈ {live, paper, backtest}`.
 
@@ -113,6 +121,7 @@ Key knobs:
 - `thresholds.min_apr_pct`, `min_notional_usd`, `size_threshold_usd`
 - `executor.mode` (paper|live), `max_slippage_pct`, `walk_book`
 - `limits.max_notional_per_trade_usd`, `max_positions_open`, `max_daily_loss_usd`, `kill_switch_file`
+- `perp_hedge.enabled`, `rebalance_threshold_usd`, `poll_interval_sec`, `kill_switch_file`
 - `exchanges.*.rest_rate_limit_per_sec`, `ws_max_subscriptions`
 
 ## Executor kill-switches (4, all active)
@@ -122,6 +131,12 @@ Key knobs:
 3. **Max daily loss** — refuses if realised PnL since midnight UTC is below `-cap`.
 4. **Manual** — file `data/EXECUTOR_DISABLED` OR `POST /api/executor/kill`. Checked every loop iteration.
 
+## Perp hedger kill-switch
+
+- File `data/PERP_HEDGE_DISABLED` OR `POST /api/perp-hedge/pause` → pauses rebalancing (orders dry-run).
+- `POST /api/perp-hedge/resume` / `DELETE data/PERP_HEDGE_DISABLED` → resumes.
+- In `executor.mode: paper`, hedger always runs dry (logs delta but never places real orders).
+
 ## Testing model
 
 **Mandatory paper mode before live.** `MockExchange` mirrors real books but simulates fills via `SlippageModel` (walks the book, gaussian noise, random rejection, latency, respects limit price). Same screener + executor code runs in both modes.
@@ -130,14 +145,15 @@ Key knobs:
 
 **Test DB**: pytest uses SQLite for speed and isolation (fresh `.db` file per test via `test_db` fixture in `backend/tests/conftest.py`). Production runs on Postgres. Model code is DB-agnostic (SQLModel + SQLAlchemy).
 
-Coverage: 60 tests across comparator, HTTP rate limit / retry / circuit, screener, executor (happy path + all 4 kill-switches + stale book + apr dropped + empty book + STUCK on failed market-out), mock exchange, alerter (persistence + threshold + level filter), rebalancer (low balance + expiring + unhealthy), auth (NoAuth + Deribit OAuth token cache + EIP-712 signer), WS manager (subscribe payload per exchange + reconnect), adapters (WS ticker parsing per exchange).
+Coverage: 74 tests across comparator, HTTP rate limit / retry / circuit, screener, executor (happy path + all 4 kill-switches + stale book + apr dropped + empty book + STUCK on failed market-out), mock exchange, alerter (persistence + threshold + level filter), rebalancer (low balance + expiring + unhealthy), auth (NoAuth + Deribit OAuth token cache + EIP-712 signer), WS manager (subscribe payload per exchange + reconnect), adapters (WS ticker parsing per exchange), DeriveAuth (constants + LYRA headers + end-to-end sign+validate).
 
 ## Local dev entry-points (Makefile)
 
 ```
-make up               # docker compose up -d (full stack: postgres + api + workers + executor)
+make up               # docker compose up -d (full stack: postgres + api + workers + executor + frontend)
 make down
-make paper            # foreground, paper mode
+make dev              # hot-reload stack: source mounted, watchfiles on backend, vite on frontend
+make dev-down         # stop dev stack
 make live             # foreground, live mode (typed confirmation)
 make logs svc=api     # tail one service
 
@@ -169,16 +185,19 @@ make backtest file=recordings/derive-*.jsonl
 ## For AI agents working here
 
 1. **Read `backend/AGENTS.md`** for backend internals before editing.
-2. **Do not reintroduce funding-rate code.**
-3. **Frontend never touches Postgres directly** — read-only via REST.
-4. **When adding a new exchange**, implement `AbstractExchange` (`backend/src/option_arb/exchanges/base.py`): rate-limited HTTP via the shared wrapper, WS subscribe, `normalized_name` output, optional `Authenticator` for private paths.
-5. **Any code touching order placement** must have a `MockExchange` path and unit tests covering the 4 kill-switches. Never wire the live executor without paper validation.
-6. **The executor is the highest-blast-radius component.** State transitions persist to `trades` + `orders` before the next await; kill-switches are honoured every loop.
-7. **Reference plan**: `~/.claude/plans/rippling-gathering-fountain.md`.
+2. **Read `frontend/REQUIREMENTS.md`** for frontend pages, stack, and API contract.
+3. **Read `docs/deribit-vs-derive-options.md`** before touching exchange adapters, executor, or pricing logic — contains per-exchange pricing traps, settlement differences, and auth latency risks.
+4. **Do not reintroduce funding-rate code.**
+5. **Frontend never touches Postgres directly** — read-only via REST.
+6. **When adding a new exchange**, implement `AbstractExchange` (`backend/src/option_arb/exchanges/base.py`): rate-limited HTTP via the shared wrapper, WS subscribe (or `poll_tickers` if WS unavailable), `normalized_name` output, optional `Authenticator` for private paths.
+7. **Any code touching order placement** must have a `MockExchange` path and unit tests covering the 4 kill-switches. Never wire the live executor without paper validation.
+8. **The executor is the highest-blast-radius component.** State transitions persist to `trades` + `orders` before the next await; kill-switches are honoured every loop.
+9. **Reference plan**: `~/.claude/plans/rippling-gathering-fountain.md`.
+10. **VPS deployment**: see `docker/README.md`.
 
 ## Open decisions
 
-- [ ] Fill Derive + Aevo EIP-712 schemas (blocks live trading on those venues).
+- [ ] Aevo private trading — signing pattern deferred (currently REST polling for public data only, removed from screener).
 - [ ] Where to source recorded order-book data for long-window backtests.
 - [ ] Slippage-model coefficients — empirical calibration once we have real fills.
 - [ ] Secrets manager choice for prod session keys (Vault vs Doppler vs env-only).

@@ -45,10 +45,14 @@ async def status() -> dict[str, Any]:
         if last and last.tzinfo is None:
             last = last.replace(tzinfo=UTC)
         live = last is not None and (now - last) < _STALE_THRESHOLD
+        ex_cfg = cfg.exchanges.get(r.exchange)
         exchanges[r.exchange] = {
             "instruments": r.instruments,
             "last_update": last.isoformat() if last else None,
             "live": live,
+            "network": ex_cfg.network if ex_cfg else None,
+            "rest_base_url": ex_cfg.rest_base_url if ex_cfg else None,
+            "ws_url": ex_cfg.ws_url if ex_cfg else None,
         }
 
     return {

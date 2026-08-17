@@ -43,12 +43,12 @@ repos:
         files: ^frontend/.*\.(ts|tsx)$
 
       - id: check-config-danger
-        name: "config.yaml — valeurs de production détectées"
+        name: "config.yaml — mode live détecté"
         entry: >-
           bash -c '
-          bad=$(git show :config.yaml 2>/dev/null | grep -nE "^\s*(mode:\s*live|network:\s*mainnet)");
+          bad=$(git show :config.yaml 2>/dev/null | grep -nE "^\s*mode:\s*live");
           [ -z "$bad" ] || {
-            printf "\n[DANGER] config.yaml stagé contient des valeurs de production :\n\n%s\n\n  -> Utilise config.local.yaml pour tes surcharges locales (gitignorée).\n  -> Pour forcer quand même : SKIP=check-config-danger git commit ...\n\n" "$bad";
+            printf "\n[DANGER] config.yaml stagé contient mode: live :\n\n%s\n\n  -> Pour forcer quand même : SKIP=check-config-danger git commit ...\n\n" "$bad";
             exit 1;
           }'
         language: system

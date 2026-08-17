@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+import pytest
+
 from option_arb.exchanges.naming import normalize_deribit, normalize_from_parts
 from option_arb.services.comparator import Quote, compare_options, group_by_instrument
 
@@ -49,8 +51,8 @@ def test_group_by_instrument() -> None:
 
 def test_spread_detected_when_cross_venue_and_positive_net() -> None:
     now = datetime(2025, 1, 1, tzinfo=UTC)
-    a = _q("derive", "100", "101")  # ask 101
-    b = _q("deribit", "110", "112")  # bid 110 → spread = (110-101)/101 ≈ 8.91%
+    a = _q("derive", "100", "101", fee="0.0003")  # ask 101
+    b = _q("deribit", "110", "112", fee="0.0003")  # bid 110 → spread = (110-101)/101 ≈ 8.91%
     spreads = compare_options([[a, b]], now=now)
     assert len(spreads) == 1
     s = spreads[0]
@@ -59,6 +61,12 @@ def test_spread_detected_when_cross_venue_and_positive_net() -> None:
     assert s.buy_ask == Decimal("101")
     assert s.sell_bid == Decimal("110")
     assert s.net_spread_pct > 0
+    # fee_pct = (0.0003 + 0.0003) * 100 = 0.06
+    assert s.fee_pct == Decimal("0.06")
+    assert s.net_spread_pct == pytest.approx(  # type: ignore[call-overload]
+        (Decimal("110") - Decimal("101")) / Decimal("101") * 100 - Decimal("0.06"),
+        abs=Decimal("0.001"),
+    )
 
 
 def test_no_spread_when_same_exchange_is_both_best() -> None:

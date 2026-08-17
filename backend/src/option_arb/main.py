@@ -8,8 +8,10 @@ from fastapi import FastAPI
 from option_arb.api import (
     alerts,
     executor,
+    funding,
     health,
     opportunities,
+    perp_hedge,
     positions,
     stream,
     tickers,
@@ -36,8 +38,10 @@ for router in (
     trades.router,
     positions.router,
     executor.router,
+    perp_hedge.router,
     alerts.router,
     tickers.router,
     stream.router,
+    funding.router,
 ):
     app.include_router(router)

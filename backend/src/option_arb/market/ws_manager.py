@@ -65,6 +65,11 @@ class WsManager:
                 log.warning("no adapter for exchange %s, skipping", name)
                 continue
             channels = self._exchanges[name].ws_channels(instruments)
+            if not channels:
+                log.info(
+                    "ws %s: no channels — skipping WS connection (REST polling expected)", name
+                )
+                continue
             self._states[name].subscriptions = set(channels)
             self._states[name].task = asyncio.create_task(self._run_loop(name), name=f"ws-{name}")
 
@@ -153,7 +158,7 @@ class WsManager:
         batch_size = 200 if exchange.startswith("deribit") else len(channels)
         for i in range(0, len(channels), batch_size):
             batch = channels[i : i + batch_size]
-            if exchange == "deribit":
+            if exchange.startswith("deribit"):
                 payload = {
                     "jsonrpc": "2.0",
                     "id": 1,

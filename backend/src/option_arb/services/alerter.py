@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 
@@ -42,10 +42,11 @@ def format_opportunity(event: Event) -> str:
     buy_from = p.get("buy_from", "")
     sell_to = p.get("sell_to", "")
     max_notional = p.get("max_notional_usd", 0)
+    max_profit = p.get("max_profit_usd", 0)
 
     lines = [
         f"*{escape_mdv2(instrument)}*",
-        f"APR: {escape_mdv2(f'{apr:.1f}%')} · Notional: {escape_mdv2(f'${max_notional:.0f}')}",
+        f"APR: {escape_mdv2(f'{apr:.1f}%')} · Nominal: {escape_mdv2(f'${max_notional:.2f}')} · Profit max: {escape_mdv2(f'${max_profit:.2f}')}",
         f"Buy: {escape_mdv2(buy_from)} → Sell: {escape_mdv2(sell_to)}",
     ]
     return "\n".join(lines)
@@ -103,6 +104,7 @@ class Alerter:
         self.cfg = alerts_cfg
         self.sender = sender or TelegramSender(settings.bot_token, settings.chat_id)
         self._stop = asyncio.Event()
+        self._opp_last_sent: dict[str, datetime] = {}
 
     async def run(self) -> None:
         q = bus.subscribe()
@@ -148,6 +150,12 @@ class Alerter:
             apr = float(event.payload.get("apr_pct", 0))
             if apr < tg.apr_threshold_pct:
                 return
+            instrument = event.payload.get("instrument", "")
+            cooldown = timedelta(hours=tg.opportunity_cooldown_hours)
+            last = self._opp_last_sent.get(instrument)
+            if last and (datetime.now(UTC) - last) < cooldown:
+                return
+            self._opp_last_sent[instrument] = datetime.now(UTC)
         text = format_event(event)
         ok = await self.sender.send(text)
         if ok:

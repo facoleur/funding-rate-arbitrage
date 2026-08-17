@@ -12,6 +12,7 @@ src/option_arb/
 │   ├── trades.py            # list + detail (with orders)
 │   ├── positions.py         # /positions + /exchanges state
 │   ├── executor.py          # /state + POST kill + POST resume
+│   ├── perp_hedge.py        # /state + POST pause + POST resume
 │   ├── alerts.py            # audit log
 │   └── stream.py            # /api/stream — SSE fan-out from event bus
 ├── exchanges/
@@ -22,8 +23,9 @@ src/option_arb/
 │   ├── derive_constants.py  # MAINNET / TESTNET protocol constants (DOMAIN_SEPARATOR, ACTION_TYPEHASH, modules)
 │   ├── naming.py            # normalize_deribit / normalize_from_parts
 │   ├── deribit.py           # JSON-RPC HTTPS/WSS, price × underlying conversion, OAuth
+│   │                        #   + get_index_price(), get_perp_position_usd(), place_perp_order()
 │   ├── derive.py            # api.lyra.finance, real trade signing via DeriveAuth
-│   ├── aevo.py              # api.aevo.xyz, public-only (auth deferred)
+│   ├── aevo.py              # api.aevo.xyz, REST polling via /instrument/{name} (no WS option channels; removed from screener)
 │   ├── mock.py              # MockExchange (mirror or replay) with SlippageModel
 │   ├── slippage.py          # walk book + gaussian noise + rejection + latency + limit
 │   └── registry.py          # build_exchanges(config) — creates adapters + wires authenticators
@@ -35,6 +37,7 @@ src/option_arb/
 │   ├── comparator.py        # 1:1 port of TS compareOptions (Decimal)
 │   ├── executor.py          # state machine, poll PENDING, kill-switches, IOC limits, market-out
 │   ├── rebalancer.py        # 5min monitor loop, alerts only
+│   ├── perp_hedger.py       # BTC-PERPETUAL short hedge on Deribit inverse; dry_run in paper mode
 │   └── alerter.py           # consumes bus, MarkdownV2 → Telegram, persists to alerts table
 ├── db/
 │   ├── models.py            # 7 tables + enums
@@ -43,7 +46,7 @@ src/option_arb/
 ├── config.py                # Pydantic Settings (env) + AppConfig (YAML) + resolved_alembic_url
 ├── events.py                # in-process asyncio bus (fan-out with per-subscriber queue)
 ├── main.py                  # FastAPI app + lifespan
-├── worker.py                # entry-point: WS + screener + alerter + rebalancer
+├── worker.py                # entry-point: WS + screener + alerter + rebalancer + perp_hedger
 ├── backtest.py              # CLI replay
 └── record.py                # CLI book capture
 ```
@@ -53,7 +56,7 @@ src/option_arb/
 | Command | Container | Purpose |
 |---|---|---|
 | `uvicorn option_arb.main:app` | `api` | REST + SSE, read-only |
-| `python -m option_arb.worker` | `workers` | WS + screener + alerter + rebalancer |
+| `python -m option_arb.worker` | `workers` | WS + screener + alerter + rebalancer + perp_hedger |
 | `python -m option_arb.services.executor` | `executor` | state machine, poll PENDING opps |
 | `python -m option_arb.backtest --file …` | ad-hoc | replay recorded books |
 | `python -m option_arb.record --exchange … --duration …` | ad-hoc | record book snapshots |
@@ -86,15 +89,23 @@ Every adapter (real or mock) implements:
 ```python
 async list_instruments(underlying, max_expiries_ahead) -> list[Instrument]
 async get_orderbook_l2(instrument) -> Book
-def   ws_channels(instruments) -> list[str]
+def   ws_channels(instruments) -> list[str]          # return [] if WS not supported
 def   parse_ws_message(raw) -> TickerUpdate | None
+async poll_tickers(instruments) -> list[TickerUpdate]  # optional: implement when ws_channels() returns []
 async place_order(order) -> OrderResult          # requires Authenticator
 async cancel_order(exchange_order_id) -> bool    # requires Authenticator
-async get_balance_usd() -> Decimal               # requires Authenticator
+async get_balances() -> dict[str, Decimal]       # requires Authenticator
 async get_positions() -> list[dict]              # requires Authenticator
 ```
 
+`DeribitExchange` (inverse only) additionally exposes:
+- `get_index_price() -> Decimal` — BTC index price via `public/get_index_price`.
+- `get_perp_position_usd(symbol) -> float` — current BTC-PERPETUAL position in USD (negative = short).
+- `place_perp_order(symbol, side, amount_usd) -> OrderResult` — IOC limit on a perpetual; amount in USD, rounded to $10 contract size.
+
 Every adapter MUST emit `Instrument.normalized_name = {UNDERLYING}-{YYYYMMDD}-{STRIKE}-{C|P}`. Deribit prices come in underlying units → the adapter multiplies by `underlying_price` to convert to USD.
+
+Exchanges with `ws_channels() == []` are polled via `_rest_poll_loop` in `worker.py` (batches of 50 instruments, 10s interval). Aevo is currently excluded from the screener (no WS, per-instrument REST polling too expensive). See `docs/deribit-vs-derive-options.md` for per-exchange pricing traps.
 
 Every adapter takes an optional `Authenticator`. Without one → private paths return `REJECTED` / empty results. Never hit the network with unauth private calls.
 
@@ -114,7 +125,7 @@ Concrete implementations:
   - `sign_rest(...)` produces the three `X-LYRAWALLET` / `X-LYRATIMESTAMP` / `X-LYRASIGNATURE` headers required on every REST `/private/*` call.
   - `ws_login_params()` returns the params for the WS `public/login` message if we ever route private orders over WS (currently REST-only).
   - Constants (DOMAIN_SEPARATOR, ACTION_TYPEHASH, TRADE_MODULE, WITHDRAW_MODULE, USDC_ASSET) live in `exchanges/derive_constants.py` for both `mainnet` (chain_id=957) and `testnet` (chain_id=901). Source: docs.derive.xyz/docs/protocol-constants.
-- Aevo — currently `NoAuth`. Signing pattern to be added later.
+- Aevo — currently `NoAuth`. REST polling only. Signing pattern to be added later.
 
 `build_authenticator(exchange, settings, network)` picks the right class. Called by `registry.build_exchanges` with `network` taken from `ExchangeConfig.network` (defaults to `"testnet"` in `config.yaml`).
 
@@ -153,6 +164,16 @@ Kill-switches (4, all active):
 
 **Every state transition persists to `trades` + `orders` before the next await.**
 
+## Perp hedger
+
+`services/perp_hedger.py` — runs in the `workers` container alongside screener + rebalancer.
+
+- Every `perp_hedge.poll_interval_sec` (default 60s): reads BTC balance on Deribit inverse, computes `target_short_usd = btc_balance * btc_index_price`, compares to current BTC-PERPETUAL position.
+- Rebalances (SELL to increase short, BUY reduce_only to decrease) if `|delta| > rebalance_threshold_usd` (default $5).
+- Orders: IOC limit at best bid/ask, amount rounded to nearest $10 contract.
+- **`dry_run=True`** when `executor.mode != "live"` — logs the delta but places no real orders.
+- **Runtime pause**: file `data/PERP_HEDGE_DISABLED` OR `POST /api/perp-hedge/pause`. Resume with `POST /api/perp-hedge/resume`.
+
 ## Screener → Executor coupling
 
 Zero direct in-process calls. Screener writes `Opportunity(status=PENDING)` in DB; executor polls `PENDING` every 200ms. Full audit trail + survives restart on either side.
@@ -162,10 +183,10 @@ Zero direct in-process calls. Screener writes `Opportunity(status=PENDING)` in D
 - `test_db` fixture in `tests/conftest.py` gives each test a fresh temp SQLite DB and repoints the shared engine at it.
 - Executor + MockExchange tests deterministic via `SlippageModel(rng_seed=…, noise_stdev_bps=0, reject_prob=0, latency=0)`.
 - Adding a DB-touching test → depend on the `test_db` fixture, no other setup needed.
-- **66 tests total** covering: comparator, HTTP rate limit / retry / circuit, screener (write + skip), executor (happy + all 4 kill-switches + stale + apr_dropped + empty book + STUCK), mock exchange, alerter (persistence + threshold + level), rebalancer (low balance + expiring + unhealthy), auth (NoAuth + Deribit OAuth caching + EIP-712 signer address), WS manager (subscribe payload + reconnect), adapters (WS ticker parsing per exchange), DeriveAuth (constants + LYRA headers + end-to-end sign+validate on testnet constants).
+- **74 tests total** covering: comparator, HTTP rate limit / retry / circuit, screener (write + skip), executor (happy + all 4 kill-switches + stale + apr_dropped + empty book + STUCK), mock exchange, alerter (persistence + threshold + level), rebalancer (low balance + expiring + unhealthy), auth (NoAuth + Deribit OAuth caching + EIP-712 signer address), WS manager (subscribe payload + reconnect), adapters (WS ticker parsing per exchange), DeriveAuth (constants + LYRA headers + end-to-end sign+validate on testnet constants).
 
 ## Not yet wired
 
-- Aevo private trading (signing pattern deferred — currently `NoAuth`).
+- Aevo private trading (signing pattern deferred — currently `NoAuth`, removed from screener).
 - Multi-account per exchange.
 - Sequence-number gap detection on WS (framework supports adding it in `WsManager._read_loop`).

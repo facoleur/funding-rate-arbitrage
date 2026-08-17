@@ -230,6 +230,58 @@ class DeribitExchange(AbstractExchange):
                 log.warning("deribit get_positions(%s) failed: %s", currency, e)
         return positions
 
+    async def get_index_price(self) -> Decimal:
+        """BTC index price (USD)."""
+        try:
+            res = await self._rpc("public/get_index_price", {"index_name": "btc_usd"})
+            return Decimal(str(res.get("index_price", 0)))
+        except Exception as e:
+            log.warning("get_index_price failed: %s", e)
+            return Decimal("0")
+
+    async def get_perp_position_usd(self, symbol: str = "BTC-PERPETUAL") -> float:
+        """Current perp position in USD. Negative = short."""
+        if isinstance(self.auth, NoAuth):
+            return 0.0
+        try:
+            res = await self._rpc("private/get_positions", {"currency": "BTC", "kind": "future"})
+            for p in res:
+                if p.get("instrument_name") == symbol:
+                    return float(p.get("size", 0))
+        except Exception as e:
+            log.warning("get_perp_position_usd(%s) failed: %s", symbol, e)
+        return 0.0
+
+    async def place_perp_order(
+        self, symbol: str, side: Literal["BUY", "SELL"], amount_usd: float
+    ) -> OrderResult:
+        """IOC limit order on a perpetual. amount_usd must be a multiple of $10."""
+        if isinstance(self.auth, NoAuth):
+            return OrderResult(status="REJECTED", reason="deribit_no_auth_configured")
+        try:
+            ticker = await self._rpc("public/ticker", {"instrument_name": symbol})
+            price = float(
+                ticker.get("best_bid_price", 0)
+                if side == "SELL"
+                else ticker.get("best_ask_price", 0)
+            )
+            if price <= 0:
+                return OrderResult(status="REJECTED", reason="no_market_price")
+            method = "private/sell" if side == "SELL" else "private/buy"
+            params: dict[str, Any] = {
+                "instrument_name": symbol,
+                "amount": float(amount_usd),
+                "type": "limit",
+                "price": float(round(price)),
+                "time_in_force": "immediate_or_cancel",
+            }
+            if side == "BUY":
+                params["reduce_only"] = True
+            res = await self._rpc(method, params, priority=True)
+            return self._parse_order_response(res)
+        except Exception as e:
+            return OrderResult(status="REJECTED", reason=str(e))
+
     @staticmethod
     def _parse_order_response(res: dict[str, Any]) -> OrderResult:
         order = res.get("order") or {}

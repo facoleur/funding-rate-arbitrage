@@ -78,20 +78,23 @@ limits:
   max_daily_loss_usd: 15
 ```
 
-### 5. Build frontend
+### 5. Configurer Caddy pour le frontend + API
 
-```bash
-cd /opt/option_arbitrage/frontend
-npm ci
-npm run build
-# → dist/ servi par Caddy
+Le frontend est servi par le container `frontend` (nginx sur port 3000).
+Éditer `/etc/caddy/Caddyfile` pour proxifier les deux services :
+
+```
+arb.mondomaine.com {
+    reverse_proxy /api/* localhost:8001
+    reverse_proxy /* localhost:3000
+}
 ```
 
 ### 6. Démarrer la stack
 
 ```bash
 cd /opt/option_arbitrage
-POSTGRES_PASSWORD=changeme_strong_password make prod
+make up
 ```
 
 ### 7. Vérification
@@ -104,8 +107,8 @@ docker compose logs workers -f | grep -E "ws|connected|ack"
 docker compose exec postgres psql -U option_arb -d option_arb \
   -c "SELECT exchange, count(*), round(extract(epoch from now()-max(updated_at))) lag_sec FROM ticker_state GROUP BY exchange;"
 
-# Front accessible
-curl -s https://arb.mondomaine.com/api/tickers | jq length
+# Front accessible + API saine
+curl -s https://arb.mondomaine.com/health | jq .
 ```
 
 ### Opérations courantes
@@ -117,10 +120,7 @@ make resume    # relance l'executor
 
 # Mise à jour du code
 git pull
-make prod      # rebuild + redémarrage
-
-# Rebuild frontend uniquement
-cd frontend && npm run build
+make up        # rebuild + redémarrage (docker compose up -d --build)
 
 # Logs
 make logs svc=workers

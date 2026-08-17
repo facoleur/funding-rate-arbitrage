@@ -40,6 +40,7 @@ class Spread:
     buy_ask: Decimal
     sell_bid: Decimal
 
+    fee_pct: Decimal
     net_spread_pct: Decimal
     apr_pct: Decimal
     max_notional_usd: Decimal
@@ -124,6 +125,7 @@ def compare_options(
                 sell_to=highest_bid.exchange,
                 buy_ask=lowest_ask.ask_price,
                 sell_bid=highest_bid.bid_price,
+                fee_pct=fee_pct,
                 net_spread_pct=net_diff_pct,
                 apr_pct=apr,
                 max_notional_usd=max_notional,

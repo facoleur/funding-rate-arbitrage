@@ -7,11 +7,13 @@ import signal
 
 from option_arb.config import load_config
 from option_arb.db.session import init_db
-from option_arb.exchanges.base import Instrument, TickerUpdate
+from option_arb.exchanges.base import AbstractExchange, Instrument, TickerUpdate
+from option_arb.exchanges.deribit import DeribitExchange
 from option_arb.exchanges.registry import build_exchanges, close_exchanges
 from option_arb.market.book_cache import BookCache
 from option_arb.market.ws_manager import WsManager
 from option_arb.services.alerter import Alerter
+from option_arb.services.perp_hedger import PerpHedger
 from option_arb.services.rebalancer import Rebalancer
 from option_arb.services.screener import Screener
 
@@ -51,6 +53,16 @@ async def _amain() -> None:
     alerter = Alerter(cfg.alerts)
     rebalancer = Rebalancer(cfg, exchanges)
 
+    # 4. perp hedger (optional — Deribit inverse only)
+    perp_hedger: PerpHedger | None = None
+    if cfg.perp_hedge.enabled and "deribit" in exchanges:
+        raw = exchanges["deribit"]
+        upstream = getattr(raw, "upstream", raw)
+        if isinstance(upstream, DeribitExchange) and not upstream._linear:
+            dry_run = cfg.executor.mode != "live"
+            perp_hedger = PerpHedger(upstream, cfg.perp_hedge, dry_run=dry_run)
+            log.info("perp_hedger: enabled (dry_run=%s)", dry_run)
+
     stop = asyncio.Event()
 
     def _shutdown(*_: object) -> None:
@@ -66,7 +78,21 @@ async def _amain() -> None:
         asyncio.create_task(screener.run(), name="screener"),
         asyncio.create_task(alerter.run(), name="alerter"),
         asyncio.create_task(rebalancer.run(), name="rebalancer"),
+        *(
+            [asyncio.create_task(perp_hedger.run(), name="perp_hedger")]
+            if perp_hedger is not None
+            else []
+        ),
     ]
+    for name, ex in exchanges.items():
+        upstream = getattr(ex, "upstream", ex)  # unwrap MockExchange
+        if hasattr(upstream, "poll_tickers") and name in subscriptions:
+            tasks.append(
+                asyncio.create_task(
+                    _rest_poll_loop(name, ex, subscriptions[name], cache, stop),
+                    name=f"rest-poll-{name}",
+                )
+            )
 
     await stop.wait()
     log.info("stopping tasks…")
@@ -80,6 +106,39 @@ async def _amain() -> None:
 
 async def _push(cache: BookCache, upd: TickerUpdate) -> None:
     cache.update(upd)
+
+
+_REST_POLL_BATCH = 50
+
+
+async def _rest_poll_loop(
+    name: str,
+    exchange: AbstractExchange,
+    instruments: list[Instrument],
+    cache: BookCache,
+    stop: asyncio.Event,
+    poll_interval_sec: float = 10.0,
+) -> None:
+    log.info(
+        "rest-poll %s: %d instruments, interval=%.0fs", name, len(instruments), poll_interval_sec
+    )
+    while not stop.is_set():
+        n_updates = 0
+        for i in range(0, len(instruments), _REST_POLL_BATCH):
+            batch = instruments[i : i + _REST_POLL_BATCH]
+            try:
+                updates = await exchange.poll_tickers(batch)  # type: ignore[attr-defined]
+                for upd in updates:
+                    cache.update(upd)
+                n_updates += len(updates)
+            except Exception as e:
+                log.warning("rest-poll %s error: %s", name, e)
+        log.debug("rest-poll %s: %d updates", name, n_updates)
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=poll_interval_sec)
+            break
+        except TimeoutError:
+            pass
 
 
 def main() -> None:

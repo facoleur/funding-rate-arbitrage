@@ -2,6 +2,15 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Communication style
+
+- Be extremely concise. Get straight to the point, no preamble, no closing summary.
+- Never repeat information already stated.
+- No filler phrases, no "feel free to ask if...", no final recap that restates what was just said.
+- Prefer bullet points over paragraphs when possible.
+- If an explanation fits in one sentence, don't stretch it into three.
+- Prioritize technical accuracy over prose fluency: a terse, exact answer beats a pleasant but padded one.
+
 ## Sole purpose
 
 Cross-exchange **crypto options arbitrage**. Detect + execute spreads where the highest bid on exchange A exceeds the lowest ask on exchange B for the same option instrument, net of taker fees. Nothing else — perpetual-funding arbitrage code is intentionally gone, and the prior TypeScript prototype has been deleted.
@@ -12,14 +21,15 @@ Always read the relevant doc before editing:
 
 - `AGENTS.md` (root) — architecture, conventions, auth model, kill-switches.
 - `backend/AGENTS.md` — Python backend internals (module map, contracts, testing).
-- `frontend/REQUIREMENTS.md` — spec for the future TanStack Start frontend.
+- `frontend/REQUIREMENTS.md` — frontend pages, stack, and API contract.
+- `docs/deribit-vs-derive-options.md` — exchange-specific pricing traps, settlement differences, auth latency.
 - Full architecture plan: `~/.claude/plans/rippling-gathering-fountain.md`.
 
 ## Current state
 
-- **Backend `backend/` (Python + Postgres)** is the sole source of truth. All phases 1-12 landed; 60 tests passing.
-- Deribit adapter has full OAuth support (token fetch + refresh cached). Derive / Aevo have the EIP-712 framework wired but the venue-specific typed-data schema is not yet filled in — orders reject cleanly with reason `..._eip712_schema_not_implemented`.
-- **Frontend `frontend/`** contains only `REQUIREMENTS.md` — TanStack Start app not built yet.
+- **Backend `backend/` (Python + Postgres)** is the sole source of truth. All phases 1-12 landed; 74 tests passing.
+- Deribit adapter has full OAuth support (token fetch + refresh cached). Derive has full EIP-712 signing via `DeriveAuth`. Aevo uses **REST polling** (no WS option channels) — public data only, private auth deferred.
+- **Frontend `frontend/`** is built: Vite + React + TanStack Query + React Router, 7 pages (Book, Executor, Funding, History, Opportunities, Positions, Trades). Served via nginx in the `frontend` Docker container.
 - **Storage**: Postgres in production (docker-compose service `postgres`). SQLite retained ONLY inside pytest for speed/isolation. Model code is DB-agnostic.
 
 ## Common commands
@@ -30,7 +40,8 @@ Use the Makefile — it's canonical.
 # Docker stack (full)
 make up                     # postgres + migrate + api + workers + executor (background)
 make down
-make paper                  # foreground, paper mode
+make dev                    # hot-reload stack (source mounted, no rebuild on change)
+make dev-down               # stop dev stack
 make live                   # foreground, live mode (typed confirmation)
 make logs svc=executor      # tail one service
 
@@ -46,7 +57,7 @@ make migrate-new msg="..."  # create new revision
 make db-shell               # psql into postgres
 
 # Test + lint
-make test                   # pytest (60 tests, SQLite per-test)
+make test                   # pytest (74 tests, SQLite per-test)
 make lint                   # ruff check
 make format                 # ruff format
 make typecheck              # mypy
@@ -104,9 +115,9 @@ See `backend/src/option_arb/exchanges/auth.py` + `derive_auth.py`. Adapters take
 
 - **Deribit** = `DeribitOAuth` (OAuth 2.0 client_credentials, token cached ~1h, auto-refresh). Env: `DERIBIT_CLIENT_ID`, `DERIBIT_CLIENT_SECRET`.
 - **Derive** = `DeriveAuth` — specialized: wraps the official `derive-action-signing` package for order signing and produces `X-LYRA*` headers for REST auth. Constants baked in `exchanges/derive_constants.py` (mainnet chain_id=957, testnet 901). Env: `DERIVE_SESSION_PRIVATE_KEY`, `DERIVE_WALLET_ADDRESS` (SCW address), `DERIVE_SUBACCOUNT_ID`.
-- **Aevo** = `NoAuth` for now (public read-only). Signing pattern deferred.
+- **Aevo** = `NoAuth` (public REST polling only — no WS option channels). Private signing deferred.
 
-Every exchange defaults to **testnet** in `config.yaml`. Change `network: mainnet` + swap `rest_base_url`/`ws_url` to go live.
+All exchanges are currently configured as **mainnet** in `config.yaml`. Change `network: testnet` + swap `rest_base_url`/`ws_url` to use testnet.
 
 ## Rules for changes
 
