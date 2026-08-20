@@ -36,6 +36,7 @@ class ExecutorConfig(BaseModel):
 
 class Limits(BaseModel):
     max_notional_per_trade_usd: float = 500.0
+    max_contracts_per_trade: float | None = None  # cap en nombre de contrats (unités sous-jacentes)
     max_positions_open: int = 10
     max_daily_loss_usd: float = 100.0
     kill_switch_file: str = "/data/EXECUTOR_DISABLED"

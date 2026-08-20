@@ -20,6 +20,7 @@ executor:
 
 limits:
   max_notional_per_trade_usd: 50
+  max_contracts_per_trade: 1.0  # max 1 ETH ou 0.1 BTC par trade
   max_positions_open: 10
   max_daily_loss_usd: 40
   kill_switch_file: /data/EXECUTOR_DISABLED

@@ -108,6 +108,7 @@ class DeribitExchange(AbstractExchange):
                         option_type=cast(Literal["C", "P"], opt_type),
                         maker_fee_rate=Decimal(str(inst.get("maker_commission", "0"))),
                         taker_fee_rate=Decimal(str(inst.get("taker_commission", "0"))),
+                        min_trade_amount=Decimal(str(inst.get("min_trade_amount", "0"))),
                     )
                 )
         return out
@@ -229,6 +230,19 @@ class DeribitExchange(AbstractExchange):
             except Exception as e:
                 log.warning("deribit get_positions(%s) failed: %s", currency, e)
         return positions
+
+    async def get_available_funds(self) -> dict[str, Decimal]:
+        if isinstance(self.auth, NoAuth):
+            return {}
+        currencies = ["USDC"] if self._linear else ["BTC", "ETH"]
+        out: dict[str, Decimal] = {}
+        for currency in currencies:
+            try:
+                res = await self._rpc("private/get_account_summary", {"currency": currency})
+                out[currency] = Decimal(str(res.get("available_funds", 0)))
+            except Exception as e:
+                log.warning("get_available_funds(%s) failed: %s", currency, e)
+        return out
 
     async def get_index_price(self) -> Decimal:
         """BTC index price (USD)."""

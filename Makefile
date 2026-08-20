@@ -31,8 +31,9 @@ dev: ## Start dev stack with hot-reload on all services (source mounted, no rebu
 dev-down: ## Stop the dev stack
 	docker compose -f docker-compose.dev.yml down
 
-down: ## Stop the stack
+down: ## Stop the stack (prod + dev)
 	docker compose down
+	docker compose -f docker-compose.dev.yml down
 
 logs: ## Tail logs for one service (usage: make logs svc=api)
 	docker compose logs -f $(svc)

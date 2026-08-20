@@ -114,6 +114,11 @@ class MockExchange(AbstractExchange):
             return {}
         return await self.upstream.get_balances()
 
+    async def get_available_funds(self) -> dict[str, Decimal]:
+        if self.upstream is None:
+            return {}
+        return await self.upstream.get_available_funds()
+
     async def get_positions(self) -> list[dict[str, Any]]:
         if self.upstream is None:
             return []

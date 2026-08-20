@@ -18,6 +18,7 @@ class Instrument:
     option_type: Literal["C", "P"]
     maker_fee_rate: Decimal
     taker_fee_rate: Decimal
+    min_trade_amount: Decimal = Decimal(0)
     # venue-native fields needed for signed orders (Derive uses base_asset_address + sub_id).
     # Optional so Deribit/Aevo can leave them None.
     asset_address: str | None = None
@@ -125,3 +126,8 @@ class AbstractExchange(ABC):
     @abstractmethod
     async def get_positions(self) -> list[dict[str, Any]]:
         """Return raw position dicts. Callers normalize into DB Position rows."""
+
+    async def get_available_funds(self) -> dict[str, Decimal]:
+        """Fonds disponibles pour de nouvelles positions (hors marge déjà engagée).
+        Default no-op — les exchanges non-authentifiés retournent {}."""
+        return {}

@@ -136,10 +136,13 @@ class Executor:
 
         timeout = self.config.executor.fresh_fetch_timeout_ms / 1000.0
         try:
-            buy_book, sell_book = await asyncio.wait_for(
+            results = await asyncio.wait_for(
                 asyncio.gather(
                     buy_ex.get_orderbook_l2(buy_inst),
                     sell_ex.get_orderbook_l2(sell_inst),
+                    buy_ex.get_available_funds(),
+                    sell_ex.get_available_funds(),
+                    return_exceptions=True,
                 ),
                 timeout=timeout,
             )
@@ -147,8 +150,25 @@ class Executor:
             await self._reject(opp, f"stale_book:{type(e).__name__}")
             return
 
+        if isinstance(results[0], BaseException) or isinstance(results[1], BaseException):
+            await self._reject(opp, f"stale_book:{type(results[0]).__name__}")
+            return
+        buy_book: Book = results[0]
+        sell_book: Book = results[1]
+        buy_funds: dict[str, Decimal] = (
+            results[2] if not isinstance(results[2], BaseException) else {}
+        )
+        sell_funds: dict[str, Decimal] = (
+            results[3] if not isinstance(results[3], BaseException) else {}
+        )
+
+        buy_avail_usd = _usdc_funds(buy_funds)
+        sell_avail_usd = _usdc_funds(sell_funds)
+
         # 3. walk book, recompute
-        walked = self._walk_and_verify(opp, buy_book, sell_book, buy_inst, sell_inst)
+        walked = self._walk_and_verify(
+            opp, buy_book, sell_book, buy_inst, sell_inst, buy_avail_usd, sell_avail_usd
+        )
         if isinstance(walked, str):
             await self._reject(opp, walked)
             return
@@ -272,15 +292,23 @@ class Executor:
         sell_book: Book,
         buy_inst: Instrument,
         sell_inst: Instrument,
+        buy_avail_usd: Decimal = Decimal(0),
+        sell_avail_usd: Decimal = Decimal(0),
     ) -> tuple[Decimal, Decimal, Decimal] | str:
         cfg = self.config
         limits = cfg.limits
         min_apr = Decimal(str(cfg.thresholds.min_apr_pct))
         min_notional = Decimal(str(cfg.thresholds.min_notional_usd))
         cap = Decimal(str(limits.max_notional_per_trade_usd))
+        # cap par balance disponible sur le buy exchange (si connue)
+        if buy_avail_usd > 0:
+            cap = min(cap, buy_avail_usd)
+        max_contracts = (
+            Decimal(str(limits.max_contracts_per_trade)) if limits.max_contracts_per_trade else None
+        )
 
         # Progressive size search: try increasing sizes; stop before APR drops.
-        candidate_size = _max_size_within_cap(buy_book.asks, sell_book.bids, cap)
+        candidate_size = _max_size_within_cap(buy_book.asks, sell_book.bids, cap, max_contracts)
         if candidate_size <= 0:
             return "empty_book"
 
@@ -314,6 +342,12 @@ class Executor:
         notional = walked_size * walked_ask
         if notional < min_notional:
             return "size_too_small"
+        min_size = max(buy_inst.min_trade_amount, sell_inst.min_trade_amount)
+        if min_size > 0 and walked_size < min_size:
+            return f"size_below_minimum({float(walked_size):.4f}<{float(min_size):.4f})"
+        # check sell-side funds: doit couvrir au moins la prime (proxy conservateur de la marge)
+        if sell_avail_usd > 0 and sell_avail_usd < walked_size * walked_ask:
+            return f"insufficient_sell_funds({sell_avail_usd:.0f}<{float(walked_size * walked_ask):.0f})"
         return best
 
     async def _reject(self, opp: Opportunity, reason: str) -> None:
@@ -453,7 +487,8 @@ class Executor:
             return
 
         mid = _mid_or(entry_price, book)
-        limit = mid * (Decimal("0.95") if side == "SELL" else Decimal("1.05"))
+        slip = Decimal(str(self.config.executor.max_slippage_pct)) / Decimal(100)
+        limit = mid * (Decimal(1) - slip if side == "SELL" else Decimal(1) + slip)
         req = OrderRequest(
             exchange=ex_name,
             instrument=inst.instrument_name,
@@ -534,16 +569,29 @@ def _walk(size: Decimal, levels: list[BookLevel]) -> tuple[Decimal, Decimal]:
     return total_cost / total_filled, total_filled
 
 
-def _max_size_within_cap(asks: list[BookLevel], bids: list[BookLevel], cap_usd: Decimal) -> Decimal:
-    """Maximum size that (a) can be filled on both sides and (b) stays under the notional cap."""
+def _max_size_within_cap(
+    asks: list[BookLevel],
+    bids: list[BookLevel],
+    cap_usd: Decimal,
+    max_contracts: Decimal | None = None,
+) -> Decimal:
+    """Maximum size que (a) le book peut absorber, (b) reste sous le cap notionnel, (c) sous max_contracts."""
     if not asks or not bids:
         return Decimal(0)
     ask_size_total = sum((lvl.size for lvl in asks), Decimal(0))
     bid_size_total = sum((lvl.size for lvl in bids), Decimal(0))
     liquidity_size = min(ask_size_total, bid_size_total)
-    # cap by notional: cap / worst-case ask
     cap_size = cap_usd / asks[0].price if asks[0].price > 0 else Decimal(0)
-    return min(liquidity_size, cap_size)
+    result = min(liquidity_size, cap_size)
+    if max_contracts is not None:
+        result = min(result, max_contracts)
+    return result
+
+
+def _usdc_funds(funds: dict[str, Decimal]) -> Decimal:
+    """Retourne la balance USDC/USD disponible. Les balances crypto (BTC/ETH) sont ignorées
+    car la conversion nécessiterait un appel index price supplémentaire."""
+    return funds.get("USDC", Decimal(0)) + funds.get("USD", Decimal(0))
 
 
 def _mid_or(fallback: Decimal, book: Book) -> Decimal:

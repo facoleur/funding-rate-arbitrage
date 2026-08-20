@@ -84,6 +84,7 @@ class DeriveExchange(AbstractExchange):
                         option_type=cast(Literal["C", "P"], opt_type),
                         maker_fee_rate=Decimal(str(inst.get("maker_fee_rate", "0"))),
                         taker_fee_rate=Decimal(str(inst.get("taker_fee_rate", "0"))),
+                        min_trade_amount=Decimal(str(inst.get("minimum_amount", "0"))),
                         asset_address=inst.get("base_asset_address"),
                         asset_sub_id=int(inst["base_asset_sub_id"])
                         if inst.get("base_asset_sub_id") is not None
@@ -285,6 +286,24 @@ class DeriveExchange(AbstractExchange):
             return out
         except Exception as e:
             log.warning("derive get_balances failed: %s", e)
+            return {}
+
+    async def get_available_funds(self) -> dict[str, Decimal]:
+        if isinstance(self.auth, NoAuth) or not isinstance(self.auth, DeriveAuth):
+            return {}
+        try:
+            sig = await self.auth.sign_rest("POST", "/private/get_subaccount", {})
+            resp = await self.rest.post(
+                "/private/get_subaccount",
+                json={"subaccount_id": self.auth.subaccount_id},
+                headers=sig.headers,
+            )
+            r = resp.get("result") or {}
+            total = Decimal(str(r.get("collaterals_value") or 0))
+            margin_used = Decimal(str(r.get("initial_margin") or 0))
+            return {"USDC": max(total - margin_used, Decimal(0))}
+        except Exception as e:
+            log.warning("derive get_available_funds failed: %s", e)
             return {}
 
     async def get_positions(self) -> list[dict[str, Any]]:
