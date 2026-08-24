@@ -1,16 +1,13 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { fetchTickers, type BookRow } from '../api/tickers'
+import { fetchTickers, type BookRow, type ExchangeQuote } from '../api/tickers'
+import { fetchExecutorState } from '../api/executor'
+import { useBookFilters } from '../hooks/useBookFilters'
 
-type SortCol = 'expiry' | 'strike' | 'gross' | 'net' | 'profit' | 'notional' | 'age'
-type SortDir = 'asc' | 'desc'
+// ─── Formatters ──────────────────────────────────────────────────────────────
 
 function fmtExpiry(iso: string) {
-  return new Date(iso).toLocaleDateString('fr-FR', {
-    day: '2-digit',
-    month: 'short',
-    year: '2-digit',
-  })
+  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: '2-digit' })
 }
 
 function fmtAge(iso: string) {
@@ -20,329 +17,332 @@ function fmtAge(iso: string) {
   return `${Math.floor(s / 3600)}h`
 }
 
-function fmtPrice(v: number | null) {
-  if (v == null) return <span className="text-zinc-500">—</span>
-  return <span>{v.toFixed(2)}</span>
+// ─── Sorting ─────────────────────────────────────────────────────────────────
+
+type SortDir = 'asc' | 'desc'
+const SORTABLE = ['expiry', 'strike', 'gross', 'net', 'notional', 'profit', 'age'] as const
+type SortCol = typeof SORTABLE[number]
+
+function isSortCol(s: string | null): s is SortCol {
+  return SORTABLE.includes(s as SortCol)
 }
 
-function fmtSize(v: number | null) {
-  if (v == null) return <span className="text-zinc-700" />
-  return <span className="text-zinc-500 ml-1">{v.toFixed(3)}</span>
+function sortRows(rows: BookRow[], col: SortCol | null, dir: SortDir): BookRow[] {
+  if (!col) return rows.slice().sort((a, b) => {
+    if (a.underlying !== b.underlying) return a.underlying.localeCompare(b.underlying)
+    if (a.expiry !== b.expiry) return a.expiry.localeCompare(b.expiry)
+    if (a.strike !== b.strike) return a.strike - b.strike
+    return a.option_type.localeCompare(b.option_type)
+  })
+  const sign = dir === 'asc' ? 1 : -1
+  return rows.slice().sort((a, b) => {
+    let av: number, bv: number
+    switch (col) {
+      case 'expiry': av = new Date(a.expiry).getTime(); bv = new Date(b.expiry).getTime(); break
+      case 'strike': av = a.strike; bv = b.strike; break
+      case 'gross':  av = a.gross_spread_pct ?? -Infinity; bv = b.gross_spread_pct ?? -Infinity; break
+      case 'net':    av = a.net_spread_pct ?? -Infinity; bv = b.net_spread_pct ?? -Infinity; break
+      case 'notional': av = a.max_notional_usd ?? -Infinity; bv = b.max_notional_usd ?? -Infinity; break
+      case 'profit': av = a.max_profit_usd ?? -Infinity; bv = b.max_profit_usd ?? -Infinity; break
+      case 'age':    av = new Date(a.updated_at).getTime(); bv = new Date(b.updated_at).getTime(); break
+    }
+    return (av! < bv! ? -1 : av! > bv! ? 1 : 0) * sign
+  })
 }
 
-const _MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
+// ─── Exchange URL helpers ─────────────────────────────────────────────────────
 
-function toDeribitInstrument(normalized: string): string | null {
-  const m = normalized.match(/^([A-Z]+)-(\d{4})(\d{2})(\d{2})-(\d+(?:\.\d+)?)-([CP])$/)
+const _M = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
+
+function toDeribitName(n: string) {
+  const m = n.match(/^([A-Z]+)-(\d{4})(\d{2})(\d{2})-(\d+(?:\.\d+)?)-([CP])$/)
   if (!m) return null
-  const [, underlying, year, month, day, strike, type] = m
-  const mon = _MONTHS[parseInt(month) - 1]
-  const d = parseInt(day).toString()
-  return `${underlying}-${d}${mon}${year.slice(2)}-${strike}-${type}`
+  return `${m[1]}-${parseInt(m[4])}${_M[parseInt(m[3])-1]}${m[2].slice(2)}-${m[5]}-${m[6]}`
 }
 
-function deribitUrl(instrument: string, underlying: string): string | null {
-  const dName = toDeribitInstrument(instrument)
-  if (!dName) return null
-  const parts = dName.split('-')
-  const expiryGroup = `${parts[0]}-${parts[1]}`
-  return `https://www.deribit.com/options/${underlying}/${expiryGroup}/${dName}`
+function deribitUrl(inst: string, ul: string) {
+  const n = toDeribitName(inst); if (!n) return null
+  const [a, b] = n.split('-'); return `https://www.deribit.com/options/${ul}/${a}-${b}/${n}`
 }
+function deriveUrl(inst: string) { return `https://app.derive.xyz/trade/${inst}` }
+function aevoUrl(inst: string) { const n = toDeribitName(inst); if (!n) return null; return `https://app.aevo.xyz/trade/${n}` }
 
-function deriveUrl(instrument: string): string {
-  return `https://app.derive.xyz/trade/${instrument}`
-}
+const ABBR: Record<string, string> = { deribit: 'Db', deribit_linear: 'DL', derive: 'Dr', aevo: 'Av' }
 
-function aevoUrl(instrument: string): string | null {
-  const dName = toDeribitInstrument(instrument)
-  if (!dName) return null
-  return `https://app.aevo.xyz/trade/${dName}`
-}
-
-const EXCHANGE_ABBR: Record<string, string> = {
-  deribit: 'Db',
-  deribit_linear: 'DL',
-  derive: 'Dr',
-  aevo: 'Av',
-}
-
-function ExchangeLink({ href, label }: { href: string; label: string }) {
+function ExLink({ href, ex }: { href: string; ex: string }) {
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      title={`Voir sur ${label}`}
-      className="text-[9px] font-semibold px-1 py-px rounded bg-zinc-800 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-700 transition-colors leading-none"
-    >
-      {EXCHANGE_ABBR[label.toLowerCase()] ?? label.slice(0, 2)}
+    <a href={href} target="_blank" rel="noopener noreferrer"
+      className="text-[9px] font-semibold px-1 py-px rounded bg-zinc-800 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-700 transition-colors leading-none">
+      {ABBR[ex] ?? ex.slice(0, 2)}
     </a>
   )
 }
 
-function SortIcon({ col: _col, active, dir }: { col: string; active: boolean; dir: SortDir }) {
-  if (!active) return <span className="ml-1 text-zinc-600">↕</span>
-  return <span className="ml-1 text-zinc-300">{dir === 'asc' ? '↑' : '↓'}</span>
+function computeLegAmounts(row: BookRow) {
+  if (!row.buy_exchange || !row.sell_exchange) return { buyAmt: null, sellAmt: null }
+  const bq = row.exchanges[row.buy_exchange]
+  if (!bq?.ask_price || !bq?.ask_size) return { buyAmt: null, sellAmt: null }
+  const sq = row.exchanges[row.sell_exchange]
+  if (!sq?.bid_size) return { buyAmt: null, sellAmt: null }
+  const size = Math.min(bq.ask_size, sq.bid_size)
+  return { buyAmt: size * bq.ask_price, sellAmt: row.sell_collateral_usd ?? null }
 }
 
-function sortRows(rows: BookRow[], col: SortCol | null, dir: SortDir): BookRow[] {
-  if (!col) {
-    return [...rows].sort((a, b) => {
-      if (a.underlying !== b.underlying) return a.underlying.localeCompare(b.underlying)
-      if (a.expiry !== b.expiry) return a.expiry.localeCompare(b.expiry)
-      if (a.strike !== b.strike) return a.strike - b.strike
-      return a.option_type.localeCompare(b.option_type)
-    })
-  }
-  return [...rows].sort((a, b) => {
-    let av: number, bv: number
-    if (col === 'expiry') {
-      av = new Date(a.expiry).getTime()
-      bv = new Date(b.expiry).getTime()
-    } else if (col === 'strike') {
-      av = a.strike; bv = b.strike
-    } else if (col === 'gross') {
-      av = a.gross_spread_pct ?? -Infinity
-      bv = b.gross_spread_pct ?? -Infinity
-    } else if (col === 'net') {
-      av = a.net_spread_pct ?? -Infinity
-      bv = b.net_spread_pct ?? -Infinity
-    } else if (col === 'profit') {
-      av = a.max_profit_usd ?? -Infinity
-      bv = b.max_profit_usd ?? -Infinity
-    } else if (col === 'notional') {
-      av = a.max_notional_usd ?? -Infinity
-      bv = b.max_notional_usd ?? -Infinity
-    } else {
-      av = new Date(a.updated_at).getTime()
-      bv = new Date(b.updated_at).getTime()
-    }
-    return dir === 'asc' ? av - bv : bv - av
-  })
+// ─── Exec criteria ───────────────────────────────────────────────────────────
+
+type Thresholds = { max_days_to_expiry: number; min_net_spread_pct: number; min_net_profit_usd: number }
+
+function meetsExecCriteria(row: BookRow, thresholds: Thresholds | undefined): boolean {
+  if (!thresholds) return true
+  if (!row.net_spread_pct || row.net_spread_pct <= 0) return false
+  if (row.days_to_expiry > thresholds.max_days_to_expiry) return false
+  if (row.net_spread_pct < thresholds.min_net_spread_pct) return false
+  if (row.max_profit_usd !== null && row.max_profit_usd < thresholds.min_net_profit_usd) return false
+  return true
 }
+
+// ─── Shared styles ────────────────────────────────────────────────────────────
+
+const SELECT = 'rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-200 focus:outline-none'
+
+function Th({
+  label, col, active, dir, onClick, className = '',
+}: {
+  label: string; col: SortCol; active: boolean; dir: SortDir
+  onClick: (col: SortCol) => void; className?: string
+}) {
+  return (
+    <th onClick={() => onClick(col)}
+      className={`pb-2 pr-3 cursor-pointer select-none hover:text-zinc-300 ${className}`}>
+      {label}
+      <span className={`ml-1 ${active ? 'text-zinc-300' : 'text-zinc-600'}`}>
+        {active ? (dir === 'asc' ? '↑' : '↓') : '↕'}
+      </span>
+    </th>
+  )
+}
+
+function QuoteCell({ q, side, highlight }: { q: ExchangeQuote | undefined; side: 'bid' | 'ask'; highlight: boolean }) {
+  if (!q) return <span className="text-zinc-700">—</span>
+  const price = side === 'bid' ? q.bid_price : q.ask_price
+  const size  = side === 'bid' ? q.bid_size  : q.ask_size
+  const stale = q.is_stale
+  const color = stale ? 'text-zinc-600'
+    : highlight ? (side === 'bid' ? 'text-emerald-300 font-semibold' : 'text-sky-300 font-semibold')
+    : side === 'bid' ? 'text-emerald-400' : 'text-red-400'
+  return (
+    <span className={color} title={stale ? 'Données > 60s' : undefined}>
+      {stale && price != null && <span className="mr-0.5 text-amber-600">⚠</span>}
+      {price != null ? price.toFixed(2) : '—'}
+      {size != null && <span className="text-zinc-500 ml-1">{size.toFixed(3)}</span>}
+    </span>
+  )
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function Book() {
-  const [underlying, setUnderlying] = useState('')
-  const [optionType, setOptionType] = useState('')
-  const [onlyArb, setOnlyArb] = useState(false)
-  const [sortCol, setSortCol] = useState<SortCol | null>(null)
-  const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const f = useBookFilters()
+  const [showLinks, setShowLinks] = useState(true)
+  const sortCol  = isSortCol(f.sorting[0]?.id ?? null) ? (f.sorting[0]!.id as SortCol) : null
+  const sortDir: SortDir = f.sorting[0]?.desc === false ? 'asc' : 'desc'
 
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ['tickers', underlying],
-    queryFn: () => fetchTickers({ underlying: underlying || undefined }),
+  const { data = [], isLoading, isError } = useQuery({
+    queryKey: ['tickers', f.underlying],
+    queryFn: () => fetchTickers({ underlying: f.underlying || undefined }),
     refetchInterval: 5000,
   })
 
-  const filtered = (data ?? [])
-    .filter((r) => !optionType || r.option_type === optionType)
-    .filter((r) => !onlyArb || (r.net_spread_pct !== null && r.net_spread_pct > 0))
+  const { data: execState } = useQuery({
+    queryKey: ['executor-state'],
+    queryFn: fetchExecutorState,
+    refetchInterval: 30_000,
+    retry: false,
+  })
+  const thresholds = execState?.config
 
-  const rows = sortRows(filtered, sortCol, sortDir)
-  const allExchanges = [...new Set((data ?? []).flatMap((r) => Object.keys(r.exchanges)))].sort()
+  // Stable exchange list — only recompute when the set of exchange names actually changes
+  const allExchanges = useMemo(() => {
+    const set = new Set<string>()
+    for (const r of data) for (const ex of Object.keys(r.exchanges)) set.add(ex)
+    return [...set].sort()
+  }, [data.map(r => Object.keys(r.exchanges).sort().join()).join('|')])  // eslint-disable-line
+
+  const filtered = useMemo(() =>
+    data
+      .filter(r => !f.optionType || r.option_type === f.optionType)
+      .filter(r => !f.onlyArb   || (r.net_spread_pct !== null && r.net_spread_pct > 0))
+      .filter(r => !f.exchange  || f.exchange in r.exchanges)
+      .filter(r => !f.maxExpiry || r.expiry.slice(0, 10) <= f.maxExpiry),
+    [data, f.optionType, f.onlyArb, f.exchange, f.maxExpiry],
+  )
+
+  const rows = useMemo(() => sortRows(filtered, sortCol, sortDir), [filtered, sortCol, sortDir])
 
   function handleSort(col: SortCol) {
-    if (sortCol === col) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
-    } else {
-      setSortCol(col)
-      setSortDir(col === 'net' || col === 'gross' || col === 'profit' || col === 'notional' ? 'desc' : 'asc')
-    }
+    const desc = sortCol === col ? sortDir === 'asc' : !['net', 'gross', 'profit', 'notional'].includes(col)
+    f.onSortingChange([{ id: col, desc }])
   }
 
-  function thSort(col: SortCol, label: string, className = '') {
-    return (
-      <th
-        className={`pb-2 pr-3 cursor-pointer select-none hover:text-zinc-300 ${className}`}
-        onClick={() => handleSort(col)}
-      >
-        {label}
-        <SortIcon col={col} active={sortCol === col} dir={sortDir} />
-      </th>
-    )
+  function th(col: SortCol, label: string, className = '') {
+    return <Th col={col} label={label} active={sortCol === col} dir={sortDir} onClick={handleSort} className={className} />
   }
 
   return (
-    <div>
+    <div className="h-full flex flex-col">
       <div className="mb-4 flex items-center gap-4">
         <h1 className="text-base font-semibold text-zinc-100">Book</h1>
-        <span className="text-xs text-zinc-500">{rows.length} instruments</span>
+        <span className="text-xs text-zinc-500">
+          {rows.length}{data.length !== rows.length ? ` / ${data.length}` : ''} instruments
+        </span>
       </div>
 
-      <div className="mb-4 flex gap-3 items-center">
-        <select
-          value={underlying}
-          onChange={(e) => setUnderlying(e.target.value)}
-          className="rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-200 focus:outline-none"
-        >
+      <div className="mb-4 flex flex-wrap gap-3 items-center">
+        <select value={f.underlying} onChange={e => f.setUnderlying(e.target.value)} className={SELECT}>
           <option value="">BTC + ETH</option>
           <option value="BTC">BTC</option>
           <option value="ETH">ETH</option>
         </select>
-        <select
-          value={optionType}
-          onChange={(e) => setOptionType(e.target.value)}
-          className="rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-200 focus:outline-none"
-        >
+
+        <select value={f.optionType} onChange={e => f.setOptionType(e.target.value)} className={SELECT}>
           <option value="">Calls + Puts</option>
           <option value="C">Calls</option>
           <option value="P">Puts</option>
         </select>
+
+        <select value={f.exchange} onChange={e => f.setExchange(e.target.value)} className={SELECT}>
+          <option value="">Tous les exchanges</option>
+          {allExchanges.map(ex => <option key={ex} value={ex}>{ex}</option>)}
+        </select>
+
+        <div className="flex items-center gap-1.5">
+          <label className="text-xs text-zinc-500">Expiry ≤</label>
+          <input type="date" value={f.maxExpiry} onChange={e => f.setMaxExpiry(e.target.value)}
+            className={SELECT + ' w-36'} />
+        </div>
+
         <label className="flex items-center gap-1.5 text-xs text-zinc-400 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={onlyArb}
-            onChange={(e) => setOnlyArb(e.target.checked)}
-            className="accent-emerald-500"
-          />
+          <input type="checkbox" checked={f.onlyArb} onChange={e => f.setOnlyArb(e.target.checked)}
+            className="accent-emerald-500" />
           Arb seulement
         </label>
-        {sortCol && (
-          <button
-            onClick={() => setSortCol(null)}
-            className="text-xs text-zinc-400 hover:text-zinc-200"
-          >
-            Reset tri
+
+        <label className="flex items-center gap-1.5 text-xs text-zinc-400 cursor-pointer select-none">
+          <input type="checkbox" checked={showLinks} onChange={e => setShowLinks(e.target.checked)}
+            className="accent-zinc-500" />
+          Liens exchanges
+        </label>
+
+        {f.hasFilters && (
+          <button onClick={f.resetFilters} className="text-xs text-zinc-500 hover:text-zinc-200">
+            Reset filtres
           </button>
         )}
       </div>
 
       {isLoading && <p className="text-xs text-zinc-500">Chargement...</p>}
-      {isError && <p className="text-xs text-red-400">Erreur de chargement</p>}
-
+      {isError   && <p className="text-xs text-red-400">Erreur de chargement</p>}
       {!isLoading && rows.length === 0 && !isError && (
-        <p className="text-xs text-zinc-500">
-          Aucune donnée. Attends ~1s après le démarrage du container workers.
-        </p>
+        <p className="text-xs text-zinc-500">Aucune donnée.</p>
       )}
 
       {rows.length > 0 && (
-        <div className="overflow-auto max-h-[calc(100vh-11rem)]">
+        <div className="flex-1 min-h-0 overflow-auto -mr-6 -mb-6">
           <table className="w-full text-xs border-separate border-spacing-0 whitespace-nowrap">
             <thead className="sticky top-0 z-10 bg-zinc-950">
               <tr className="border-b border-zinc-800 text-center text-zinc-500">
                 <th className="pb-2 pr-3 text-left sticky left-0 bg-zinc-950 z-20">Instrument</th>
-                {thSort('expiry', 'Expiry')}
-                {thSort('strike', 'Strike')}
+                {th('expiry', 'Expiry')}
+                {th('strike', 'Strike')}
                 <th className="pb-2 pr-3">Type</th>
-                {allExchanges.map((ex) => (
-                  <th key={ex} className="pb-2 pr-3" colSpan={2}>
-                    {ex}
+                {allExchanges.map(ex => (
+                  <th key={ex} className="pb-2 pr-3" colSpan={2}>{ex}</th>
+                ))}
+                {th('gross', 'Gross%')}
+                {th('net', 'Net%')}
+                {th('notional', 'Cap.$')}
+                {th('profit', 'Profit$')}
+                <th className="pb-2 pr-3">Arb</th>
+                <th className="pb-2 pr-3 text-sky-500/70">Buy$</th>
+                <th className="pb-2 pr-3 text-emerald-500/70" title="Collatéral requis pour la jambe vente (formule marge initiale ≈ max(10%, 15%-OTM%) × S × size)">Margin$</th>
+                {th('age', 'Age')}
+              </tr>
+              <tr className="border-b border-zinc-800/40 text-center text-zinc-600">
+                <th className="sticky left-0 bg-zinc-950 z-20" />
+                <th colSpan={3} />
+                {allExchanges.map(ex => (
+                  <th key={ex} colSpan={2} className="pb-1 font-normal text-[10px]">
+                    <span className="pr-5">bid</span>
+                    <span>ask</span>
                   </th>
                 ))}
-                {thSort('gross', 'Gross%')}
-                {thSort('net', 'Net%')}
-                {thSort('notional', 'Cap. dispo$')}
-                {thSort('profit', 'Profit$')}
-                <th className="pb-2 pr-3">Arb</th>
-                {thSort('age', 'Age')}
-              </tr>
-              <tr className="border-b border-zinc-800/50 text-center text-zinc-500">
-                <th className="sticky left-0 bg-zinc-950 z-20" /><th colSpan={3} />
-                {allExchanges.map((ex) => (
-                  <>
-                    <th key={ex + '-bid'} className="pb-1 pr-2 font-normal">bid</th>
-                    <th key={ex + '-ask'} className="pb-1 pr-3 font-normal">ask</th>
-                  </>
-                ))}
-                <th colSpan={6} />
+                <th colSpan={8} />
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => {
-                const hasArb = row.net_spread_pct !== null && row.net_spread_pct > 0
+              {rows.map(row => {
+                const hasArb  = row.net_spread_pct !== null && row.net_spread_pct > 0
                 const hasGross = row.gross_spread_pct !== null && row.gross_spread_pct > 0
                 const dUrl = deribitUrl(row.instrument, row.underlying)
                 const avUrl = aevoUrl(row.instrument)
+                const { buyAmt, sellAmt } = computeLegAmounts(row)
+                const eligible = meetsExecCriteria(row, thresholds)
 
                 return (
-                  <tr
-                    key={row.instrument}
-                    className={`border-b border-zinc-800/40 ${hasArb ? 'bg-emerald-950/20' : ''}`}
-                  >
-                    <td className="py-1 pr-3 font-medium text-zinc-200 whitespace-nowrap sticky left-0 bg-zinc-950 z-10">
+                  <tr key={row.instrument} className={`border-b border-zinc-800/40 ${hasArb ? 'bg-emerald-950/20' : ''} ${!eligible ? 'opacity-50' : ''}`}>
+                    <td className="py-1 pr-3 sticky left-0 bg-zinc-950 z-10">
                       <div className="flex items-center gap-1.5">
-                        <span>{row.instrument}</span>
-                        {row.exchanges['deribit'] && dUrl && (
-                          <ExchangeLink href={dUrl} label="Deribit" />
-                        )}
-                        {row.exchanges['deribit_linear'] && dUrl && (
-                          <ExchangeLink href={dUrl} label="deribit_linear" />
-                        )}
-                        {row.exchanges['derive'] && (
-                          <ExchangeLink href={deriveUrl(row.instrument)} label="Derive" />
-                        )}
-                        {row.exchanges['aevo'] && avUrl && (
-                          <ExchangeLink href={avUrl} label="aevo" />
-                        )}
+                        <span className="font-medium text-zinc-200">{row.instrument}</span>
+                        {showLinks && row.exchanges['deribit'] && dUrl && <ExLink href={dUrl} ex="deribit" />}
+                        {showLinks && row.exchanges['deribit_linear'] && dUrl && <ExLink href={dUrl} ex="deribit_linear" />}
+                        {showLinks && row.exchanges['derive'] && <ExLink href={deriveUrl(row.instrument)} ex="derive" />}
+                        {showLinks && row.exchanges['aevo'] && avUrl && <ExLink href={avUrl} ex="aevo" />}
                       </div>
                     </td>
                     <td className="py-1 pr-3 text-zinc-400">{fmtExpiry(row.expiry)}</td>
-                    <td className="py-1 pr-3 text-right text-zinc-300">{row.strike.toLocaleString()}</td>
+                    <td className="py-1 pr-3 text-right text-zinc-300 tabular-nums">{row.strike.toLocaleString()}</td>
                     <td className="py-1 pr-3">
                       <span className={`font-medium ${row.option_type === 'C' ? 'text-blue-400' : 'text-orange-400'}`}>
                         {row.option_type === 'C' ? 'Call' : 'Put'}
                       </span>
                     </td>
-                    {allExchanges.map((ex) => {
+                    {allExchanges.map(ex => {
                       const q = row.exchanges[ex]
-                      const isBuyLeg = ex === row.buy_exchange
-                      const isSellLeg = ex === row.sell_exchange
-                      const stale = q?.is_stale ?? false
                       return (
                         <>
-                          <td
-                            key={ex + '-bid'}
-                            className={`py-1 pr-2 text-right ${
-                              stale
-                                ? 'text-zinc-600'
-                                : isSellLeg
-                                  ? 'text-emerald-300 font-semibold bg-emerald-950/40'
-                                  : 'text-emerald-400'
-                            }`}
-                            title={stale ? 'Données > 60s' : undefined}
-                          >
-                            {stale && q?.bid_price != null && <span className="mr-0.5 text-amber-600">⚠</span>}
-                            {fmtPrice(q?.bid_price ?? null)}
-                            {fmtSize(q?.bid_size ?? null)}
+                          <td key={`${ex}-bid`} className={`py-1 pr-1 text-right ${hasArb && ex === row.sell_exchange ? 'bg-emerald-950/40' : ''}`}>
+                            <QuoteCell q={q} side="bid" highlight={hasArb && ex === row.sell_exchange} />
                           </td>
-                          <td
-                            key={ex + '-ask'}
-                            className={`py-1 pr-3 text-right ${
-                              stale
-                                ? 'text-zinc-600'
-                                : isBuyLeg
-                                  ? 'text-sky-300 font-semibold bg-sky-950/40'
-                                  : 'text-red-400'
-                            }`}
-                            title={stale ? 'Données > 60s' : undefined}
-                          >
-                            {fmtPrice(q?.ask_price ?? null)}
-                            {fmtSize(q?.ask_size ?? null)}
+                          <td key={`${ex}-ask`} className={`py-1 pr-3 text-right ${hasArb && ex === row.buy_exchange ? 'bg-sky-950/40' : ''}`}>
+                            <QuoteCell q={q} side="ask" highlight={hasArb && ex === row.buy_exchange} />
                           </td>
                         </>
                       )
                     })}
                     <td className={`py-1 pr-3 text-right ${hasGross ? 'text-zinc-300' : 'text-zinc-500'}`}>
-                      {row.gross_spread_pct !== null ? `${row.gross_spread_pct.toFixed(2)}%` : '—'}
+                      {row.gross_spread_pct != null ? `${row.gross_spread_pct.toFixed(2)}%` : '—'}
                     </td>
                     <td className={`py-1 pr-3 text-right font-medium ${hasArb ? 'text-emerald-400' : 'text-zinc-500'}`}>
-                      {row.net_spread_pct !== null ? `${row.net_spread_pct.toFixed(2)}%` : '—'}
+                      {row.net_spread_pct != null ? `${row.net_spread_pct.toFixed(2)}%` : '—'}
                     </td>
                     <td className={`py-1 pr-3 text-right ${hasArb ? 'text-zinc-300' : 'text-zinc-600'}`}>
-                      {row.max_notional_usd !== null ? `$${row.max_notional_usd.toFixed(2)}` : '—'}
+                      {row.max_notional_usd != null ? `$${row.max_notional_usd.toFixed(2)}` : '—'}
                     </td>
                     <td className={`py-1 pr-3 text-right font-medium ${hasArb ? 'text-emerald-300' : 'text-zinc-500'}`}>
-                      {row.max_profit_usd !== null ? `$${row.max_profit_usd.toFixed(2)}` : '—'}
+                      {row.max_profit_usd != null ? `$${row.max_profit_usd.toFixed(2)}` : '—'}
                     </td>
-                    <td className="py-1 pr-3 text-xs text-zinc-500">
-                      {hasArb ? (
-                        <span className="text-emerald-400">
-                          {row.buy_exchange} → {row.sell_exchange}
-                        </span>
-                      ) : '—'}
+                    <td className="py-1 pr-3 text-xs">
+                      {hasArb
+                        ? <span className="text-emerald-400">{row.buy_exchange} → {row.sell_exchange}</span>
+                        : <span className="text-zinc-600">—</span>}
                     </td>
-                    <td className="py-1 text-zinc-500">{fmtAge(row.updated_at)}</td>
+                    <td className={`py-1 pr-3 text-right ${hasArb ? 'text-sky-300' : 'text-zinc-600'}`}>
+                      {buyAmt != null ? `$${buyAmt.toFixed(2)}` : '—'}
+                    </td>
+                    <td className={`py-1 pr-3 text-right ${hasArb ? 'text-emerald-300' : 'text-zinc-600'}`}>
+                      {sellAmt != null ? `$${sellAmt.toFixed(2)}` : '—'}
+                    </td>
+                    <td className="py-1 pr-3 text-zinc-500">{fmtAge(row.updated_at)}</td>
                   </tr>
                 )
               })}

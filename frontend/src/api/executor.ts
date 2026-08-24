@@ -7,6 +7,9 @@ export interface ExecutorState {
     mode: string
     min_apr_pct: number
     min_notional_usd: number
+    max_days_to_expiry: number
+    min_net_profit_usd: number
+    min_net_spread_pct: number
     max_notional_per_trade_usd: number
     max_positions_open: number
     max_daily_loss_usd: number

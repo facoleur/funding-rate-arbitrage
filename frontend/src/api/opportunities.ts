@@ -10,12 +10,16 @@ export interface Opportunity {
   instrument: string
   symbol: string
   expiry: string
+  days_to_expiry: number
   strike: number
   option_type: string
   buy_from: string
   sell_to: string
   top_ask: number
   top_bid: number
+  walked_ask: number | null
+  walked_bid: number | null
+  walked_size: number | null
   spread_pct: number
   fee_pct: number
   apr_pct: number

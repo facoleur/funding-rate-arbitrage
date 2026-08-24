@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchOpportunities, type Opportunity, type OpportunityStatus } from '../api/opportunities'
 import StatusBadge from '../components/StatusBadge'
+
+// ─── helpers ──────────────────────────────────────────────────────────────────
 
 function fmtAge(iso: string) {
   const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
@@ -11,16 +13,128 @@ function fmtAge(iso: string) {
 }
 
 function fmtExpiry(iso: string) {
-  const d = new Date(iso)
-  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: '2-digit' })
+  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: '2-digit' })
 }
 
+function fmtDte(dte: number) {
+  if (dte < 1) return `${Math.round(dte * 24)}h`
+  return `${Math.round(dte)}j`
+}
+
+function fmtUsd(n: number) {
+  if (n === 0) return '—'
+  if (Math.abs(n) >= 1000) return `$${(n / 1000).toFixed(2)}k`
+  return `$${n.toFixed(2)}`
+}
+
+// Derived values computed from raw row.
+// - size: walked if available, else infer from top_ask
+// - buyCapital: premium paid on buy side (USD)
+// - sellRecv:   premium received on sell side (USD)
+function computeDerived(o: Opportunity) {
+  const buyAsk = o.walked_ask ?? o.top_ask
+  const sellBid = o.walked_bid ?? o.top_bid
+  const size = o.walked_size ?? (o.top_ask > 0 ? o.max_notional_usd / o.top_ask : 0)
+  const buyCapital = buyAsk * size
+  const sellRecv = sellBid * size
+  return { buyAsk, sellBid, size, buyCapital, sellRecv }
+}
+
+// ─── columns ──────────────────────────────────────────────────────────────────
+
+type ColId =
+  | 'type' | 'strike' | 'expiry' | 'dte' | 'route'
+  | 'size' | 'buy_ask' | 'sell_bid'
+  | 'buy_capital' | 'sell_recv' | 'fees' | 'net_profit'
+  | 'spread' | 'apr' | 'status' | 'age'
+
+interface ColDef {
+  id: ColId
+  label: string
+  tip?: string
+  right?: boolean
+  defaultVisible: boolean
+}
+
+const COLS: ColDef[] = [
+  { id: 'type',        label: 'Type',        defaultVisible: false },
+  { id: 'strike',      label: 'Strike',      right: true, defaultVisible: false },
+  { id: 'expiry',      label: 'Expiry',      defaultVisible: true },
+  { id: 'dte',         label: 'DTE',         right: true, defaultVisible: true },
+  { id: 'route',       label: 'Route',       defaultVisible: true },
+  { id: 'size',        label: 'Size',        right: true, defaultVisible: false },
+  { id: 'buy_ask',     label: 'Buy ask',     right: true, defaultVisible: false },
+  { id: 'sell_bid',    label: 'Sell bid',    right: true, defaultVisible: false },
+  { id: 'buy_capital', label: 'Buy cap.',    tip: 'Prime payée côté achat (capital immobilisé)', right: true, defaultVisible: true },
+  { id: 'sell_recv',   label: 'Sell recv.',  tip: 'Prime encaissée côté vente', right: true, defaultVisible: true },
+  { id: 'fees',        label: 'Fees',        right: true, defaultVisible: true },
+  { id: 'net_profit',  label: 'Net profit',  right: true, defaultVisible: true },
+  { id: 'spread',      label: 'Spread %',    tip: 'Net de frais', right: true, defaultVisible: true },
+  { id: 'apr',         label: 'APR %',       tip: 'Basé sur le capital buy immobilisé', right: true, defaultVisible: true },
+  { id: 'status',      label: 'Status',      defaultVisible: true },
+  { id: 'age',         label: 'Age',         right: true, defaultVisible: true },
+]
+
+// ─── sort ─────────────────────────────────────────────────────────────────────
+
+type SortKey = 'instrument' | ColId
+
+function sortVal(o: Opportunity, col: SortKey): number | string {
+  const d = computeDerived(o)
+  switch (col) {
+    case 'instrument':  return o.instrument
+    case 'type':        return o.option_type
+    case 'strike':      return o.strike
+    case 'expiry':      return new Date(o.expiry).getTime()
+    case 'dte':         return o.days_to_expiry
+    case 'route':       return `${o.buy_from}→${o.sell_to}`
+    case 'size':        return d.size
+    case 'buy_ask':     return d.buyAsk
+    case 'sell_bid':    return d.sellBid
+    case 'buy_capital': return d.buyCapital
+    case 'sell_recv':   return d.sellRecv
+    case 'fees':        return o.fees_usd
+    case 'net_profit':  return o.net_profit_usd
+    case 'spread':      return o.spread_pct
+    case 'apr':         return o.apr_pct
+    case 'status':      return o.status
+    case 'age':         return new Date(o.detected_at).getTime()
+    default:            return 0
+  }
+}
+
+// ─── constants ────────────────────────────────────────────────────────────────
+
 const STATUSES: OpportunityStatus[] = ['PENDING', 'APPROVED', 'EXECUTED', 'REJECTED', 'EXPIRED']
+const DEFAULT_VISIBLE = new Set(COLS.filter((c) => c.defaultVisible).map((c) => c.id))
+
+const TH_BASE =
+  'cursor-pointer select-none whitespace-nowrap border-b border-zinc-800 pb-2 pr-6 text-zinc-500 hover:text-zinc-300'
+const TD_BASE =
+  'whitespace-nowrap border-b border-zinc-800/50 py-1.5 pr-6'
+const STICKY_BG = 'bg-zinc-950'
+const HOT_BG = 'bg-emerald-950/30'
+
+// ─── component ────────────────────────────────────────────────────────────────
 
 export default function Opportunities() {
   const [minApr, setMinApr] = useState('')
   const [underlying, setUnderlying] = useState('')
   const [statusFilter, setStatusFilter] = useState<OpportunityStatus | ''>('')
+  const [visible, setVisible] = useState<Set<ColId>>(DEFAULT_VISIBLE)
+  const [sortCol, setSortCol] = useState<SortKey>('apr')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [showColMenu, setShowColMenu] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!showColMenu) return
+    function onMouseDown(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setShowColMenu(false)
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [showColMenu])
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['opportunities'],
@@ -28,21 +142,59 @@ export default function Opportunities() {
     refetchInterval: 5000,
   })
 
-  const rows: Opportunity[] = (data ?? []).filter((o) => {
+  const filtered: Opportunity[] = (data ?? []).filter((o) => {
     if (minApr && o.apr_pct < parseFloat(minApr)) return false
     if (underlying && !o.symbol.startsWith(underlying)) return false
     if (statusFilter && o.status !== statusFilter) return false
     return true
   })
 
+  const rows = [...filtered].sort((a, b) => {
+    const av = sortVal(a, sortCol)
+    const bv = sortVal(b, sortCol)
+    const cmp = av < bv ? -1 : av > bv ? 1 : 0
+    return sortDir === 'asc' ? cmp : -cmp
+  })
+
+  function toggleSort(col: SortKey) {
+    if (sortCol === col) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    else { setSortCol(col); setSortDir('desc') }
+  }
+
+  function sortIndicator(col: SortKey) {
+    if (sortCol !== col) return <span className="ml-0.5 text-zinc-700">⇅</span>
+    return <span className="ml-0.5 text-zinc-300">{sortDir === 'asc' ? '↑' : '↓'}</span>
+  }
+
+  function th(col: SortKey, label: string, opts: { right?: boolean; tip?: string } = {}) {
+    return (
+      <th
+        key={col}
+        title={opts.tip}
+        onClick={() => toggleSort(col)}
+        className={`${TH_BASE} ${opts.right ? 'text-right' : ''}`}
+      >
+        {label}{sortIndicator(col)}
+      </th>
+    )
+  }
+
+  function toggleCol(id: ColId) {
+    setVisible((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
   return (
-    <div>
-      <div className="mb-4 flex items-center gap-4">
+    <div className="flex flex-col" style={{ height: 'calc(100vh - 7rem)' }}>
+      {/* toolbar */}
+      <div className="mb-3 flex flex-shrink-0 flex-wrap items-center gap-3">
         <h1 className="text-base font-semibold text-zinc-100">Opportunités</h1>
         <span className="text-xs text-zinc-500">{rows.length} lignes</span>
-      </div>
 
-      <div className="mb-4 flex gap-3 flex-wrap">
         <input
           type="number"
           placeholder="APR min %"
@@ -65,77 +217,176 @@ export default function Opportunities() {
           className="rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-200 focus:outline-none"
         >
           <option value="">Tous statuts</option>
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
+          {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
+
+        {/* column picker */}
+        <div className="relative ml-auto" ref={menuRef}>
+          <button
+            onClick={() => setShowColMenu((v) => !v)}
+            className="rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-300 hover:border-zinc-500"
+          >
+            Colonnes
+          </button>
+          {showColMenu && (
+            <div className="absolute right-0 top-7 z-50 min-w-[150px] rounded border border-zinc-700 bg-zinc-900 p-2 shadow-xl">
+              {COLS.map((c) => (
+                <label
+                  key={c.id}
+                  className="flex cursor-pointer items-center gap-2 py-0.5 text-xs text-zinc-300 hover:text-zinc-100"
+                >
+                  <input
+                    type="checkbox"
+                    checked={visible.has(c.id)}
+                    onChange={() => toggleCol(c.id)}
+                    className="accent-emerald-500"
+                  />
+                  {c.label}
+                  {c.tip && <span className="text-zinc-600" title={c.tip}>?</span>}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {isLoading && <p className="text-xs text-zinc-500">Chargement...</p>}
       {isError && <p className="text-xs text-red-400">Erreur de chargement</p>}
 
-      {!isLoading && (
-        <div className="overflow-auto max-h-[calc(100vh-11rem)]">
-          <table className="w-full text-xs">
-            <thead className="sticky top-0 z-10 bg-zinc-950">
-              <tr className="border-b border-zinc-800 text-left text-zinc-500">
-                <th className="pb-2 pr-4">Instrument</th>
-                <th className="pb-2 pr-4">Expiry</th>
-                <th className="pb-2 pr-4">Route</th>
-                <th className="pb-2 pr-4 text-right">Buy ask</th>
-                <th className="pb-2 pr-4 text-right">Sell bid</th>
-                <th className="pb-2 pr-4 text-right">Spread%</th>
-                <th className="pb-2 pr-4 text-right">APR%</th>
-                <th className="pb-2 pr-4 text-right">Notional</th>
-                <th className="pb-2 pr-4">Status</th>
-                <th className="pb-2">Age</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 && (
-                <tr>
-                  <td colSpan={10} className="pt-4 text-center text-zinc-600">
-                    Aucune opportunité
-                  </td>
-                </tr>
+      {/* table */}
+      <div className="flex-1 overflow-auto">
+        <table className="border-separate border-spacing-0 text-xs">
+          <thead>
+            <tr className="text-left">
+              {/* instrument — sticky left + top */}
+              <th
+                onClick={() => toggleSort('instrument')}
+                className={`${TH_BASE} sticky left-0 top-0 z-30 ${STICKY_BG} pl-0`}
+              >
+                Instrument{sortIndicator('instrument')}
+              </th>
+              {visible.has('type')        && th('type',        'Type')}
+              {visible.has('strike')      && th('strike',      'Strike',     { right: true })}
+              {visible.has('expiry')      && th('expiry',      'Expiry')}
+              {visible.has('dte')         && th('dte',         'DTE',        { right: true })}
+              {visible.has('route')       && (
+                <th className={`${TH_BASE}`}>Route</th>
               )}
-              {rows.map((o) => (
-                <tr
-                  key={o.id}
-                  className={`border-b border-zinc-800/50 ${
-                    o.apr_pct >= 10 ? 'bg-emerald-950/30' : ''
-                  }`}
-                >
-                  <td className="py-1.5 pr-4 font-medium text-zinc-200">{o.instrument}</td>
-                  <td className="py-1.5 pr-4 text-zinc-400">{fmtExpiry(o.expiry)}</td>
-                  <td className="py-1.5 pr-4 text-zinc-400">
-                    {o.buy_from} → {o.sell_to}
+              {visible.has('size')        && th('size',        'Size',       { right: true })}
+              {visible.has('buy_ask')     && th('buy_ask',     'Buy ask',    { right: true })}
+              {visible.has('sell_bid')    && th('sell_bid',    'Sell bid',   { right: true })}
+              {visible.has('buy_capital') && th('buy_capital', 'Buy cap.',   { right: true, tip: 'Prime payée côté achat (capital immobilisé)' })}
+              {visible.has('sell_recv')   && th('sell_recv',   'Sell recv.', { right: true, tip: 'Prime encaissée côté vente' })}
+              {visible.has('fees')        && th('fees',        'Fees',       { right: true })}
+              {visible.has('net_profit')  && th('net_profit',  'Net profit', { right: true })}
+              {visible.has('spread')      && th('spread',      'Spread %',   { right: true, tip: 'Net de frais' })}
+              {visible.has('apr')         && th('apr',         'APR %',      { right: true, tip: 'Basé sur le capital buy immobilisé' })}
+              {visible.has('status')      && <th className={`${TH_BASE}`}>Status</th>}
+              {visible.has('age')         && th('age',         'Age',        { right: true })}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={99} className="pt-6 text-center text-zinc-600">
+                  Aucune opportunité
+                </td>
+              </tr>
+            )}
+            {rows.map((o) => {
+              const d = computeDerived(o)
+              const hot = o.apr_pct >= 10
+              const rowBg = hot ? HOT_BG : STICKY_BG
+
+              return (
+                <tr key={o.id}>
+                  {/* instrument — sticky left */}
+                  <td className={`sticky left-0 z-10 ${rowBg} ${TD_BASE} font-medium text-zinc-200 pl-0`}>
+                    {o.instrument}
                   </td>
-                  <td className="py-1.5 pr-4 text-right text-zinc-300">{o.top_ask.toFixed(2)}</td>
-                  <td className="py-1.5 pr-4 text-right text-zinc-300">{o.top_bid.toFixed(2)}</td>
-                  <td className="py-1.5 pr-4 text-right text-zinc-300">
-                    {o.spread_pct.toFixed(2)}%
-                  </td>
-                  <td
-                    className={`py-1.5 pr-4 text-right font-medium ${
-                      o.apr_pct >= 10 ? 'text-emerald-400' : 'text-zinc-300'
-                    }`}
-                  >
-                    {o.apr_pct.toFixed(1)}%
-                  </td>
-                  <td className="py-1.5 pr-4 text-right text-zinc-400">
-                    ${o.max_notional_usd.toFixed(0)}
-                  </td>
-                  <td className="py-1.5 pr-4">
-                    <StatusBadge value={o.status} />
-                  </td>
-                  <td className="py-1.5 text-zinc-500">{fmtAge(o.detected_at)}</td>
+
+                  {visible.has('type') && (
+                    <td className={`${TD_BASE} text-zinc-400`}>{o.option_type}</td>
+                  )}
+                  {visible.has('strike') && (
+                    <td className={`${TD_BASE} text-right tabular-nums text-zinc-400`}>
+                      {o.strike.toLocaleString()}
+                    </td>
+                  )}
+                  {visible.has('expiry') && (
+                    <td className={`${TD_BASE} text-zinc-400`}>{fmtExpiry(o.expiry)}</td>
+                  )}
+                  {visible.has('dte') && (
+                    <td className={`${TD_BASE} text-right tabular-nums text-zinc-400`}>
+                      {fmtDte(o.days_to_expiry)}
+                    </td>
+                  )}
+                  {visible.has('route') && (
+                    <td className={`${TD_BASE} text-zinc-400`}>
+                      {o.buy_from} → {o.sell_to}
+                    </td>
+                  )}
+                  {visible.has('size') && (
+                    <td className={`${TD_BASE} text-right tabular-nums text-zinc-300`}>
+                      {d.size.toFixed(4)}
+                    </td>
+                  )}
+                  {visible.has('buy_ask') && (
+                    <td className={`${TD_BASE} text-right tabular-nums text-zinc-300`}>
+                      {d.buyAsk.toFixed(4)}
+                    </td>
+                  )}
+                  {visible.has('sell_bid') && (
+                    <td className={`${TD_BASE} text-right tabular-nums text-zinc-300`}>
+                      {d.sellBid.toFixed(4)}
+                    </td>
+                  )}
+                  {visible.has('buy_capital') && (
+                    <td className={`${TD_BASE} text-right tabular-nums text-zinc-300`}>
+                      {fmtUsd(d.buyCapital)}
+                    </td>
+                  )}
+                  {visible.has('sell_recv') && (
+                    <td className={`${TD_BASE} text-right tabular-nums text-zinc-300`}>
+                      {fmtUsd(d.sellRecv)}
+                    </td>
+                  )}
+                  {visible.has('fees') && (
+                    <td className={`${TD_BASE} text-right tabular-nums text-zinc-500`}>
+                      {fmtUsd(o.fees_usd)}
+                    </td>
+                  )}
+                  {visible.has('net_profit') && (
+                    <td className={`${TD_BASE} text-right tabular-nums ${hot ? 'text-emerald-400' : 'text-zinc-300'}`}>
+                      {fmtUsd(o.net_profit_usd)}
+                    </td>
+                  )}
+                  {visible.has('spread') && (
+                    <td className={`${TD_BASE} text-right tabular-nums ${hot ? 'text-emerald-400' : 'text-zinc-300'}`}>
+                      {o.spread_pct.toFixed(2)}%
+                    </td>
+                  )}
+                  {visible.has('apr') && (
+                    <td className={`${TD_BASE} text-right tabular-nums font-medium ${hot ? 'text-emerald-400' : 'text-zinc-300'}`}>
+                      {o.apr_pct.toFixed(1)}%
+                    </td>
+                  )}
+                  {visible.has('status') && (
+                    <td className={`${TD_BASE}`}>
+                      <StatusBadge value={o.status} />
+                    </td>
+                  )}
+                  {visible.has('age') && (
+                    <td className={`${TD_BASE} text-right tabular-nums text-zinc-500`}>
+                      {fmtAge(o.detected_at)}
+                    </td>
+                  )}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

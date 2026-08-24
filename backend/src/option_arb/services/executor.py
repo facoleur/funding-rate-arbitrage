@@ -115,7 +115,21 @@ class Executor:
             )
             return
 
-        # 2. trade_enabled check per exchange
+        # 2. thresholds pre-check (expiry, spread, profit)
+        exp = opp.expiry if opp.expiry.tzinfo else opp.expiry.replace(tzinfo=UTC)
+        days_remaining = (exp - datetime.now(UTC)).total_seconds() / 86400.0
+        if days_remaining > self.config.thresholds.max_days_to_expiry:
+            await self._reject(opp, f"expiry_too_far({days_remaining:.0f}d)")
+            return
+        if opp.spread_pct < self.config.thresholds.min_net_spread_pct:
+            await self._reject(opp, f"spread_too_small({opp.spread_pct:.3f})")
+            return
+        max_profit_est = opp.spread_pct / 100 * opp.max_notional_usd
+        if max_profit_est < self.config.thresholds.min_net_profit_usd:
+            await self._reject(opp, f"profit_too_small({max_profit_est:.2f})")
+            return
+
+        # 3. trade_enabled check per exchange
         for ex_name in (opp.buy_from, opp.sell_to):
             ex_cfg = self.config.exchanges.get(ex_name)
             if ex_cfg and not ex_cfg.trade_enabled:
@@ -248,7 +262,9 @@ class Executor:
         sell_ok = sell_res.status in ("FILLED", "PARTIAL") and sell_res.filled_size > 0
 
         if buy_ok and sell_ok:
-            await self._finalize_filled(trade.id, opp, buy_res, sell_res)
+            await self._finalize_filled(
+                trade.id, opp, buy_res, sell_res, buy_inst, sell_inst, walked_ask, walked_bid
+            )
         elif buy_ok ^ sell_ok:  # exactly one filled
             await self._market_out(trade, opp, buy_ok, buy_res, sell_res, buy_inst, sell_inst)
         else:
@@ -395,12 +411,38 @@ class Executor:
             await sess.commit()
 
     async def _finalize_filled(
-        self, trade_id: int, opp: Opportunity, buy_res: OrderResult, sell_res: OrderResult
+        self,
+        trade_id: int,
+        opp: Opportunity,
+        buy_res: OrderResult,
+        sell_res: OrderResult,
+        buy_inst: Instrument,
+        sell_inst: Instrument,
+        walked_ask: Decimal,
+        walked_bid: Decimal,
     ) -> None:
-        pnl = float(
+        gross_pnl = (
             sell_res.filled_size * sell_res.filled_price
             - buy_res.filled_size * buy_res.filled_price
         )
+        buy_fees = buy_res.filled_size * buy_res.filled_price * buy_inst.taker_fee_rate
+        sell_fees = sell_res.filled_size * sell_res.filled_price * sell_inst.taker_fee_rate
+        total_fees = buy_fees + sell_fees
+        net_pnl = gross_pnl - total_fees
+
+        # slippage: écart moyen entre walked price et fill réel, en %
+        buy_slip = (
+            (buy_res.filled_price - walked_ask) / walked_ask * Decimal(100)
+            if walked_ask
+            else Decimal(0)
+        )
+        sell_slip = (
+            (walked_bid - sell_res.filled_price) / walked_bid * Decimal(100)
+            if walked_bid
+            else Decimal(0)
+        )
+        slippage_pct = float((buy_slip + sell_slip) / 2)
+
         async with get_session() as sess:
             trade = await sess.get(Trade, trade_id)
             opp_row = await sess.get(Opportunity, opp.id)
@@ -411,15 +453,17 @@ class Executor:
                 trade.buy_fill_size = float(buy_res.filled_size)
                 trade.sell_fill_price = float(sell_res.filled_price)
                 trade.sell_fill_size = float(sell_res.filled_size)
-                trade.net_pnl_usd = pnl
+                trade.net_pnl_usd = float(net_pnl)
+                trade.fees_usd = float(total_fees)
+                trade.slippage_pct = slippage_pct
                 opp_row.status = OpportunityStatus.EXECUTED
                 await sess.commit()
         await bus.publish(
             Event(
                 type="trade_filled",
                 level="info",
-                message=f"trade {trade_id} filled pnl=${pnl:.2f}",
-                payload={"trade_id": trade_id, "pnl_usd": pnl},
+                message=f"trade {trade_id} filled pnl=${float(net_pnl):.2f}",
+                payload={"trade_id": trade_id, "pnl_usd": float(net_pnl)},
             )
         )
 

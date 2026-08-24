@@ -46,6 +46,9 @@ class BookCache:
             ts=upd.ts,
         )
 
+    def registered_names(self, exchange: str) -> set[str]:
+        return {name for (ex, name) in self._instruments if ex == exchange}
+
     def snapshot(self) -> list[CachedTicker]:
         return list(self._by_key.values())
 

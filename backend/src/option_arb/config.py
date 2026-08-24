@@ -23,13 +23,14 @@ class Thresholds(BaseModel):
     min_apr_pct: float = 10.0
     min_notional_usd: float = 20.0
     size_threshold_usd: float = 100.0
+    max_days_to_expiry: int = 60
+    min_net_profit_usd: float = 3.0
+    min_net_spread_pct: float = 0.3
 
 
 class ExecutorConfig(BaseModel):
     mode: Literal["paper", "live", "backtest"] = "paper"
-    order_type: Literal["ioc_limit"] = "ioc_limit"
     max_slippage_pct: float = 2.0
-    walk_book: bool = True
     poll_interval_ms: int = 200
     fresh_fetch_timeout_ms: int = 500
 
@@ -50,7 +51,6 @@ class RebalancerConfig(BaseModel):
 
 class ExchangeConfig(BaseModel):
     rest_rate_limit_per_sec: int = 10
-    ws_max_subscriptions: int = 100
     rest_base_url: str
     ws_url: str
     network: Literal["mainnet", "testnet"] = "testnet"

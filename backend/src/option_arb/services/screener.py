@@ -48,6 +48,13 @@ class Screener:
     async def run(self) -> None:
         interval = self.config.screener.poll_interval_ms / 1000.0
         log.info("screener started (interval=%.2fs)", interval)
+        if "postgresql" in settings.database_url:
+            from sqlalchemy import text
+
+            async with get_session() as sess:
+                await sess.execute(text("DELETE FROM ticker_state"))
+                await sess.commit()
+            log.info("screener: ticker_state cleared on startup")
         while not self._stop.is_set():
             try:
                 await self._tick()
@@ -70,7 +77,6 @@ class Screener:
             return
         from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-        now = datetime.now(UTC)
         rows = [
             {
                 "exchange": t.instrument.exchange,
@@ -87,7 +93,7 @@ class Screener:
                 if t.underlying_price is not None
                 else None,
                 "taker_fee_rate": float(t.instrument.taker_fee_rate),
-                "updated_at": now,
+                "updated_at": t.ts if t.ts.tzinfo else t.ts.replace(tzinfo=UTC),
             }
             for t in tickers
         ]
@@ -142,6 +148,9 @@ class Screener:
 
         min_apr = Decimal(str(self.config.thresholds.min_apr_pct))
         min_notional = Decimal(str(self.config.thresholds.min_notional_usd))
+        max_days = self.config.thresholds.max_days_to_expiry
+        min_net_spread = Decimal(str(self.config.thresholds.min_net_spread_pct))
+        min_profit = Decimal(str(self.config.thresholds.min_net_profit_usd))
         mode = Mode(self.config.executor.mode)
 
         rows: list[Opportunity] = []
@@ -149,6 +158,12 @@ class Screener:
             if s.apr_pct < min_apr:
                 continue
             if s.max_notional_usd < min_notional:
+                continue
+            if s.days_to_expiry > max_days:
+                continue
+            if s.net_spread_pct < min_net_spread:
+                continue
+            if s.net_spread_pct / 100 * s.max_notional_usd < min_profit:
                 continue
             ex_cfg = self.config.exchanges.get(s.buy_from)
             network = ex_cfg.network if ex_cfg else "mainnet"

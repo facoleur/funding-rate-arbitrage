@@ -24,6 +24,7 @@ class _ConnState:
     connected: bool = False
     reconnect_attempts: int = 0
     ack_total: int = 0
+    ws: Any | None = None  # active connection; None when disconnected
 
 
 class WsManager:
@@ -97,6 +98,7 @@ class WsManager:
                     max_size=2**23,  # 8MB — Deribit ack for 974 channels dépasse 32KB par défaut
                 ) as ws:
                     state.connected = True
+                    state.ws = ws
                     state.reconnect_attempts = 0
                     log.info("ws connected: %s", exchange)
                     await self._subscribe(ws, exchange, sorted(state.subscriptions))
@@ -107,6 +109,7 @@ class WsManager:
                 log.exception("ws %s unexpected error: %s", exchange, e)
             finally:
                 state.connected = False
+                state.ws = None
 
             if self._stop.is_set():
                 break
@@ -177,9 +180,15 @@ class WsManager:
         log.info("subscribed %d channels on %s", len(channels), exchange)
 
     async def add_subscription(self, exchange: str, channel: str) -> None:
-        self._states[exchange].subscriptions.add(channel)
-        # A full re-subscribe happens on next reconnect; live subscription
-        # deltas are out-of-scope for MVP.
+        state = self._states[exchange]
+        if channel in state.subscriptions:
+            return
+        state.subscriptions.add(channel)
+        if state.ws is not None:
+            try:
+                await self._subscribe(state.ws, exchange, [channel])
+            except Exception as e:
+                log.warning("ws %s: live subscribe failed for %s: %s", exchange, channel, e)
 
     async def remove_subscription(self, exchange: str, channel: str) -> None:
         self._states[exchange].subscriptions.discard(channel)

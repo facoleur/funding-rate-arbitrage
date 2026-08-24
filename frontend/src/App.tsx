@@ -1,5 +1,24 @@
+import { Component, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
+
+class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null }
+  static getDerivedStateFromError(error: Error) { return { error } }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="p-8 text-red-400 font-mono text-xs whitespace-pre-wrap">
+          <p className="text-red-300 font-bold mb-2">Render error:</p>
+          {(this.state.error as Error).message}
+          {'\n\n'}
+          {(this.state.error as Error).stack}
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 import Opportunities from './pages/Opportunities'
 import Trades from './pages/Trades'
 import Positions from './pages/Positions'
@@ -12,7 +31,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route element={<Layout />}>
+        <Route element={<ErrorBoundary><Layout /></ErrorBoundary>}>
           <Route index element={<Opportunities />} />
           <Route path="trades" element={<Trades />} />
           <Route path="positions" element={<Positions />} />

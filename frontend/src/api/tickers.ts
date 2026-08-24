@@ -15,6 +15,7 @@ export interface BookRow {
   instrument: string
   underlying: string
   expiry: string
+  days_to_expiry: number
   strike: number
   option_type: string
   exchanges: Record<string, ExchangeQuote>
@@ -24,6 +25,7 @@ export interface BookRow {
   sell_exchange: string | null
   max_notional_usd: number | null
   max_profit_usd: number | null
+  sell_collateral_usd: number | null
   updated_at: string
 }
 

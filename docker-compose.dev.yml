@@ -98,7 +98,7 @@ services:
       - ./frontend:/app
       - /app/node_modules
     ports:
-      - "127.0.0.1:3000:5173"
+      - "127.0.0.1:3001:5173"
     depends_on:
       - api
     restart: unless-stopped

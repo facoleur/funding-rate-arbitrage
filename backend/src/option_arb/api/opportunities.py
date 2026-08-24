@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -139,6 +140,8 @@ async def get_opportunity(opp_id: int) -> dict[str, Any]:
 def _serialize(o: Opportunity) -> dict[str, Any]:
     net_profit = o.max_notional_usd * o.spread_pct / 100
     fees = o.max_notional_usd * o.fee_pct / 100
+    expiry_utc = o.expiry if o.expiry.tzinfo else o.expiry.replace(tzinfo=UTC)
+    days_to_expiry = max((expiry_utc - datetime.now(UTC)).total_seconds() / 86400.0, 0)
     return {
         "id": o.id,
         "detected_at": o.detected_at.isoformat(),
@@ -147,12 +150,16 @@ def _serialize(o: Opportunity) -> dict[str, Any]:
         "instrument": o.instrument,
         "symbol": o.symbol,
         "expiry": o.expiry.isoformat(),
+        "days_to_expiry": round(days_to_expiry, 2),
         "strike": o.strike,
         "option_type": o.option_type,
         "buy_from": o.buy_from,
         "sell_to": o.sell_to,
         "top_ask": o.top_ask,
         "top_bid": o.top_bid,
+        "walked_ask": o.walked_ask,
+        "walked_bid": o.walked_bid,
+        "walked_size": o.walked_size,
         "spread_pct": o.spread_pct,
         "fee_pct": o.fee_pct,
         "apr_pct": o.apr_pct,
