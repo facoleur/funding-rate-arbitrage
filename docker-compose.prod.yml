@@ -1,3 +1,7 @@
+networks:
+  proxy:
+    external: true
+
 services:
   postgres:
     environment:
@@ -6,22 +10,39 @@ services:
       POSTGRES_DB: option_arb
 
   migrate:
-    image: ghcr.io/${GHCR_OWNER}/option-arb:${RELEASE_TAG:-latest}
+    image: ghcr.io/${GHCR_OWNER}/arbitrage:${RELEASE_TAG}
     environment:
       DATABASE_URL: postgresql+asyncpg://option_arb:${POSTGRES_PASSWORD}@postgres:5432/option_arb
       ALEMBIC_DATABASE_URL: postgresql://option_arb:${POSTGRES_PASSWORD}@postgres:5432/option_arb
 
   api:
-    image: ghcr.io/${GHCR_OWNER}/option-arb:${RELEASE_TAG:-latest}
+    image: ghcr.io/${GHCR_OWNER}/arbitrage:${RELEASE_TAG}
     environment:
       DATABASE_URL: postgresql+asyncpg://option_arb:${POSTGRES_PASSWORD}@postgres:5432/option_arb
+    ports: []
+    networks:
+      default:
+      proxy:
+        aliases:
+          - arbitrage-api
 
   workers:
-    image: ghcr.io/${GHCR_OWNER}/option-arb:${RELEASE_TAG:-latest}
+    image: ghcr.io/${GHCR_OWNER}/arbitrage:${RELEASE_TAG}
     environment:
       DATABASE_URL: postgresql+asyncpg://option_arb:${POSTGRES_PASSWORD}@postgres:5432/option_arb
 
   executor:
-    image: ghcr.io/${GHCR_OWNER}/option-arb:${RELEASE_TAG:-latest}
+    image: ghcr.io/${GHCR_OWNER}/arbitrage:${RELEASE_TAG}
     environment:
       DATABASE_URL: postgresql+asyncpg://option_arb:${POSTGRES_PASSWORD}@postgres:5432/option_arb
+
+  frontend:
+    image: nginx:alpine
+    volumes:
+      - /srv/arbitrage/frontend/dist:/usr/share/nginx/html:ro
+    networks:
+      default:
+      proxy:
+        aliases:
+          - arbitrage-frontend
+    restart: unless-stopped
