@@ -1,0 +1,8 @@
+arbitrage.fuca.ch {
+    handle /api/* {
+        reverse_proxy option-arb-api:8000
+    }
+    handle {
+        reverse_proxy option-arb-frontend:80
+    }
+}

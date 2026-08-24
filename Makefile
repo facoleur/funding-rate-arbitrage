@@ -4,6 +4,13 @@ SHELL := /bin/bash
 VPS     ?= ubuntu@195.15.243.68
 VPS_DIR ?= /opt/option_arbitrage
 
+# ---------- Release ----------
+
+release: ## Tag + push pour déclencher le deploy CI (usage: make release v=1.2.3)
+	@[ -n "$(v)" ] || (echo "Usage: make release v=X.Y.Z" && exit 1)
+	git tag v$(v)
+	git push origin v$(v)
+
 # ---------- Deploy ----------
 
 deploy: ## Sync code + restart stack on VPS (usage: VPS=user@host make deploy)
@@ -101,6 +108,6 @@ resume: ## Release the kill-switch
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-.PHONY: up down logs live db db-shell dev-api dev-worker dev-executor \
+.PHONY: release up down logs live db db-shell dev-api dev-worker dev-executor \
         migrate migrate-new test lint format typecheck record backtest \
         kill resume deploy deploy-env help

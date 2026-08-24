@@ -34,7 +34,7 @@ Always read the relevant doc before editing:
 
 ## Common commands
 
-Use the Makefile — it's canonical.
+Use the Makefile — it's canonical. Every project must have one with at minimum `make dev` (stack local hot-reload) and `make release v=X.Y.Z` (tag + push pour déclencher le CI/CD).
 
 ```bash
 # Docker stack (full)
@@ -118,6 +118,46 @@ See `backend/src/option_arb/exchanges/auth.py` + `derive_auth.py`. Adapters take
 - **Aevo** = `NoAuth` (public REST polling only — no WS option channels). Private signing deferred.
 
 All exchanges are currently configured as **mainnet** in `config.yaml`. Change `network: testnet` + swap `rest_base_url`/`ws_url` to use testnet.
+
+## VPS deployment
+
+### Conventions
+
+- Fichiers sur le VPS : `/srv/option-arb/` (`docker-compose.yml`, `docker-compose.prod.yml`, `config.yaml`, `.env`)
+- `.env` : chmod 600, jamais commité — généré à chaque deploy par le workflow CI
+- Réseau Docker externe `proxy` (partagé avec Caddy dockerisé) — `api` et `frontend` rejoignent ce réseau, **aucun port publié sur l'hôte**
+- Caddy dockerisé sur `/srv/caddy` ; snippet dans `/srv/caddy/sites/option-arb.caddy` (fichier `option-arb.caddy` à la racine du repo)
+- Image : `ghcr.io/facoleur/option-arb:<git-sha>` — jamais le tag `latest` en prod
+
+### Secrets GitHub requis
+
+| Secret                      | Description                                            |
+| --------------------------- | ------------------------------------------------------ |
+| `VPS_IP`                    | IP du VPS                                              |
+| `VPS_SSH_KEY`               | Clé SSH dédiée déploiement                             |
+| `POSTGRES_PASSWORD`         | Mot de passe Postgres                                  |
+| `DERIBIT_CLIENT_ID`         | OAuth Deribit                                          |
+| `DERIBIT_CLIENT_SECRET`     | OAuth Deribit                                          |
+| `DERIVE_WALLET_ADDRESS`     | Adresse SCW Derive                                     |
+| `DERIVE_SUBACCOUNT_ID`      | Subaccount Derive                                      |
+| `DERIVE_SESSION_PRIVATE_KEY`| Clé de session Derive                                  |
+| `BOT_TOKEN`                 | Token Telegram                                         |
+| `CHAT_ID`                   | Chat ID Telegram                                       |
+
+Pas de secret GHCR séparé : le `GITHUB_TOKEN` du job est forwardé via SSH.
+
+### Workflow CI/CD
+
+- Déclenché sur tags `v*.*.*` uniquement (pas push master — déploiement auto sur executor live = trop risqué)
+- **Job `build`** : build + push vers GHCR avec tag `${{ github.sha }}`
+- **Job `deploy`** : génère `.env`, copie les fichiers, restart stagé avec kill-switch executor, copie snippet Caddy + reload
+
+### Initialisation du serveur (première fois)
+
+```bash
+sudo mkdir -p /srv/option-arb/data && sudo chown ubuntu:ubuntu /srv/option-arb
+docker network create proxy   # si pas déjà créé par une autre app
+```
 
 ## Rules for changes
 
