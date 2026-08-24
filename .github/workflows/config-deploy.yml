@@ -1,0 +1,53 @@
+name: Config deploy
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - config.prod.yaml
+
+jobs:
+  deploy-config:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy config to VPS
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.VPS_IP }}
+          username: ubuntu
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: "config.prod.yaml"
+          target: /srv/arbitrage/
+
+      - name: Apply config and restart services
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_IP }}
+          username: ubuntu
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            cd /srv/arbitrage
+            cp config.prod.yaml config.yaml
+
+            # Restart api + workers (pas de kill-switch nécessaire)
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+              up -d --no-deps api workers
+
+            # Restart executor avec kill-switch
+            touch data/EXECUTOR_DISABLED
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml stop executor
+            sleep 3
+            rm -f data/EXECUTOR_DISABLED
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+              up -d --no-deps executor
+
+            # Vérifier que l'API répond
+            for i in $(seq 1 6); do
+              curl -sf http://localhost:8001/health && break
+              [ $i -eq 6 ] && exit 1
+              sleep 5
+            done
