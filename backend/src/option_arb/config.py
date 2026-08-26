@@ -17,6 +17,7 @@ class ScreenerConfig(BaseModel):
     exchanges: list[str] = Field(default_factory=lambda: ["derive", "deribit", "aevo"])
     max_expiries_ahead: int = 8
     metadata_refresh_hours: int = 6
+    book_cache_ttl_ms: int = 5000
 
 
 class Thresholds(BaseModel):

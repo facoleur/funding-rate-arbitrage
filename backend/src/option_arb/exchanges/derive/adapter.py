@@ -15,7 +15,7 @@ from option_arb.exchanges.base import (
     OrderResult,
     TickerUpdate,
 )
-from option_arb.exchanges.derive_auth import DeriveAuth
+from option_arb.exchanges.derive.auth import DeriveAuth
 from option_arb.exchanges.http import RestClient
 
 log = logging.getLogger(__name__)

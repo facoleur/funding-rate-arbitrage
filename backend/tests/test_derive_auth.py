@@ -6,8 +6,8 @@ import pytest
 from eth_account import Account
 from web3 import Web3
 
-from option_arb.exchanges import derive_constants
-from option_arb.exchanges.derive_auth import DeriveAuth
+from option_arb.exchanges.derive import constants as derive_constants
+from option_arb.exchanges.derive.auth import DeriveAuth
 
 
 def _fresh_key_and_wallet() -> tuple[str, str]:

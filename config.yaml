@@ -4,6 +4,7 @@ screener:
   exchanges: ["derive", "deribit", "deribit_linear", "aevo"]
   max_expiries_ahead: 8
   metadata_refresh_hours: 6
+  book_cache_ttl_ms: 5000
 
 thresholds:
   min_apr_pct: 0.1

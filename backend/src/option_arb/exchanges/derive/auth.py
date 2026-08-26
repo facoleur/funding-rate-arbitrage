@@ -24,7 +24,7 @@ from eth_account.messages import encode_defunct
 from web3 import Web3
 
 from option_arb.exchanges.auth import Authenticator, AuthNotReadyError, RestSignature
-from option_arb.exchanges.derive_constants import DeriveConstants
+from option_arb.exchanges.derive.constants import DeriveConstants
 
 log = logging.getLogger(__name__)
 

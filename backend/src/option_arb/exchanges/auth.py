@@ -272,8 +272,8 @@ def build_authenticator(exchange: str, settings: Any, network: str = "testnet") 
     if ex == "derive":
         if not settings.derive_session_private_key or not settings.derive_wallet_address:
             return NoAuth()
-        from option_arb.exchanges import derive_constants
-        from option_arb.exchanges.derive_auth import DeriveAuth
+        from option_arb.exchanges.derive import constants as derive_constants
+        from option_arb.exchanges.derive.auth import DeriveAuth
 
         return DeriveAuth(
             session_private_key=settings.derive_session_private_key,

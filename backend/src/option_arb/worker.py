@@ -32,7 +32,7 @@ async def _amain() -> None:
 
     # 1. bootstrap instrument metadata for every configured underlying/exchange
     subscriptions: dict[str, list[Instrument]] = {}
-    cache = BookCache()
+    cache = BookCache(ttl_ms=cfg.screener.book_cache_ttl_ms)
     for underlying in cfg.screener.underlyings:
         for name, ex in exchanges.items():
             try:
@@ -157,6 +157,9 @@ async def _metadata_refresh_loop(
                     underlying,
                     len(new_insts),
                 )
+        evicted = cache.evict_expired()
+        if evicted:
+            log.info("metadata_refresh: evicted %d expired instruments from cache", evicted)
 
 
 _REST_POLL_BATCH = 50
