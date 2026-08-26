@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter
@@ -9,6 +10,7 @@ from sqlmodel import col, select
 
 from option_arb.db.models import TickerState
 from option_arb.db.session import get_session
+from option_arb.services.comparator import sell_margin_per_unit
 
 router = APIRouter(prefix="/api/tickers", tags=["tickers"])
 
@@ -33,20 +35,6 @@ async def list_tickers(
     async with get_session() as sess:
         rows = list((await sess.execute(stmt)).scalars())
     return _group_and_compute(rows)
-
-
-def _option_margin_usd(
-    underlying_price: float, strike: float, option_type: str, size: float
-) -> float:
-    """Approximate initial margin for a naked short option (Deribit-style formula).
-
-    max(10%, 15% - OTM%) x spot x size
-    Works as a reasonable baseline for Deribit, Derive, and Aevo.
-    """
-    spot = underlying_price
-    otm_amount = max(0.0, strike - spot) if option_type == "C" else max(0.0, spot - strike)
-    margin_rate = max(0.10, 0.15 - otm_amount / spot)
-    return margin_rate * spot * size
 
 
 def _group_and_compute(rows: list[TickerState]) -> list[dict[str, Any]]:
@@ -77,6 +65,9 @@ def _group_and_compute(rows: list[TickerState]) -> list[dict[str, Any]]:
                 "is_stale": is_stale,
             }
 
+        expiry_dt = sample.expiry if sample.expiry.tzinfo else sample.expiry.replace(tzinfo=UTC)
+        days_to_expiry = (expiry_dt - now).total_seconds() / 86400.0
+
         # Compute cross-exchange spread (same logic as comparator.py)
         gross_spread_pct = None
         net_spread_pct = None
@@ -103,37 +94,40 @@ def _group_and_compute(rows: list[TickerState]) -> list[dict[str, Any]]:
                     best_sell_t = sell_t
         max_profit_usd = None
         sell_collateral_usd = None
+        apr_pct = None
+        max_notional_usd = None
         if best_gross is not None and best_buy_t and best_sell_t:
-            fees = (best_buy_t.taker_fee_rate + best_sell_t.taker_fee_rate) * 100
-            net = best_gross - fees
             gross_spread_pct = round(best_gross, 4)
-            if net > 0:
-                net_spread_pct = round(float(net), 4)
-                buy_exchange = best_buy_t.exchange
-                sell_exchange = best_sell_t.exchange
-                ask_sz = best_buy_t.ask_size or 0.0
-                bid_sz = best_sell_t.bid_size or 0.0
-                tradeable_size = min(ask_sz, bid_sz)
-                ask_price = best_buy_t.ask_price or 0.0
-                max_notional_usd = round(tradeable_size * ask_price, 2)
-                max_profit_usd = round(net / 100 * ask_price * tradeable_size, 2)
-                if best_sell_t.underlying_price:
-                    sell_collateral_usd = round(
-                        _option_margin_usd(
-                            best_sell_t.underlying_price,
-                            best_sell_t.strike,
+            buy_ask = best_buy_t.ask_price or 0.0
+            sell_bid = best_sell_t.bid_price or 0.0
+            fees_usd = best_buy_t.taker_fee_rate * buy_ask + best_sell_t.taker_fee_rate * sell_bid
+            net_profit_per_unit = sell_bid - buy_ask - fees_usd
+
+            if net_profit_per_unit > 0:
+                spot = best_sell_t.underlying_price or best_buy_t.underlying_price
+                if spot:
+                    margin = float(
+                        sell_margin_per_unit(
+                            Decimal(str(spot)),
+                            Decimal(str(best_sell_t.strike)),
                             best_sell_t.option_type,
-                            tradeable_size,
-                        ),
-                        2,
+                        )
                     )
+                    net_spread_pct = round(net_profit_per_unit / margin * 100, 4)
+                    days_to_exp = max((expiry_dt - now).total_seconds() / 86400.0, 1e-6)
+                    apr_pct = round(net_spread_pct / days_to_exp * 365, 2)
+                    buy_exchange = best_buy_t.exchange
+                    sell_exchange = best_sell_t.exchange
+                    ask_sz = best_buy_t.ask_size or 0.0
+                    bid_sz = best_sell_t.bid_size or 0.0
+                    tradeable_size = min(ask_sz, bid_sz)
+                    max_notional_usd = round(tradeable_size * buy_ask, 2)
+                    max_profit_usd = round(net_profit_per_unit * tradeable_size, 2)
+                    sell_collateral_usd = round(margin * tradeable_size, 2)
 
         latest_ts = max(t.updated_at for t in tickers)
         if latest_ts.tzinfo is None:
             latest_ts = latest_ts.replace(tzinfo=UTC)
-
-        expiry_dt = sample.expiry if sample.expiry.tzinfo else sample.expiry.replace(tzinfo=UTC)
-        days_to_expiry = (expiry_dt - now).total_seconds() / 86400.0
 
         out.append(
             {
@@ -146,9 +140,10 @@ def _group_and_compute(rows: list[TickerState]) -> list[dict[str, Any]]:
                 "exchanges": exchanges,
                 "gross_spread_pct": gross_spread_pct,
                 "net_spread_pct": net_spread_pct,
+                "apr_pct": apr_pct,
                 "buy_exchange": buy_exchange,
                 "sell_exchange": sell_exchange,
-                "max_notional_usd": max_notional_usd if net_spread_pct is not None else None,
+                "max_notional_usd": max_notional_usd,
                 "max_profit_usd": max_profit_usd,
                 "sell_collateral_usd": sell_collateral_usd,
                 "updated_at": latest_ts.isoformat(),

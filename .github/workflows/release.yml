@@ -43,6 +43,8 @@ jobs:
 
       - name: Build frontend
         working-directory: frontend
+        env:
+          VITE_APP_VERSION: ${{ github.ref_name }}
         run: |
           npm ci
           npm run build

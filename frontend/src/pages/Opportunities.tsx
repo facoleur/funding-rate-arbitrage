@@ -29,15 +29,15 @@ function fmtUsd(n: number) {
 
 // Derived values computed from raw row.
 // - size: walked if available, else infer from top_ask
-// - buyCapital: premium paid on buy side (USD)
-// - sellRecv:   premium received on sell side (USD)
+// - totalCapital: total capital locked = capital_deployed_usd × size (premium + sell margin)
+// - sellRecv:     premium received on sell side (USD)
 function computeDerived(o: Opportunity) {
   const buyAsk = o.walked_ask ?? o.top_ask
   const sellBid = o.walked_bid ?? o.top_bid
   const size = o.walked_size ?? (o.top_ask > 0 ? o.max_notional_usd / o.top_ask : 0)
-  const buyCapital = buyAsk * size
+  const totalCapital = o.capital_deployed_usd * size
   const sellRecv = sellBid * size
-  return { buyAsk, sellBid, size, buyCapital, sellRecv }
+  return { buyAsk, sellBid, size, totalCapital, sellRecv }
 }
 
 // ─── columns ──────────────────────────────────────────────────────────────────
@@ -65,12 +65,12 @@ const COLS: ColDef[] = [
   { id: 'size',        label: 'Size',        right: true, defaultVisible: false },
   { id: 'buy_ask',     label: 'Buy ask',     right: true, defaultVisible: false },
   { id: 'sell_bid',    label: 'Sell bid',    right: true, defaultVisible: false },
-  { id: 'buy_capital', label: 'Buy cap.',    tip: 'Prime payée côté achat (capital immobilisé)', right: true, defaultVisible: true },
+  { id: 'buy_capital', label: 'Capital',     tip: 'Capital total immobilisé (prime achat + marge sell estimée)', right: true, defaultVisible: true },
   { id: 'sell_recv',   label: 'Sell recv.',  tip: 'Prime encaissée côté vente', right: true, defaultVisible: true },
   { id: 'fees',        label: 'Fees',        right: true, defaultVisible: true },
   { id: 'net_profit',  label: 'Net profit',  right: true, defaultVisible: true },
-  { id: 'spread',      label: 'Spread %',    tip: 'Net de frais', right: true, defaultVisible: true },
-  { id: 'apr',         label: 'APR %',       tip: 'Basé sur le capital buy immobilisé', right: true, defaultVisible: true },
+  { id: 'spread',      label: 'Spread %',    tip: 'Net de frais — % du capital total (prime achat + marge sell)', right: true, defaultVisible: true },
+  { id: 'apr',         label: 'APR %',       tip: 'Annualisé sur capital total (prime achat + marge sell estimée)', right: true, defaultVisible: true },
   { id: 'status',      label: 'Status',      defaultVisible: true },
   { id: 'age',         label: 'Age',         right: true, defaultVisible: true },
 ]
@@ -91,7 +91,7 @@ function sortVal(o: Opportunity, col: SortKey): number | string {
     case 'size':        return d.size
     case 'buy_ask':     return d.buyAsk
     case 'sell_bid':    return d.sellBid
-    case 'buy_capital': return d.buyCapital
+    case 'buy_capital': return d.totalCapital
     case 'sell_recv':   return d.sellRecv
     case 'fees':        return o.fees_usd
     case 'net_profit':  return o.net_profit_usd
@@ -275,12 +275,12 @@ export default function Opportunities() {
               {visible.has('size')        && th('size',        'Size',       { right: true })}
               {visible.has('buy_ask')     && th('buy_ask',     'Buy ask',    { right: true })}
               {visible.has('sell_bid')    && th('sell_bid',    'Sell bid',   { right: true })}
-              {visible.has('buy_capital') && th('buy_capital', 'Buy cap.',   { right: true, tip: 'Prime payée côté achat (capital immobilisé)' })}
+              {visible.has('buy_capital') && th('buy_capital', 'Capital',    { right: true, tip: 'Capital total immobilisé (prime achat + marge sell estimée)' })}
               {visible.has('sell_recv')   && th('sell_recv',   'Sell recv.', { right: true, tip: 'Prime encaissée côté vente' })}
               {visible.has('fees')        && th('fees',        'Fees',       { right: true })}
               {visible.has('net_profit')  && th('net_profit',  'Net profit', { right: true })}
-              {visible.has('spread')      && th('spread',      'Spread %',   { right: true, tip: 'Net de frais' })}
-              {visible.has('apr')         && th('apr',         'APR %',      { right: true, tip: 'Basé sur le capital buy immobilisé' })}
+              {visible.has('spread')      && th('spread',      'Spread %',   { right: true, tip: 'Net de frais — % du capital total (prime achat + marge sell)' })}
+              {visible.has('apr')         && th('apr',         'APR %',      { right: true, tip: 'Annualisé sur capital total (prime achat + marge sell estimée)' })}
               {visible.has('status')      && <th className={`${TH_BASE}`}>Status</th>}
               {visible.has('age')         && th('age',         'Age',        { right: true })}
             </tr>
@@ -343,7 +343,7 @@ export default function Opportunities() {
                   )}
                   {visible.has('buy_capital') && (
                     <td className={`${TD_BASE} text-right tabular-nums text-zinc-300`}>
-                      {fmtUsd(d.buyCapital)}
+                      {fmtUsd(d.totalCapital)}
                     </td>
                   )}
                   {visible.has('sell_recv') && (

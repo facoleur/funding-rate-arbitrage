@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -24,6 +24,9 @@ class Quote:
     ask_price: Decimal
     ask_qty: Decimal
 
+    # Used for sell-leg margin calculation. None → fallback to premium-only denominator.
+    underlying_price: Decimal | None = field(default=None, compare=False)
+
 
 @dataclass(frozen=True)
 class Spread:
@@ -40,10 +43,12 @@ class Spread:
     buy_ask: Decimal
     sell_bid: Decimal
 
-    fee_pct: Decimal
-    net_spread_pct: Decimal
+    fee_pct: Decimal  # fees as % of capital_deployed (per unit)
+    net_spread_pct: Decimal  # net profit as % of capital_deployed (per unit)
     apr_pct: Decimal
     max_notional_usd: Decimal
+    capital_deployed_usd: Decimal  # capital per contract (buy premium + net sell margin)
+    net_profit_usd: Decimal  # total absolute profit = per_unit x qty_traded
 
 
 def group_by_instrument(quotes: list[Quote]) -> dict[str, list[Quote]]:
@@ -58,6 +63,26 @@ def _is_valid(q: Quote) -> bool:
     return q.bid_price > 0 and q.ask_price > 0 and q.bid_qty > 0 and q.ask_qty > 0
 
 
+def sell_margin_per_unit(spot: Decimal, strike: Decimal, option_type: str) -> Decimal:
+    """Net capital locked on the short leg (Deribit-style formula, same for all exchanges).
+
+    IM = max(0.15 - OTM_fraction, 0.10) x spot
+    Premium received offsets mark_price, so only the base rate x spot is truly locked."""
+    if option_type == "C":
+        otm_fraction = max(Decimal(0), (strike - spot) / spot)
+    else:
+        otm_fraction = max(Decimal(0), (spot - strike) / spot)
+    base_rate = max(Decimal("0.15") - otm_fraction, Decimal("0.10"))
+    return base_rate * spot
+
+
+def _get_margin(quote: Quote, spot_override: Decimal | None = None) -> Decimal | None:
+    spot = spot_override or quote.underlying_price
+    if spot is None or spot <= 0:
+        return None
+    return sell_margin_per_unit(spot, quote.strike, quote.option_type)
+
+
 def compare_options(
     groups: list[list[Quote]],
     *,
@@ -66,10 +91,12 @@ def compare_options(
 ) -> list[Spread]:
     """For each group of cross-venue quotes for the same instrument, find
     the best buy (lowest ask on exchange A) and best sell (highest bid on
-    exchange B) across DIFFERENT exchanges, subtract combined taker fees,
-    and return a Spread when the net spread is positive.
+    exchange B) across DIFFERENT exchanges.
 
-    Ports the semantics of the TS `compareOptions` from the deleted prototype."""
+    Capital deployed = buy_premium + net_sell_margin, where net_sell_margin is
+    the margin required for the short leg minus the premium received (since all
+    exchanges credit premium immediately on fill). When underlying_price is
+    unavailable, falls back to using only the buy premium as denominator."""
     now = now or datetime.now(UTC)
     results: list[Spread] = []
 
@@ -82,7 +109,6 @@ def compare_options(
             raise ValueError(f"mismatched instruments in group: {sorted(names)}")
 
         valid = [q for q in quotes if _is_valid(q)]
-        # apply size floor: filter out illiquid quotes just like TS did
         valid = [q for q in valid if q.bid_price * q.bid_qty >= size_threshold_usd]
         if len(valid) < 2:
             continue
@@ -91,26 +117,44 @@ def compare_options(
         highest_bid = max(valid, key=lambda q: q.bid_price)
 
         if lowest_ask.exchange == highest_bid.exchange:
-            continue  # no cross-exchange arb
+            continue
 
-        price_diff_pct = (
-            (highest_bid.bid_price - lowest_ask.ask_price) / lowest_ask.ask_price
-        ) * Decimal(100)
-        fee_pct = (lowest_ask.taker_fee_rate + highest_bid.taker_fee_rate) * Decimal(100)
-        net_diff_pct = price_diff_pct - fee_pct
+        # Fees in USD: each leg pays taker_fee x premium on that leg
+        fees_usd = (
+            lowest_ask.taker_fee_rate * lowest_ask.ask_price
+            + highest_bid.taker_fee_rate * highest_bid.bid_price
+        )
+        net_profit_per_unit = highest_bid.bid_price - lowest_ask.ask_price - fees_usd
 
-        if net_diff_pct <= 0:
+        if net_profit_per_unit <= 0:
+            continue
+
+        # capital_deployed: sell margin only (binding capital constraint).
+        # Both legs fill simultaneously; buy premium is immediately offset by sell premium
+        # received. Only the margin locked on the short leg is truly committed capital.
+        # Spot comes from whichever leg has it — Deribit always provides it.
+        spot = highest_bid.underlying_price or lowest_ask.underlying_price
+        sell_margin = _get_margin(highest_bid, spot_override=spot)
+        if sell_margin is None:
+            continue  # no spot price available — can't compute margin, skip
+        capital_deployed = sell_margin
+
+        fee_pct = fees_usd / capital_deployed * Decimal(100)
+        net_spread_pct = net_profit_per_unit / capital_deployed * Decimal(100)
+
+        if net_spread_pct <= 0:
             continue
 
         q0 = quotes[0]
         expiry_utc = q0.expiry if q0.expiry.tzinfo else q0.expiry.replace(tzinfo=UTC)
         days_to_exp = max((expiry_utc - now).total_seconds() / 86400.0, 1e-6)
-        apr = (net_diff_pct / Decimal(str(days_to_exp))) * Decimal(365)
+        apr = (net_spread_pct / Decimal(str(days_to_exp))) * Decimal(365)
 
-        max_notional = min(
-            lowest_ask.ask_qty * lowest_ask.ask_price,
-            highest_bid.bid_qty * highest_bid.bid_price,
-        )
+        ask_notional = lowest_ask.ask_qty * lowest_ask.ask_price
+        bid_notional = highest_bid.bid_qty * highest_bid.bid_price
+        max_notional = min(ask_notional, bid_notional)
+        qty_traded = lowest_ask.ask_qty if ask_notional <= bid_notional else highest_bid.bid_qty
+        net_profit_total = net_profit_per_unit * qty_traded
 
         results.append(
             Spread(
@@ -126,9 +170,11 @@ def compare_options(
                 buy_ask=lowest_ask.ask_price,
                 sell_bid=highest_bid.bid_price,
                 fee_pct=fee_pct,
-                net_spread_pct=net_diff_pct,
+                net_spread_pct=net_spread_pct,
                 apr_pct=apr,
                 max_notional_usd=max_notional,
+                capital_deployed_usd=capital_deployed,
+                net_profit_usd=net_profit_total,
             )
         )
 

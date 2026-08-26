@@ -95,6 +95,8 @@ async def _make_pending_opp(inst: str = "BTC-20260101-30000-C") -> int:
             spread_pct=13.8,
             apr_pct=160.0,
             max_notional_usd=1000.0,
+            capital_deployed_usd=101.0,
+            net_profit_usd=138.0,
             status=OpportunityStatus.PENDING,
         )
         sess.add(opp)

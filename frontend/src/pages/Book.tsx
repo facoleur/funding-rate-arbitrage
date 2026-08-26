@@ -20,7 +20,7 @@ function fmtAge(iso: string) {
 // ─── Sorting ─────────────────────────────────────────────────────────────────
 
 type SortDir = 'asc' | 'desc'
-const SORTABLE = ['expiry', 'strike', 'gross', 'net', 'notional', 'profit', 'age'] as const
+const SORTABLE = ['expiry', 'strike', 'gross', 'net', 'apr', 'notional', 'profit', 'age'] as const
 type SortCol = typeof SORTABLE[number]
 
 function isSortCol(s: string | null): s is SortCol {
@@ -42,6 +42,7 @@ function sortRows(rows: BookRow[], col: SortCol | null, dir: SortDir): BookRow[]
       case 'strike': av = a.strike; bv = b.strike; break
       case 'gross':  av = a.gross_spread_pct ?? -Infinity; bv = b.gross_spread_pct ?? -Infinity; break
       case 'net':    av = a.net_spread_pct ?? -Infinity; bv = b.net_spread_pct ?? -Infinity; break
+      case 'apr':    av = a.apr_pct ?? -Infinity; bv = b.apr_pct ?? -Infinity; break
       case 'notional': av = a.max_notional_usd ?? -Infinity; bv = b.max_notional_usd ?? -Infinity; break
       case 'profit': av = a.max_profit_usd ?? -Infinity; bv = b.max_profit_usd ?? -Infinity; break
       case 'age':    av = new Date(a.updated_at).getTime(); bv = new Date(b.updated_at).getTime(); break
@@ -260,6 +261,7 @@ export default function Book() {
                 ))}
                 {th('gross', 'Gross%')}
                 {th('net', 'Net%')}
+                {th('apr', 'APR%')}
                 {th('notional', 'Cap.$')}
                 {th('profit', 'Profit$')}
                 <th className="pb-2 pr-3">Arb</th>
@@ -324,6 +326,9 @@ export default function Book() {
                     </td>
                     <td className={`py-1 pr-3 text-right font-medium ${hasArb ? 'text-emerald-400' : 'text-zinc-500'}`}>
                       {row.net_spread_pct != null ? `${row.net_spread_pct.toFixed(2)}%` : '—'}
+                    </td>
+                    <td className={`py-1 pr-3 text-right font-medium ${hasArb ? 'text-emerald-300' : 'text-zinc-500'}`}>
+                      {row.apr_pct != null ? `${row.apr_pct.toFixed(1)}%` : '—'}
                     </td>
                     <td className={`py-1 pr-3 text-right ${hasArb ? 'text-zinc-300' : 'text-zinc-600'}`}>
                       {row.max_notional_usd != null ? `$${row.max_notional_usd.toFixed(2)}` : '—'}

@@ -21,6 +21,7 @@ export interface BookRow {
   exchanges: Record<string, ExchangeQuote>
   gross_spread_pct: number | null
   net_spread_pct: number | null
+  apr_pct: number | null
   buy_exchange: string | null
   sell_exchange: string | null
   max_notional_usd: number | null

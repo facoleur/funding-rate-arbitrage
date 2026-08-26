@@ -42,6 +42,7 @@ async def test_screener_writes_opportunity_when_thresholds_met(test_db: str) -> 
             bid_size=Decimal("10"),
             ask_price=Decimal("101"),
             ask_size=Decimal("10"),
+            underlying_price=Decimal("1000"),
         )
     )
     cache.update(
@@ -53,6 +54,7 @@ async def test_screener_writes_opportunity_when_thresholds_met(test_db: str) -> 
             bid_size=Decimal("10"),
             ask_price=Decimal("112"),
             ask_size=Decimal("10"),
+            underlying_price=Decimal("1000"),
         )
     )
 
@@ -63,9 +65,10 @@ async def test_screener_writes_opportunity_when_thresholds_met(test_db: str) -> 
     assert len(rows) == 1
     assert rows[0].buy_from == "derive"
     assert rows[0].sell_to == "deribit"
-    # fee_pct = (0.0003 + 0.0003) * 100 = 0.06
-    assert rows[0].fee_pct == pytest.approx(0.06)
-    # spread_pct is net (fees already deducted), fee_pct stored separately
+    # fees_usd = 0.0003*101 + 0.0003*110 = 0.0633
+    # sell_margin = 0.10 * 1000 = 100 (strike=30000 >> spot=1000 → base_rate=0.10)
+    # fee_pct = 0.0633 / 100 * 100
+    assert rows[0].fee_pct == pytest.approx(0.0633 / 100 * 100, abs=1e-4)
     assert rows[0].fee_pct + rows[0].spread_pct > rows[0].spread_pct
 
 
@@ -85,6 +88,7 @@ async def test_screener_skips_when_apr_below_threshold(test_db: str) -> None:
             bid_size=Decimal("10"),
             ask_price=Decimal("100.5"),
             ask_size=Decimal("10"),
+            underlying_price=Decimal("1000"),
         )
     )
     cache.update(
@@ -96,6 +100,7 @@ async def test_screener_skips_when_apr_below_threshold(test_db: str) -> None:
             bid_size=Decimal("10"),
             ask_price=Decimal("102"),
             ask_size=Decimal("10"),
+            underlying_price=Decimal("1000"),
         )
     )
 

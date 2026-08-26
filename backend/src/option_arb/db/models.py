@@ -94,10 +94,12 @@ class Opportunity(SQLModel, table=True):
 
     network: str = "mainnet"  # "mainnet" | "testnet"
 
-    spread_pct: float  # net of fees
-    fee_pct: float = 0.0  # sum of buy + sell taker fees as %
+    spread_pct: float  # net of fees, as % of capital_deployed (per contract)
+    fee_pct: float = 0.0  # fees as % of capital_deployed (per contract)
     apr_pct: float
     max_notional_usd: float
+    capital_deployed_usd: float = 0.0  # capital per contract (buy premium + net sell margin)
+    net_profit_usd: float = 0.0  # total absolute profit = per_unit x qty_traded
 
     status: OpportunityStatus = Field(default=OpportunityStatus.PENDING, index=True)
     rejection_reason: str | None = None

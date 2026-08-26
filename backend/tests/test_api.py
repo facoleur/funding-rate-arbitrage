@@ -27,6 +27,8 @@ async def _insert_opportunity(**kwargs) -> Opportunity:  # type: ignore[no-untyp
         fee_pct=0.06,
         apr_pct=107.0,
         max_notional_usd=1010.0,
+        capital_deployed_usd=101.0,
+        net_profit_usd=89.37,
         status=OpportunityStatus.PENDING,
     )
     defaults.update(kwargs)
@@ -56,8 +58,14 @@ async def test_opportunities_empty(test_db: str) -> None:
 
 @pytest.mark.asyncio
 async def test_opportunity_serialization_includes_profit_fields(test_db: str) -> None:
-    # Use clean numbers to avoid floating-point rounding mismatch
-    await _insert_opportunity(max_notional_usd=1000.0, spread_pct=10.0, fee_pct=0.10)
+    # spread_pct=10.0, fee_pct=0.10, net_profit_usd=100 → fees = 100*0.10/10 = 1.0
+    await _insert_opportunity(
+        max_notional_usd=1000.0,
+        spread_pct=10.0,
+        fee_pct=0.10,
+        net_profit_usd=100.0,
+        capital_deployed_usd=1000.0,
+    )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         r = await ac.get("/api/opportunities")
     assert r.status_code == 200
@@ -69,18 +77,29 @@ async def test_opportunity_serialization_includes_profit_fields(test_db: str) ->
     assert "fees_usd" in opp
     assert "gross_profit_usd" in opp
     assert opp["fee_pct"] == pytest.approx(0.10)
-    assert opp["net_profit_usd"] == pytest.approx(100.0, abs=0.01)  # 1000 * 10% / 100
-    assert opp["fees_usd"] == pytest.approx(1.0, abs=0.01)  # 1000 * 0.10% / 100
-    assert opp["gross_profit_usd"] == pytest.approx(101.0, abs=0.01)  # net + fees
+    assert opp["net_profit_usd"] == pytest.approx(100.0, abs=0.01)
+    assert opp["fees_usd"] == pytest.approx(1.0, abs=0.01)  # 100 * 0.10 / 10
+    assert opp["gross_profit_usd"] == pytest.approx(101.0, abs=0.01)
+    assert "capital_deployed_usd" in opp
 
 
 @pytest.mark.asyncio
 async def test_opportunity_stats_groups_by_pair(test_db: str) -> None:
     await _insert_opportunity(
-        buy_from="derive", sell_to="deribit", max_notional_usd=1000.0, spread_pct=10.0, fee_pct=0.06
+        buy_from="derive",
+        sell_to="deribit",
+        max_notional_usd=1000.0,
+        spread_pct=10.0,
+        fee_pct=0.06,
+        net_profit_usd=100.0,
     )
     await _insert_opportunity(
-        buy_from="derive", sell_to="deribit", max_notional_usd=500.0, spread_pct=5.0, fee_pct=0.06
+        buy_from="derive",
+        sell_to="deribit",
+        max_notional_usd=500.0,
+        spread_pct=5.0,
+        fee_pct=0.06,
+        net_profit_usd=25.0,
     )
     await _insert_opportunity(
         buy_from="derive",
@@ -88,6 +107,7 @@ async def test_opportunity_stats_groups_by_pair(test_db: str) -> None:
         max_notional_usd=200.0,
         spread_pct=8.0,
         fee_pct=0.06,
+        net_profit_usd=16.0,
     )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -97,11 +117,11 @@ async def test_opportunity_stats_groups_by_pair(test_db: str) -> None:
 
     assert "derive → deribit" in stats
     assert "derive → deribit_linear" in stats
-    # derive → deribit: 1000*10/100 + 500*5/100 = 100 + 25 = 125
+    # derive → deribit: net_profit_usd 100 + 25 = 125
     assert stats["derive → deribit"]["total_net_profit_usd"] == pytest.approx(125.0, abs=0.01)
     assert stats["derive → deribit"]["count"] == 2
     assert stats["derive → deribit"]["best_net_profit_usd"] == pytest.approx(100.0, abs=0.01)
-    # fees: (1000 + 500) * 0.06 / 100 = 0.90
+    # fees: 100*0.06/10 + 25*0.06/5 = 0.6 + 0.3 = 0.90
     assert stats["derive → deribit"]["total_fees_usd"] == pytest.approx(0.90, abs=0.01)
 
 

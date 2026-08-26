@@ -38,11 +38,11 @@ async def opportunity_stats(
         SELECT
             buy_from,
             sell_to,
-            COUNT(*)                                              AS count,
-            SUM(max_notional_usd * spread_pct / 100)             AS total_net_profit_usd,
-            SUM(max_notional_usd * fee_pct    / 100)             AS total_fees_usd,
-            AVG(apr_pct)                                          AS avg_apr_pct,
-            MAX(max_notional_usd * spread_pct / 100)             AS best_net_profit_usd
+            COUNT(*)                                                                          AS count,
+            SUM(net_profit_usd)                                                               AS total_net_profit_usd,
+            SUM(CASE WHEN spread_pct != 0 THEN net_profit_usd * fee_pct / spread_pct ELSE 0 END) AS total_fees_usd,
+            AVG(apr_pct)                                                                      AS avg_apr_pct,
+            MAX(net_profit_usd)                                                               AS best_net_profit_usd
         FROM opportunities
         WHERE {where}
         GROUP BY buy_from, sell_to
@@ -72,9 +72,9 @@ _SORT_COLS = {
     "detected_at": "detected_at",
     "apr_pct": "apr_pct",
     "spread_pct": "spread_pct",
-    "net_profit_usd": "max_notional_usd * spread_pct / 100",
+    "net_profit_usd": "net_profit_usd",
     "max_notional_usd": "max_notional_usd",
-    "fees_usd": "max_notional_usd * fee_pct / 100",
+    "fees_usd": "CASE WHEN spread_pct != 0 THEN net_profit_usd * fee_pct / spread_pct ELSE 0 END",
 }
 
 
@@ -107,9 +107,7 @@ async def list_opportunities(
     if min_apr is not None:
         stmt = stmt.where(Opportunity.apr_pct >= min_apr)
     if min_profit is not None:
-        stmt = stmt.where(
-            sa.text("max_notional_usd * spread_pct / 100 >= :mp").bindparams(mp=min_profit)
-        )
+        stmt = stmt.where(Opportunity.net_profit_usd >= min_profit)
     if symbol is not None:
         stmt = stmt.where(Opportunity.symbol == symbol)
     if buy_from is not None:
@@ -138,8 +136,8 @@ async def get_opportunity(opp_id: int) -> dict[str, Any]:
 
 
 def _serialize(o: Opportunity) -> dict[str, Any]:
-    net_profit = o.max_notional_usd * o.spread_pct / 100
-    fees = o.max_notional_usd * o.fee_pct / 100
+    net_profit = o.net_profit_usd
+    fees = net_profit * o.fee_pct / o.spread_pct if o.spread_pct else 0.0
     expiry_utc = o.expiry if o.expiry.tzinfo else o.expiry.replace(tzinfo=UTC)
     days_to_expiry = max((expiry_utc - datetime.now(UTC)).total_seconds() / 86400.0, 0)
     return {
@@ -164,6 +162,7 @@ def _serialize(o: Opportunity) -> dict[str, Any]:
         "fee_pct": o.fee_pct,
         "apr_pct": o.apr_pct,
         "max_notional_usd": o.max_notional_usd,
+        "capital_deployed_usd": o.capital_deployed_usd,
         "net_profit_usd": round(net_profit, 2),
         "fees_usd": round(fees, 2),
         "gross_profit_usd": round(net_profit + fees, 2),

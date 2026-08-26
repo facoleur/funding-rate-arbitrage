@@ -24,6 +24,7 @@ export interface Opportunity {
   fee_pct: number
   apr_pct: number
   max_notional_usd: number
+  capital_deployed_usd: number
   net_profit_usd: number
   fees_usd: number
   gross_profit_usd: number

@@ -93,7 +93,7 @@ class Executor:
                 select(Opportunity)
                 .where(Opportunity.status == OpportunityStatus.PENDING)
                 # prioritize by estimated gross profit in USD (notional * spread%)
-                .order_by(sa.text("max_notional_usd * spread_pct DESC"))
+                .order_by(sa.text("net_profit_usd DESC"))
                 .limit(20)
             )
             pending = list((await sess.execute(stmt)).scalars())
@@ -124,9 +124,8 @@ class Executor:
         if opp.spread_pct < self.config.thresholds.min_net_spread_pct:
             await self._reject(opp, f"spread_too_small({opp.spread_pct:.3f})")
             return
-        max_profit_est = opp.spread_pct / 100 * opp.max_notional_usd
-        if max_profit_est < self.config.thresholds.min_net_profit_usd:
-            await self._reject(opp, f"profit_too_small({max_profit_est:.2f})")
+        if opp.net_profit_usd < self.config.thresholds.min_net_profit_usd:
+            await self._reject(opp, f"profit_too_small({opp.net_profit_usd:.2f})")
             return
 
         # 3. trade_enabled check per exchange

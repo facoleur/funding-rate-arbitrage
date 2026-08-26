@@ -33,6 +33,7 @@ def _cached_to_quote(t: CachedTicker) -> Quote | None:
         bid_qty=t.bid_size,
         ask_price=t.ask_price,
         ask_qty=t.ask_size,
+        underlying_price=t.underlying_price,
     )
 
 
@@ -163,7 +164,7 @@ class Screener:
                 continue
             if s.net_spread_pct < min_net_spread:
                 continue
-            if s.net_spread_pct / 100 * s.max_notional_usd < min_profit:
+            if s.net_profit_usd < min_profit:
                 continue
             ex_cfg = self.config.exchanges.get(s.buy_from)
             network = ex_cfg.network if ex_cfg else "mainnet"
@@ -185,6 +186,8 @@ class Screener:
                     fee_pct=float(s.fee_pct),
                     apr_pct=float(s.apr_pct),
                     max_notional_usd=float(s.max_notional_usd),
+                    capital_deployed_usd=float(s.capital_deployed_usd),
+                    net_profit_usd=float(s.net_profit_usd),
                     status=OpportunityStatus.PENDING,
                 )
             )
@@ -213,6 +216,8 @@ class Screener:
                     existing.fee_pct = row.fee_pct
                     existing.apr_pct = row.apr_pct
                     existing.max_notional_usd = row.max_notional_usd
+                    existing.capital_deployed_usd = row.capital_deployed_usd
+                    existing.net_profit_usd = row.net_profit_usd
                     continue
                 # don't recreate if already seen recently (any status)
                 recent = (
@@ -231,7 +236,7 @@ class Screener:
             await sess.commit()
 
         for row in new_rows:
-            max_profit_usd = round(row.spread_pct / 100 * row.max_notional_usd, 2)
+            max_profit_usd = round(row.net_profit_usd, 2)
             await bus.publish(
                 Event(
                     type="opportunity_detected",
