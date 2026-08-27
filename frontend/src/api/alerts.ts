@@ -1,19 +1,11 @@
-import { apiFetch } from './client'
+import { apiClient, apiRequest } from './client'
+import type { components, operations } from './generated/schema'
 
-export type AlertLevel = 'info' | 'warn' | 'error'
+export type AlertLevel = components['schemas']['AlertLevel']
+export type Alert = components['schemas']['AlertResponse']
 
-export interface Alert {
-  id: number
-  level: AlertLevel
-  channel: string
-  message: string
-  sent_at: string
-  meta: string | null
-}
+type AlertQuery = NonNullable<operations['list_alerts_api_alerts_get']['parameters']['query']>
 
-export function fetchAlerts(params?: { level?: AlertLevel; limit?: number }) {
-  const q = new URLSearchParams()
-  if (params?.level) q.set('level', params.level)
-  if (params?.limit != null) q.set('limit', String(params.limit))
-  return apiFetch<Alert[]>(`/api/alerts?${q}`)
+export function fetchAlerts(query?: AlertQuery) {
+  return apiRequest(apiClient.GET('/api/alerts', { params: { query } }))
 }

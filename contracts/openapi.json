@@ -1,0 +1,2405 @@
+{
+  "components": {
+    "schemas": {
+      "AlertLevel": {
+        "enum": [
+          "info",
+          "warn",
+          "error"
+        ],
+        "title": "AlertLevel",
+        "type": "string"
+      },
+      "AlertResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "level": {
+            "$ref": "#/components/schemas/AlertLevel"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          },
+          "sent_at": {
+            "$ref": "#/components/schemas/IsoDatetime"
+          }
+        },
+        "required": [
+          "id",
+          "level",
+          "channel",
+          "message",
+          "sent_at",
+          "meta"
+        ],
+        "title": "AlertResponse",
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "ErrorResponse",
+        "type": "object"
+      },
+      "ExchangeStateResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "balance_usd": {
+            "title": "Balance Usd",
+            "type": "number"
+          },
+          "balances": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Balances",
+            "type": "object"
+          },
+          "exchange": {
+            "title": "Exchange",
+            "type": "string"
+          },
+          "margin_used_usd": {
+            "title": "Margin Used Usd",
+            "type": "number"
+          },
+          "rest_status": {
+            "$ref": "#/components/schemas/RestStatus"
+          },
+          "updated_at": {
+            "$ref": "#/components/schemas/IsoDatetime"
+          },
+          "ws_status": {
+            "$ref": "#/components/schemas/WsStatus"
+          }
+        },
+        "required": [
+          "exchange",
+          "balance_usd",
+          "balances",
+          "margin_used_usd",
+          "ws_status",
+          "rest_status",
+          "updated_at"
+        ],
+        "title": "ExchangeStateResponse",
+        "type": "object"
+      },
+      "ExecutorConfigResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "max_daily_loss_usd": {
+            "title": "Max Daily Loss Usd",
+            "type": "number"
+          },
+          "max_days_to_expiry": {
+            "title": "Max Days To Expiry",
+            "type": "integer"
+          },
+          "max_notional_per_trade_usd": {
+            "title": "Max Notional Per Trade Usd",
+            "type": "number"
+          },
+          "max_positions_open": {
+            "title": "Max Positions Open",
+            "type": "integer"
+          },
+          "min_apr_pct": {
+            "title": "Min Apr Pct",
+            "type": "number"
+          },
+          "min_net_profit_usd": {
+            "title": "Min Net Profit Usd",
+            "type": "number"
+          },
+          "min_net_spread_pct": {
+            "title": "Min Net Spread Pct",
+            "type": "number"
+          },
+          "min_notional_usd": {
+            "title": "Min Notional Usd",
+            "type": "number"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/Mode"
+          }
+        },
+        "required": [
+          "mode",
+          "min_apr_pct",
+          "min_notional_usd",
+          "max_days_to_expiry",
+          "min_net_profit_usd",
+          "min_net_spread_pct",
+          "max_notional_per_trade_usd",
+          "max_positions_open",
+          "max_daily_loss_usd"
+        ],
+        "title": "ExecutorConfigResponse",
+        "type": "object"
+      },
+      "ExecutorCountersResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "daily_pnl_usd": {
+            "title": "Daily Pnl Usd",
+            "type": "number"
+          },
+          "open_positions": {
+            "title": "Open Positions",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "open_positions",
+          "daily_pnl_usd"
+        ],
+        "title": "ExecutorCountersResponse",
+        "type": "object"
+      },
+      "ExecutorStateResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/ExecutorConfigResponse"
+          },
+          "counters": {
+            "$ref": "#/components/schemas/ExecutorCountersResponse"
+          },
+          "kill_switch_file": {
+            "title": "Kill Switch File",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "KILLED",
+              "RUNNING"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "kill_switch_file",
+          "config",
+          "counters"
+        ],
+        "title": "ExecutorStateResponse",
+        "type": "object"
+      },
+      "ExecutorToggleResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "killed": {
+            "title": "Killed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "killed"
+        ],
+        "title": "ExecutorToggleResponse",
+        "type": "object"
+      },
+      "FundingHistoryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "index_price": {
+            "title": "Index Price",
+            "type": "number"
+          },
+          "rate_8h": {
+            "title": "Rate 8H",
+            "type": "number"
+          },
+          "rate_ann": {
+            "title": "Rate Ann",
+            "type": "number"
+          },
+          "ts": {
+            "title": "Ts",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ts",
+          "rate_8h",
+          "rate_ann",
+          "index_price"
+        ],
+        "title": "FundingHistoryResponse",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "const": "ok",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "IsoDatetime": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "Mode": {
+        "enum": [
+          "live",
+          "paper",
+          "backtest"
+        ],
+        "title": "Mode",
+        "type": "string"
+      },
+      "Network": {
+        "enum": [
+          "mainnet",
+          "testnet"
+        ],
+        "type": "string"
+      },
+      "OpportunityResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "apr_pct": {
+            "title": "Apr Pct",
+            "type": "number"
+          },
+          "buy_from": {
+            "title": "Buy From",
+            "type": "string"
+          },
+          "capital_deployed_usd": {
+            "title": "Capital Deployed Usd",
+            "type": "number"
+          },
+          "days_to_expiry": {
+            "title": "Days To Expiry",
+            "type": "number"
+          },
+          "detected_at": {
+            "$ref": "#/components/schemas/IsoDatetime"
+          },
+          "expiry": {
+            "$ref": "#/components/schemas/IsoDatetime"
+          },
+          "fee_pct": {
+            "title": "Fee Pct",
+            "type": "number"
+          },
+          "fees_usd": {
+            "title": "Fees Usd",
+            "type": "number"
+          },
+          "gross_profit_usd": {
+            "title": "Gross Profit Usd",
+            "type": "number"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "instrument": {
+            "title": "Instrument",
+            "type": "string"
+          },
+          "max_notional_usd": {
+            "title": "Max Notional Usd",
+            "type": "number"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/Mode"
+          },
+          "net_profit_usd": {
+            "title": "Net Profit Usd",
+            "type": "number"
+          },
+          "network": {
+            "$ref": "#/components/schemas/Network"
+          },
+          "option_type": {
+            "enum": [
+              "C",
+              "P"
+            ],
+            "title": "Option Type",
+            "type": "string"
+          },
+          "rejection_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejection Reason"
+          },
+          "sell_to": {
+            "title": "Sell To",
+            "type": "string"
+          },
+          "spread_pct": {
+            "title": "Spread Pct",
+            "type": "number"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OpportunityStatus"
+          },
+          "strike": {
+            "title": "Strike",
+            "type": "number"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "top_ask": {
+            "title": "Top Ask",
+            "type": "number"
+          },
+          "top_bid": {
+            "title": "Top Bid",
+            "type": "number"
+          },
+          "walked_ask": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Walked Ask"
+          },
+          "walked_bid": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Walked Bid"
+          },
+          "walked_size": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Walked Size"
+          }
+        },
+        "required": [
+          "id",
+          "detected_at",
+          "mode",
+          "network",
+          "instrument",
+          "symbol",
+          "expiry",
+          "days_to_expiry",
+          "strike",
+          "option_type",
+          "buy_from",
+          "sell_to",
+          "top_ask",
+          "top_bid",
+          "walked_ask",
+          "walked_bid",
+          "walked_size",
+          "spread_pct",
+          "fee_pct",
+          "apr_pct",
+          "max_notional_usd",
+          "capital_deployed_usd",
+          "net_profit_usd",
+          "fees_usd",
+          "gross_profit_usd",
+          "status",
+          "rejection_reason"
+        ],
+        "title": "OpportunityResponse",
+        "type": "object"
+      },
+      "OpportunityStatsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "avg_apr_pct": {
+            "title": "Avg Apr Pct",
+            "type": "number"
+          },
+          "best_net_profit_usd": {
+            "title": "Best Net Profit Usd",
+            "type": "number"
+          },
+          "buy_from": {
+            "title": "Buy From",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "pair": {
+            "title": "Pair",
+            "type": "string"
+          },
+          "sell_to": {
+            "title": "Sell To",
+            "type": "string"
+          },
+          "total_fees_usd": {
+            "title": "Total Fees Usd",
+            "type": "number"
+          },
+          "total_net_profit_usd": {
+            "title": "Total Net Profit Usd",
+            "type": "number"
+          }
+        },
+        "required": [
+          "buy_from",
+          "sell_to",
+          "pair",
+          "count",
+          "total_net_profit_usd",
+          "total_fees_usd",
+          "avg_apr_pct",
+          "best_net_profit_usd"
+        ],
+        "title": "OpportunityStatsResponse",
+        "type": "object"
+      },
+      "OpportunityStatus": {
+        "enum": [
+          "PENDING",
+          "APPROVED",
+          "REJECTED",
+          "EXECUTED",
+          "EXPIRED"
+        ],
+        "title": "OpportunityStatus",
+        "type": "string"
+      },
+      "OrderKind": {
+        "enum": [
+          "ioc_limit",
+          "market_out"
+        ],
+        "title": "OrderKind",
+        "type": "string"
+      },
+      "OrderResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "exchange": {
+            "title": "Exchange",
+            "type": "string"
+          },
+          "exchange_order_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exchange Order Id"
+          },
+          "filled_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filled Price"
+          },
+          "filled_size": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filled Size"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/OrderKind"
+          },
+          "placed_at": {
+            "$ref": "#/components/schemas/IsoDatetime"
+          },
+          "requested_price": {
+            "title": "Requested Price",
+            "type": "number"
+          },
+          "requested_size": {
+            "title": "Requested Size",
+            "type": "number"
+          },
+          "side": {
+            "$ref": "#/components/schemas/Side"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OrderStatus"
+          },
+          "updated_at": {
+            "$ref": "#/components/schemas/IsoDatetime"
+          }
+        },
+        "required": [
+          "id",
+          "exchange",
+          "side",
+          "kind",
+          "requested_price",
+          "requested_size",
+          "filled_price",
+          "filled_size",
+          "status",
+          "exchange_order_id",
+          "placed_at",
+          "updated_at"
+        ],
+        "title": "OrderResponse",
+        "type": "object"
+      },
+      "OrderStatus": {
+        "enum": [
+          "PLACING",
+          "FILLED",
+          "PARTIAL",
+          "REJECTED",
+          "CANCELLED"
+        ],
+        "title": "OrderStatus",
+        "type": "string"
+      },
+      "PerpHedgeConfigResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "poll_interval_sec": {
+            "title": "Poll Interval Sec",
+            "type": "integer"
+          },
+          "rebalance_threshold_usd": {
+            "title": "Rebalance Threshold Usd",
+            "type": "number"
+          }
+        },
+        "required": [
+          "rebalance_threshold_usd",
+          "poll_interval_sec"
+        ],
+        "title": "PerpHedgeConfigResponse",
+        "type": "object"
+      },
+      "PerpHedgeStateResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/PerpHedgeConfigResponse"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "kill_switch_file": {
+            "title": "Kill Switch File",
+            "type": "string"
+          },
+          "paused": {
+            "title": "Paused",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled",
+          "paused",
+          "kill_switch_file",
+          "config"
+        ],
+        "title": "PerpHedgeStateResponse",
+        "type": "object"
+      },
+      "PerpHedgeToggleResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "paused": {
+            "title": "Paused",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "paused"
+        ],
+        "title": "PerpHedgeToggleResponse",
+        "type": "object"
+      },
+      "PositionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "avg_price": {
+            "title": "Avg Price",
+            "type": "number"
+          },
+          "exchange": {
+            "title": "Exchange",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "instrument": {
+            "title": "Instrument",
+            "type": "string"
+          },
+          "last_seen_at": {
+            "$ref": "#/components/schemas/IsoDatetime"
+          },
+          "opened_at": {
+            "$ref": "#/components/schemas/IsoDatetime"
+          },
+          "size": {
+            "title": "Size",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "exchange",
+          "instrument",
+          "size",
+          "avg_price",
+          "opened_at",
+          "last_seen_at"
+        ],
+        "title": "PositionResponse",
+        "type": "object"
+      },
+      "RestStatus": {
+        "enum": [
+          "OK",
+          "RATE_LIMITED",
+          "DOWN"
+        ],
+        "title": "RestStatus",
+        "type": "string"
+      },
+      "Side": {
+        "enum": [
+          "BUY",
+          "SELL"
+        ],
+        "title": "Side",
+        "type": "string"
+      },
+      "StatusExchangeResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "instruments": {
+            "title": "Instruments",
+            "type": "integer"
+          },
+          "last_update": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IsoDatetime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "live": {
+            "title": "Live",
+            "type": "boolean"
+          },
+          "network": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Network"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rest_base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rest Base Url"
+          },
+          "ws_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ws Url"
+          }
+        },
+        "required": [
+          "instruments",
+          "last_update",
+          "live",
+          "network",
+          "rest_base_url",
+          "ws_url"
+        ],
+        "title": "StatusExchangeResponse",
+        "type": "object"
+      },
+      "StatusResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "exchanges": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/StatusExchangeResponse"
+            },
+            "title": "Exchanges",
+            "type": "object"
+          },
+          "executor": {
+            "enum": [
+              "KILLED",
+              "RUNNING"
+            ],
+            "title": "Executor",
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/Mode"
+          }
+        },
+        "required": [
+          "executor",
+          "mode",
+          "exchanges"
+        ],
+        "title": "StatusResponse",
+        "type": "object"
+      },
+      "TickerExchangeResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "ask_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ask Price"
+          },
+          "ask_size": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ask Size"
+          },
+          "bid_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bid Price"
+          },
+          "bid_size": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bid Size"
+          },
+          "is_stale": {
+            "title": "Is Stale",
+            "type": "boolean"
+          },
+          "taker_fee_rate": {
+            "title": "Taker Fee Rate",
+            "type": "number"
+          },
+          "underlying_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Underlying Price"
+          },
+          "updated_at": {
+            "$ref": "#/components/schemas/IsoDatetime"
+          }
+        },
+        "required": [
+          "bid_price",
+          "bid_size",
+          "ask_price",
+          "ask_size",
+          "underlying_price",
+          "taker_fee_rate",
+          "updated_at",
+          "is_stale"
+        ],
+        "title": "TickerExchangeResponse",
+        "type": "object"
+      },
+      "TickerResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "apr_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Apr Pct"
+          },
+          "buy_exchange": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Buy Exchange"
+          },
+          "days_to_expiry": {
+            "title": "Days To Expiry",
+            "type": "number"
+          },
+          "exchanges": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/TickerExchangeResponse"
+            },
+            "title": "Exchanges",
+            "type": "object"
+          },
+          "expiry": {
+            "$ref": "#/components/schemas/IsoDatetime"
+          },
+          "gross_spread_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gross Spread Pct"
+          },
+          "instrument": {
+            "title": "Instrument",
+            "type": "string"
+          },
+          "max_notional_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Notional Usd"
+          },
+          "max_profit_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Profit Usd"
+          },
+          "net_spread_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Spread Pct"
+          },
+          "option_type": {
+            "enum": [
+              "C",
+              "P"
+            ],
+            "title": "Option Type",
+            "type": "string"
+          },
+          "sell_collateral_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sell Collateral Usd"
+          },
+          "sell_exchange": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sell Exchange"
+          },
+          "strike": {
+            "title": "Strike",
+            "type": "number"
+          },
+          "underlying": {
+            "title": "Underlying",
+            "type": "string"
+          },
+          "updated_at": {
+            "$ref": "#/components/schemas/IsoDatetime"
+          }
+        },
+        "required": [
+          "instrument",
+          "underlying",
+          "expiry",
+          "days_to_expiry",
+          "strike",
+          "option_type",
+          "exchanges",
+          "gross_spread_pct",
+          "net_spread_pct",
+          "apr_pct",
+          "buy_exchange",
+          "sell_exchange",
+          "max_notional_usd",
+          "max_profit_usd",
+          "sell_collateral_usd",
+          "updated_at"
+        ],
+        "title": "TickerResponse",
+        "type": "object"
+      },
+      "TradeDetailResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "buy_exchange": {
+            "title": "Buy Exchange",
+            "type": "string"
+          },
+          "buy_fill_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Buy Fill Price"
+          },
+          "buy_fill_size": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Buy Fill Size"
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IsoDatetime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "fees_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fees Usd"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/Mode"
+          },
+          "net_pnl_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Pnl Usd"
+          },
+          "opened_at": {
+            "$ref": "#/components/schemas/IsoDatetime"
+          },
+          "opportunity_id": {
+            "title": "Opportunity Id",
+            "type": "integer"
+          },
+          "orders": {
+            "items": {
+              "$ref": "#/components/schemas/OrderResponse"
+            },
+            "title": "Orders",
+            "type": "array"
+          },
+          "requested_size": {
+            "title": "Requested Size",
+            "type": "number"
+          },
+          "sell_exchange": {
+            "title": "Sell Exchange",
+            "type": "string"
+          },
+          "sell_fill_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sell Fill Price"
+          },
+          "sell_fill_size": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sell Fill Size"
+          },
+          "slippage_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slippage Pct"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TradeStatus"
+          }
+        },
+        "required": [
+          "id",
+          "opportunity_id",
+          "opened_at",
+          "closed_at",
+          "mode",
+          "status",
+          "buy_exchange",
+          "sell_exchange",
+          "requested_size",
+          "buy_fill_price",
+          "buy_fill_size",
+          "sell_fill_price",
+          "sell_fill_size",
+          "net_pnl_usd",
+          "slippage_pct",
+          "fees_usd",
+          "error",
+          "orders"
+        ],
+        "title": "TradeDetailResponse",
+        "type": "object"
+      },
+      "TradeResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "buy_exchange": {
+            "title": "Buy Exchange",
+            "type": "string"
+          },
+          "buy_fill_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Buy Fill Price"
+          },
+          "buy_fill_size": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Buy Fill Size"
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IsoDatetime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "fees_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fees Usd"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/Mode"
+          },
+          "net_pnl_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Pnl Usd"
+          },
+          "opened_at": {
+            "$ref": "#/components/schemas/IsoDatetime"
+          },
+          "opportunity_id": {
+            "title": "Opportunity Id",
+            "type": "integer"
+          },
+          "requested_size": {
+            "title": "Requested Size",
+            "type": "number"
+          },
+          "sell_exchange": {
+            "title": "Sell Exchange",
+            "type": "string"
+          },
+          "sell_fill_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sell Fill Price"
+          },
+          "sell_fill_size": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sell Fill Size"
+          },
+          "slippage_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slippage Pct"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TradeStatus"
+          }
+        },
+        "required": [
+          "id",
+          "opportunity_id",
+          "opened_at",
+          "closed_at",
+          "mode",
+          "status",
+          "buy_exchange",
+          "sell_exchange",
+          "requested_size",
+          "buy_fill_price",
+          "buy_fill_size",
+          "sell_fill_price",
+          "sell_fill_size",
+          "net_pnl_usd",
+          "slippage_pct",
+          "fees_usd",
+          "error"
+        ],
+        "title": "TradeResponse",
+        "type": "object"
+      },
+      "TradeStatus": {
+        "enum": [
+          "PLACING",
+          "LEG1_FILLED",
+          "LEG2_FILLED",
+          "FILLED",
+          "HEDGING",
+          "HEDGED",
+          "STUCK",
+          "FAILED"
+        ],
+        "title": "TradeStatus",
+        "type": "string"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "WsStatus": {
+        "enum": [
+          "CONNECTED",
+          "RECONNECTING",
+          "UNHEALTHY"
+        ],
+        "title": "WsStatus",
+        "type": "string"
+      }
+    }
+  },
+  "info": {
+    "title": "option-arb API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/alerts": {
+      "get": {
+        "operationId": "list_alerts_api_alerts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "level",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AlertLevel"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Level"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AlertResponse"
+                  },
+                  "title": "Response List Alerts Api Alerts Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Alerts",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/api/exchanges": {
+      "get": {
+        "operationId": "list_exchange_state_api_exchanges_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ExchangeStateResponse"
+                  },
+                  "title": "Response List Exchange State Api Exchanges Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Exchange State",
+        "tags": [
+          "positions"
+        ]
+      }
+    },
+    "/api/executor/kill": {
+      "post": {
+        "operationId": "kill_api_executor_kill_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutorToggleResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Kill",
+        "tags": [
+          "executor"
+        ]
+      }
+    },
+    "/api/executor/resume": {
+      "post": {
+        "operationId": "resume_api_executor_resume_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutorToggleResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Resume",
+        "tags": [
+          "executor"
+        ]
+      }
+    },
+    "/api/executor/state": {
+      "get": {
+        "operationId": "state_api_executor_state_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutorStateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "State",
+        "tags": [
+          "executor"
+        ]
+      }
+    },
+    "/api/funding": {
+      "get": {
+        "operationId": "funding_history_api_funding_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "instrument",
+            "required": false,
+            "schema": {
+              "default": "BTC-PERPETUAL",
+              "title": "Instrument",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FundingHistoryResponse"
+                  },
+                  "title": "Response Funding History Api Funding Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Funding History",
+        "tags": [
+          "funding"
+        ]
+      }
+    },
+    "/api/opportunities": {
+      "get": {
+        "operationId": "list_opportunities_api_opportunities_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/OpportunityStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_apr",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Apr"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_profit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Profit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "symbol",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Symbol"
+            }
+          },
+          {
+            "in": "query",
+            "name": "buy_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Buy From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sell_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sell To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Days"
+            }
+          },
+          {
+            "in": "query",
+            "name": "network",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Network"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "mainnet",
+              "title": "Network"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_by",
+            "required": false,
+            "schema": {
+              "default": "detected_at",
+              "enum": [
+                "detected_at",
+                "apr_pct",
+                "spread_pct",
+                "net_profit_usd",
+                "max_notional_usd",
+                "fees_usd"
+              ],
+              "title": "Sort By",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_dir",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "title": "Sort Dir",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 1000,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OpportunityResponse"
+                  },
+                  "title": "Response List Opportunities Api Opportunities Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Opportunities",
+        "tags": [
+          "opportunities"
+        ]
+      }
+    },
+    "/api/opportunities/stats": {
+      "get": {
+        "description": "Opportunit\u00e9s agr\u00e9g\u00e9es par paire d'exchanges sur N jours.",
+        "operationId": "opportunity_stats_api_opportunities_stats_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "symbol",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Symbol"
+            }
+          },
+          {
+            "in": "query",
+            "name": "network",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Network"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Network"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OpportunityStatsResponse"
+                  },
+                  "title": "Response Opportunity Stats Api Opportunities Stats Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Opportunity Stats",
+        "tags": [
+          "opportunities"
+        ]
+      }
+    },
+    "/api/opportunities/{opp_id}": {
+      "get": {
+        "operationId": "get_opportunity_api_opportunities__opp_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "opp_id",
+            "required": true,
+            "schema": {
+              "title": "Opp Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpportunityResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Opportunity",
+        "tags": [
+          "opportunities"
+        ]
+      }
+    },
+    "/api/perp-hedge/pause": {
+      "post": {
+        "operationId": "pause_api_perp_hedge_pause_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PerpHedgeToggleResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Pause",
+        "tags": [
+          "perp-hedge"
+        ]
+      }
+    },
+    "/api/perp-hedge/resume": {
+      "post": {
+        "operationId": "resume_api_perp_hedge_resume_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PerpHedgeToggleResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Resume",
+        "tags": [
+          "perp-hedge"
+        ]
+      }
+    },
+    "/api/perp-hedge/state": {
+      "get": {
+        "operationId": "state_api_perp_hedge_state_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PerpHedgeStateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "State",
+        "tags": [
+          "perp-hedge"
+        ]
+      }
+    },
+    "/api/positions": {
+      "get": {
+        "operationId": "list_positions_api_positions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PositionResponse"
+                  },
+                  "title": "Response List Positions Api Positions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Positions",
+        "tags": [
+          "positions"
+        ]
+      }
+    },
+    "/api/status": {
+      "get": {
+        "operationId": "status_api_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Status",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/stream": {
+      "get": {
+        "operationId": "stream_api_stream_get",
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Server-sent event stream"
+          }
+        },
+        "summary": "Stream",
+        "tags": [
+          "stream"
+        ]
+      }
+    },
+    "/api/tickers": {
+      "get": {
+        "operationId": "list_tickers_api_tickers_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "underlying",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Underlying"
+            }
+          },
+          {
+            "in": "query",
+            "name": "exchange",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Exchange"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TickerResponse"
+                  },
+                  "title": "Response List Tickers Api Tickers Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Tickers",
+        "tags": [
+          "tickers"
+        ]
+      }
+    },
+    "/api/trades": {
+      "get": {
+        "operationId": "list_trades_api_trades_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Mode"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mode"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TradeStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TradeResponse"
+                  },
+                  "title": "Response List Trades Api Trades Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Trades",
+        "tags": [
+          "trades"
+        ]
+      }
+    },
+    "/api/trades/{trade_id}": {
+      "get": {
+        "operationId": "get_trade_api_trades__trade_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "trade_id",
+            "required": true,
+            "schema": {
+              "title": "Trade Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TradeDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Trade",
+        "tags": [
+          "trades"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "health"
+        ]
+      }
+    }
+  }
+}

@@ -87,6 +87,18 @@ format: ## Ruff format
 typecheck: ## Mypy
 	cd backend && uv run mypy src
 
+contract-deps-check:
+	@npm ci --prefix frontend --dry-run --ignore-scripts --no-audit --no-fund >/dev/null
+	@npm ls --prefix frontend --depth=0 >/dev/null
+
+contract-generate: contract-deps-check ## Regenerate tracked OpenAPI JSON and TypeScript declarations
+	uv run --project backend --frozen option-arb-openapi --output contracts/openapi.json
+	npm run contract:generate --prefix frontend
+
+contract-check: contract-deps-check ## Fail if tracked OpenAPI contract artifacts are stale
+	uv run --project backend --frozen option-arb-openapi --output contracts/openapi.json --check
+	npm run contract:check --prefix frontend
+
 # ---------- Backtest / recording ----------
 
 record: ## Record order books (usage: make record ex=derive dur=1h)
@@ -109,5 +121,5 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 .PHONY: release up down logs live db db-shell dev-api dev-worker dev-executor \
-        migrate migrate-new test lint format typecheck record backtest \
+        migrate migrate-new test lint format typecheck contract-deps-check contract-generate contract-check record backtest \
         kill resume deploy deploy-env help

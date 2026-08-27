@@ -13,7 +13,16 @@ from option_arb.events import Event, bus
 router = APIRouter(prefix="/api", tags=["stream"])
 
 
-@router.get("/stream")
+@router.get(
+    "/stream",
+    response_class=EventSourceResponse,
+    responses={
+        200: {
+            "description": "Server-sent event stream",
+            "content": {"text/event-stream": {"schema": {"type": "string"}}},
+        }
+    },
+)
 async def stream(request: Request) -> EventSourceResponse:
     q = bus.subscribe()
 

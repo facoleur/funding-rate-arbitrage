@@ -29,6 +29,7 @@ option-arb-worker = "option_arb.worker:main"
 option-arb-executor = "option_arb.services.executor:main"
 option-arb-backtest = "option_arb.backtest:main"
 option-arb-record = "option_arb.record:main"
+option-arb-openapi = "option_arb.openapi:main"
 
 [dependency-groups]
 dev = [

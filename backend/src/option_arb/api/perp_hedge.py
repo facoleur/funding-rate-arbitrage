@@ -5,12 +5,13 @@ from typing import Any
 
 from fastapi import APIRouter
 
+from option_arb.api.schemas import PerpHedgeStateResponse, PerpHedgeToggleResponse
 from option_arb.config import load_config
 
 router = APIRouter(prefix="/api/perp-hedge", tags=["perp-hedge"])
 
 
-@router.get("/state")
+@router.get("/state", response_model=PerpHedgeStateResponse)
 async def state() -> dict[str, Any]:
     cfg = load_config()
     kill_file = Path(cfg.perp_hedge.kill_switch_file)
@@ -25,14 +26,14 @@ async def state() -> dict[str, Any]:
     }
 
 
-@router.post("/pause")
+@router.post("/pause", response_model=PerpHedgeToggleResponse)
 async def pause() -> dict[str, Any]:
     cfg = load_config()
     Path(cfg.perp_hedge.kill_switch_file).touch()
     return {"paused": True}
 
 
-@router.post("/resume")
+@router.post("/resume", response_model=PerpHedgeToggleResponse)
 async def resume() -> dict[str, Any]:
     cfg = load_config()
     p = Path(cfg.perp_hedge.kill_switch_file)

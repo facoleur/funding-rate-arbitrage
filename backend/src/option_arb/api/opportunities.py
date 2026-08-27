@@ -6,17 +6,25 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from sqlmodel import select
 
+from option_arb.api.schemas import (
+    ErrorResponse,
+    OpportunityResponse,
+    OpportunitySortBy,
+    OpportunityStatsResponse,
+    SortDirection,
+)
+from option_arb.config import Network
 from option_arb.db.models import Opportunity, OpportunityStatus
 from option_arb.db.session import get_session
 
 router = APIRouter(prefix="/api/opportunities", tags=["opportunities"])
 
 
-@router.get("/stats")
+@router.get("/stats", response_model=list[OpportunityStatsResponse])
 async def opportunity_stats(
     days: int = Query(default=30, ge=1, le=365),
     symbol: str | None = None,
-    network: str | None = None,
+    network: Network | None = None,
 ) -> list[dict[str, Any]]:
     """Opportunités agrégées par paire d'exchanges sur N jours."""
     from datetime import UTC, datetime, timedelta
@@ -78,7 +86,7 @@ _SORT_COLS = {
 }
 
 
-@router.get("")
+@router.get("", response_model=list[OpportunityResponse])
 async def list_opportunities(
     status: OpportunityStatus | None = None,
     min_apr: float | None = None,
@@ -87,12 +95,9 @@ async def list_opportunities(
     buy_from: str | None = None,
     sell_to: str | None = None,
     days: int | None = None,
-    network: str | None = "mainnet",
-    sort_by: str = Query(
-        default="detected_at",
-        pattern="^(detected_at|apr_pct|spread_pct|net_profit_usd|max_notional_usd|fees_usd)$",
-    ),
-    sort_dir: str = Query(default="desc", pattern="^(asc|desc)$"),
+    network: Network | None = "mainnet",
+    sort_by: OpportunitySortBy = "detected_at",
+    sort_dir: SortDirection = "desc",
     limit: int = Query(default=100, le=1000),
     offset: int = Query(default=0, ge=0),
 ) -> list[dict[str, Any]]:
@@ -124,7 +129,11 @@ async def list_opportunities(
     return [_serialize(r) for r in rows]
 
 
-@router.get("/{opp_id}")
+@router.get(
+    "/{opp_id}",
+    response_model=OpportunityResponse,
+    responses={404: {"model": ErrorResponse}},
+)
 async def get_opportunity(opp_id: int) -> dict[str, Any]:
     async with get_session() as sess:
         row = (

@@ -1,15 +1,12 @@
-import { apiFetch } from './client'
+import { apiClient, apiRequest } from './client'
+import type { components, operations } from './generated/schema'
 
-export interface FundingPoint {
-  ts: number         // ms epoch
-  rate_8h: number    // % per 8h (positive = longs pay shorts)
-  rate_ann: number   // % annualisé
-  index_price: number
-}
+export type FundingPoint = components['schemas']['FundingHistoryResponse']
 
-export function fetchFunding(params?: { instrument?: string; days?: number }) {
-  const q = new URLSearchParams()
-  if (params?.instrument) q.set('instrument', params.instrument)
-  if (params?.days != null) q.set('days', String(params.days))
-  return apiFetch<FundingPoint[]>(`/api/funding?${q}`)
+type FundingQuery = NonNullable<
+  operations['funding_history_api_funding_get']['parameters']['query']
+>
+
+export function fetchFunding(query?: FundingQuery) {
+  return apiRequest(apiClient.GET('/api/funding', { params: { query } }))
 }

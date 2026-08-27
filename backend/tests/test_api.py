@@ -1,13 +1,164 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from pydantic import BaseModel
 
+from option_arb.api.schemas import (
+    AlertResponse,
+    ErrorResponse,
+    ExchangeStateResponse,
+    ExecutorStateResponse,
+    ExecutorToggleResponse,
+    FundingHistoryResponse,
+    HealthResponse,
+    OpportunityResponse,
+    OpportunityStatsResponse,
+    PerpHedgeStateResponse,
+    PerpHedgeToggleResponse,
+    PositionResponse,
+    StatusResponse,
+    TickerResponse,
+    TradeDetailResponse,
+    TradeResponse,
+)
 from option_arb.db.models import Mode, Opportunity, OpportunityStatus
 from option_arb.db.session import get_session
 from option_arb.main import app
+
+
+def _assert_not_free_form_schema(
+    schema: dict[str, Any],
+    components: dict[str, Any],
+    context: str,
+    seen_refs: set[str] | None = None,
+) -> None:
+    assert schema, f"empty schema: {context}"
+    seen_refs = seen_refs or set()
+
+    if ref := schema.get("$ref"):
+        assert ref.startswith("#/components/schemas/"), f"unsupported reference: {context}"
+        if ref in seen_refs:
+            return
+        name = ref.rsplit("/", 1)[-1]
+        assert name in components, f"missing schema {name}: {context}"
+        _assert_not_free_form_schema(components[name], components, context, seen_refs | {ref})
+        return
+
+    assert schema.get("additionalProperties") is not True, f"free-form object: {context}"
+    assert any(
+        keyword in schema for keyword in ("type", "anyOf", "oneOf", "allOf", "enum", "const")
+    ), f"unstructured schema: {context}"
+
+    if schema.get("type") == "object":
+        has_properties = bool(schema.get("properties"))
+        has_typed_values = isinstance(schema.get("additionalProperties"), dict)
+        assert has_properties or has_typed_values, f"untyped object: {context}"
+
+    for name, property_schema in schema.get("properties", {}).items():
+        _assert_not_free_form_schema(property_schema, components, f"{context}.{name}", seen_refs)
+    for keyword in ("items", "additionalProperties"):
+        nested = schema.get(keyword)
+        if isinstance(nested, dict):
+            _assert_not_free_form_schema(nested, components, f"{context}.{keyword}", seen_refs)
+    for keyword in ("anyOf", "oneOf", "allOf"):
+        for index, nested in enumerate(schema.get(keyword, [])):
+            _assert_not_free_form_schema(
+                nested,
+                components,
+                f"{context}.{keyword}[{index}]",
+                seen_refs,
+            )
+
+
+def test_openapi_has_named_schemas_for_all_json_responses() -> None:
+    expected_models: dict[tuple[str, str], tuple[type[BaseModel], bool]] = {
+        ("/health", "get"): (HealthResponse, False),
+        ("/api/status", "get"): (StatusResponse, False),
+        ("/api/opportunities/stats", "get"): (OpportunityStatsResponse, True),
+        ("/api/opportunities", "get"): (OpportunityResponse, True),
+        ("/api/opportunities/{opp_id}", "get"): (OpportunityResponse, False),
+        ("/api/trades", "get"): (TradeResponse, True),
+        ("/api/trades/{trade_id}", "get"): (TradeDetailResponse, False),
+        ("/api/positions", "get"): (PositionResponse, True),
+        ("/api/exchanges", "get"): (ExchangeStateResponse, True),
+        ("/api/executor/state", "get"): (ExecutorStateResponse, False),
+        ("/api/executor/kill", "post"): (ExecutorToggleResponse, False),
+        ("/api/executor/resume", "post"): (ExecutorToggleResponse, False),
+        ("/api/perp-hedge/state", "get"): (PerpHedgeStateResponse, False),
+        ("/api/perp-hedge/pause", "post"): (PerpHedgeToggleResponse, False),
+        ("/api/perp-hedge/resume", "post"): (PerpHedgeToggleResponse, False),
+        ("/api/alerts", "get"): (AlertResponse, True),
+        ("/api/tickers", "get"): (TickerResponse, True),
+        ("/api/funding", "get"): (FundingHistoryResponse, True),
+    }
+    openapi = app.openapi()
+    components = openapi["components"]["schemas"]
+
+    successful_json_operations: set[tuple[str, str]] = set()
+    http_methods = {"get", "put", "post", "delete", "options", "head", "patch", "trace"}
+    for path, path_item in openapi["paths"].items():
+        for method, operation in path_item.items():
+            if method not in http_methods:
+                continue
+            for status_code, response in operation["responses"].items():
+                if not str(status_code).startswith("2"):
+                    continue
+                content = response.get("content", {})
+                if "application/json" not in content:
+                    continue
+                successful_json_operations.add((path, method))
+                _assert_not_free_form_schema(
+                    content["application/json"].get("schema", {}),
+                    components,
+                    f"{method.upper()} {path} {status_code}",
+                )
+
+    assert set(expected_models) <= successful_json_operations
+
+    for (path, method), (model, is_list) in expected_models.items():
+        schema = openapi["paths"][path][method]["responses"]["200"]["content"]["application/json"][
+            "schema"
+        ]
+        expected_ref = {"$ref": f"#/components/schemas/{model.__name__}"}
+        if is_list:
+            assert schema["type"] == "array"
+            assert schema["items"] == expected_ref
+        else:
+            assert schema == expected_ref
+
+    for name, schema in components.items():
+        if name.endswith("Response"):
+            assert schema.get("additionalProperties") is False, name
+    assert components["IsoDatetime"] == {"type": "string", "format": "date-time"}
+    assert components["Network"]["enum"] == ["mainnet", "testnet"]
+
+    opportunity_parameters = {
+        parameter["name"]: parameter["schema"]
+        for parameter in openapi["paths"]["/api/opportunities"]["get"]["parameters"]
+    }
+    assert opportunity_parameters["sort_by"]["enum"] == [
+        "detected_at",
+        "apr_pct",
+        "spread_pct",
+        "net_profit_usd",
+        "max_notional_usd",
+        "fees_usd",
+    ]
+    assert opportunity_parameters["sort_dir"]["enum"] == ["asc", "desc"]
+
+    for path in ("/api/opportunities/{opp_id}", "/api/trades/{trade_id}"):
+        error_schema = openapi["paths"][path]["get"]["responses"]["404"]["content"][
+            "application/json"
+        ]["schema"]
+        assert error_schema == {"$ref": f"#/components/schemas/{ErrorResponse.__name__}"}
+
+    stream_content = openapi["paths"]["/api/stream"]["get"]["responses"]["200"]["content"]
+    assert "application/json" not in stream_content
+    assert stream_content["text/event-stream"]["schema"] == {"type": "string"}
 
 
 async def _insert_opportunity(**kwargs) -> Opportunity:  # type: ignore[no-untyped-def]
@@ -48,6 +199,34 @@ async def test_health(test_db: str) -> None:
     assert r.json() == {"status": "ok"}
 
 
+@pytest.mark.parametrize(
+    "path",
+    ["/api/opportunities/999999", "/api/trades/999999"],
+)
+@pytest.mark.asyncio
+async def test_detail_not_found_returns_documented_error(test_db: str, path: str) -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        r = await ac.get(path)
+    assert r.status_code == 404
+    assert r.json() == {"detail": "not found"}
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/opportunities?network=devnet",
+        "/api/opportunities/stats?network=devnet",
+        "/api/opportunities?sort_by=id",
+        "/api/opportunities?sort_dir=sideways",
+    ],
+)
+@pytest.mark.asyncio
+async def test_opportunity_literal_query_validation(test_db: str, path: str) -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        r = await ac.get(path)
+    assert r.status_code == 422
+
+
 @pytest.mark.asyncio
 async def test_opportunities_empty(test_db: str) -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -59,7 +238,9 @@ async def test_opportunities_empty(test_db: str) -> None:
 @pytest.mark.asyncio
 async def test_opportunity_serialization_includes_profit_fields(test_db: str) -> None:
     # spread_pct=10.0, fee_pct=0.10, net_profit_usd=100 → fees = 100*0.10/10 = 1.0
+    detected_at = datetime(2026, 1, 2, 3, 4, 5, 123456)
     await _insert_opportunity(
+        detected_at=detected_at,
         max_notional_usd=1000.0,
         spread_pct=10.0,
         fee_pct=0.10,
@@ -81,6 +262,7 @@ async def test_opportunity_serialization_includes_profit_fields(test_db: str) ->
     assert opp["fees_usd"] == pytest.approx(1.0, abs=0.01)  # 100 * 0.10 / 10
     assert opp["gross_profit_usd"] == pytest.approx(101.0, abs=0.01)
     assert "capital_deployed_usd" in opp
+    assert opp["detected_at"] == detected_at.isoformat()
 
 
 @pytest.mark.asyncio

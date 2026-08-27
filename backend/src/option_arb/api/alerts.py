@@ -5,13 +5,14 @@ from typing import Any
 from fastapi import APIRouter, Query
 from sqlmodel import select
 
+from option_arb.api.schemas import AlertResponse
 from option_arb.db.models import Alert, AlertLevel
 from option_arb.db.session import get_session
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
 
-@router.get("")
+@router.get("", response_model=list[AlertResponse])
 async def list_alerts(
     level: AlertLevel | None = None,
     limit: int = Query(default=50, le=500),

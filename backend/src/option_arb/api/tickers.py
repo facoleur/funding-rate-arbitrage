@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter
 from sqlmodel import col, select
 
+from option_arb.api.schemas import TickerResponse
 from option_arb.db.models import TickerState
 from option_arb.db.session import get_session
 from option_arb.services.comparator import sell_margin_per_unit
@@ -15,7 +16,7 @@ from option_arb.services.comparator import sell_margin_per_unit
 router = APIRouter(prefix="/api/tickers", tags=["tickers"])
 
 
-@router.get("")
+@router.get("", response_model=list[TickerResponse])
 async def list_tickers(
     underlying: str | None = None,
     exchange: str | None = None,

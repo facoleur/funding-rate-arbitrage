@@ -8,6 +8,7 @@ from fastapi import APIRouter
 from sqlalchemy import func
 from sqlmodel import select
 
+from option_arb.api.schemas import ExecutorStateResponse, ExecutorToggleResponse
 from option_arb.config import load_config
 from option_arb.db.models import Trade, TradeStatus
 from option_arb.db.session import get_session
@@ -22,7 +23,7 @@ ACTIVE_TRADE_STATES = (
 )
 
 
-@router.get("/state")
+@router.get("/state", response_model=ExecutorStateResponse)
 async def state() -> dict[str, Any]:
     cfg = load_config()
     kill_file = Path(cfg.limits.kill_switch_file)
@@ -64,14 +65,14 @@ async def state() -> dict[str, Any]:
     }
 
 
-@router.post("/kill")
+@router.post("/kill", response_model=ExecutorToggleResponse)
 async def kill() -> dict[str, Any]:
     cfg = load_config()
     Path(cfg.limits.kill_switch_file).touch()
     return {"killed": True}
 
 
-@router.post("/resume")
+@router.post("/resume", response_model=ExecutorToggleResponse)
 async def resume() -> dict[str, Any]:
     cfg = load_config()
     p = Path(cfg.limits.kill_switch_file)

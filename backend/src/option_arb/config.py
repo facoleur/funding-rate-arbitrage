@@ -10,6 +10,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # repo root = 3 parents up from this file (src/option_arb/config.py → src/ → backend/ → root)
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
+type Network = Literal["mainnet", "testnet"]
+
 
 class ScreenerConfig(BaseModel):
     poll_interval_ms: int = 500
@@ -54,7 +56,7 @@ class ExchangeConfig(BaseModel):
     rest_rate_limit_per_sec: int = 10
     rest_base_url: str
     ws_url: str
-    network: Literal["mainnet", "testnet"] = "testnet"
+    network: Network = "testnet"
     trade_enabled: bool = True
 
 

@@ -21,6 +21,21 @@ repos:
 
   - repo: local
     hooks:
+      - id: openapi-contract
+        name: OpenAPI contract is current
+        entry: make contract-check
+        language: system
+        pass_filenames: false
+        files: >-
+          (?x)^(
+            backend/(src/.*\.py|pyproject\.toml|uv\.lock)|
+            frontend/(package\.json|package-lock\.json|src/api/generated/schema\.d\.ts)|
+            contracts/openapi\.json|
+            Makefile|
+            \.pre-commit-config\.yaml|
+            \.github/workflows/ci\.yml
+          )$
+
       - id: mypy
         name: mypy typecheck
         entry: bash -c 'cd backend && uv run mypy src'

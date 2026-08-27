@@ -1,20 +1,7 @@
-import { apiFetch } from './client'
+import { apiClient, apiRequest } from './client'
+import type { components } from './generated/schema'
 
-export interface ExchangeStatus {
-  instruments: number
-  last_update: string | null
-  live: boolean
-  network: 'mainnet' | 'testnet' | null
-  rest_base_url: string | null
-  ws_url: string | null
-}
+export type ExchangeStatus = components['schemas']['StatusExchangeResponse']
+export type AppStatus = components['schemas']['StatusResponse']
 
-export interface AppStatus {
-  executor: 'RUNNING' | 'KILLED'
-  mode: string
-  exchanges: Record<string, ExchangeStatus>
-}
-
-export function fetchStatus() {
-  return apiFetch<AppStatus>('/api/status')
-}
+export const fetchStatus = () => apiRequest(apiClient.GET('/api/status'))

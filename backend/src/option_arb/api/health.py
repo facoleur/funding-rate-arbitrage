@@ -8,6 +8,7 @@ from fastapi import APIRouter
 from sqlalchemy import func
 from sqlmodel import select
 
+from option_arb.api.schemas import HealthResponse, StatusResponse
 from option_arb.config import load_config
 from option_arb.db.models import TickerState
 from option_arb.db.session import get_session
@@ -17,12 +18,12 @@ router = APIRouter(tags=["health"])
 _STALE_THRESHOLD = timedelta(seconds=60)
 
 
-@router.get("/health")
+@router.get("/health", response_model=HealthResponse)
 async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@router.get("/api/status")
+@router.get("/api/status", response_model=StatusResponse)
 async def status() -> dict[str, Any]:
     cfg = load_config()
     killed = Path(cfg.limits.kill_switch_file).exists()

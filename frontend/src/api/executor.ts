@@ -1,25 +1,8 @@
-import { apiFetch } from './client'
+import { apiClient, apiRequest } from './client'
+import type { components } from './generated/schema'
 
-export interface ExecutorState {
-  status: 'RUNNING' | 'KILLED'
-  kill_switch_file: string
-  config: {
-    mode: string
-    min_apr_pct: number
-    min_notional_usd: number
-    max_days_to_expiry: number
-    min_net_profit_usd: number
-    min_net_spread_pct: number
-    max_notional_per_trade_usd: number
-    max_positions_open: number
-    max_daily_loss_usd: number
-  }
-  counters: {
-    open_positions: number
-    daily_pnl_usd: number
-  }
-}
+export type ExecutorState = components['schemas']['ExecutorStateResponse']
 
-export const fetchExecutorState = () => apiFetch<ExecutorState>('/api/executor/state')
-export const killExecutor = () => apiFetch<{ killed: boolean }>('/api/executor/kill', { method: 'POST' })
-export const resumeExecutor = () => apiFetch<{ killed: boolean }>('/api/executor/resume', { method: 'POST' })
+export const fetchExecutorState = () => apiRequest(apiClient.GET('/api/executor/state'))
+export const killExecutor = () => apiRequest(apiClient.POST('/api/executor/kill'))
+export const resumeExecutor = () => apiRequest(apiClient.POST('/api/executor/resume'))

@@ -1,39 +1,11 @@
-import { apiFetch } from './client'
+import { apiClient, apiRequest } from './client'
+import type { components, operations } from './generated/schema'
 
-export interface ExchangeQuote {
-  bid_price: number | null
-  bid_size: number | null
-  ask_price: number | null
-  ask_size: number | null
-  underlying_price: number | null
-  taker_fee_rate: number
-  updated_at: string
-  is_stale: boolean
-}
+export type ExchangeQuote = components['schemas']['TickerExchangeResponse']
+export type BookRow = components['schemas']['TickerResponse']
 
-export interface BookRow {
-  instrument: string
-  underlying: string
-  expiry: string
-  days_to_expiry: number
-  strike: number
-  option_type: string
-  exchanges: Record<string, ExchangeQuote>
-  gross_spread_pct: number | null
-  net_spread_pct: number | null
-  apr_pct: number | null
-  buy_exchange: string | null
-  sell_exchange: string | null
-  max_notional_usd: number | null
-  max_profit_usd: number | null
-  sell_collateral_usd: number | null
-  updated_at: string
-}
+type TickerQuery = NonNullable<operations['list_tickers_api_tickers_get']['parameters']['query']>
 
-export function fetchTickers(params?: { underlying?: string; exchange?: string }) {
-  const q = new URLSearchParams()
-  if (params?.underlying) q.set('underlying', params.underlying)
-  if (params?.exchange) q.set('exchange', params.exchange)
-  const qs = q.toString()
-  return apiFetch<BookRow[]>(`/api/tickers${qs ? '?' + qs : ''}`)
+export function fetchTickers(query?: TickerQuery) {
+  return apiRequest(apiClient.GET('/api/tickers', { params: { query } }))
 }

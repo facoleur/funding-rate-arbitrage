@@ -1,24 +1,8 @@
-import { apiFetch } from './client'
+import { apiClient, apiRequest } from './client'
+import type { components } from './generated/schema'
 
-export interface Position {
-  id: number
-  exchange: string
-  instrument: string
-  size: number
-  avg_price: number
-  opened_at: string
-  last_seen_at: string
-}
+export type Position = components['schemas']['PositionResponse']
+export type ExchangeState = components['schemas']['ExchangeStateResponse']
 
-export interface ExchangeState {
-  exchange: string
-  balance_usd: number
-  balances: Record<string, number>
-  margin_used_usd: number
-  ws_status: 'CONNECTED' | 'RECONNECTING' | 'UNHEALTHY'
-  rest_status: 'OK' | 'RATE_LIMITED' | 'DOWN'
-  updated_at: string
-}
-
-export const fetchPositions = () => apiFetch<Position[]>('/api/positions')
-export const fetchExchanges = () => apiFetch<ExchangeState[]>('/api/exchanges')
+export const fetchPositions = () => apiRequest(apiClient.GET('/api/positions'))
+export const fetchExchanges = () => apiRequest(apiClient.GET('/api/exchanges'))

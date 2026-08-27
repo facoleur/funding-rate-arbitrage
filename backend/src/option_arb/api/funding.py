@@ -6,13 +6,15 @@ from typing import Any
 import httpx
 from fastapi import APIRouter, Query
 
+from option_arb.api.schemas import FundingHistoryResponse
+
 router = APIRouter(prefix="/api/funding", tags=["funding"])
 
 _DERIBIT_REST = "https://www.deribit.com/api/v2"
 _VALID_INSTRUMENTS = {"BTC-PERPETUAL", "ETH-PERPETUAL"}
 
 
-@router.get("")
+@router.get("", response_model=list[FundingHistoryResponse])
 async def funding_history(
     instrument: str = Query(default="BTC-PERPETUAL"),
     days: int = Query(default=30, ge=1, le=365),

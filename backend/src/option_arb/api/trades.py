@@ -5,13 +5,14 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from sqlmodel import select
 
+from option_arb.api.schemas import ErrorResponse, TradeDetailResponse, TradeResponse
 from option_arb.db.models import Mode, Order, Trade, TradeStatus
 from option_arb.db.session import get_session
 
 router = APIRouter(prefix="/api/trades", tags=["trades"])
 
 
-@router.get("")
+@router.get("", response_model=list[TradeResponse])
 async def list_trades(
     mode: Mode | None = None,
     status: TradeStatus | None = None,
@@ -28,7 +29,11 @@ async def list_trades(
     return [_serialize(r) for r in rows]
 
 
-@router.get("/{trade_id}")
+@router.get(
+    "/{trade_id}",
+    response_model=TradeDetailResponse,
+    responses={404: {"model": ErrorResponse}},
+)
 async def get_trade(trade_id: int) -> dict[str, Any]:
     async with get_session() as sess:
         row = (await sess.execute(select(Trade).where(Trade.id == trade_id))).scalar_one_or_none()
