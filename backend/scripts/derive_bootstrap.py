@@ -19,9 +19,9 @@ import asyncio
 import json
 
 import httpx
+from option_arb.exchanges.derive_auth import DeriveAuth
 
 from option_arb.exchanges import derive_constants
-from option_arb.exchanges.derive_auth import DeriveAuth
 
 
 async def main() -> None:
