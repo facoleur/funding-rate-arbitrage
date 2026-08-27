@@ -28,7 +28,7 @@ Always read the relevant doc before editing:
 ## Current state
 
 - **Backend `backend/` (Python + Postgres)** is the sole source of truth. All phases 1-12 landed; 74 tests passing.
-- Deribit adapter has full OAuth support (token fetch + refresh cached). Derive has full EIP-712 signing via `DeriveAuth`. Aevo uses **REST polling** (no WS option channels) — public data only, private auth deferred.
+- Deribit adapter has full OAuth support (token fetch + refresh cached). Derive has full EIP-712 signing via `DeriveAuth`. Aevo uses aggregate public **WebSocket** book-ticker + index channels; private auth is deferred.
 - **Frontend `frontend/`** is built: Vite + React + TanStack Query + React Router, 7 pages (Book, Executor, Funding, History, Opportunities, Positions, Trades). Served via nginx in the `frontend` Docker container.
 - **Storage**: Postgres in production (docker-compose service `postgres`). SQLite retained ONLY inside pytest for speed/isolation. Model code is DB-agnostic.
 
@@ -115,7 +115,7 @@ See `backend/src/option_arb/exchanges/auth.py` + `derive_auth.py`. Adapters take
 
 - **Deribit** = `DeribitOAuth` (OAuth 2.0 client_credentials, token cached ~1h, auto-refresh). Env: `DERIBIT_CLIENT_ID`, `DERIBIT_CLIENT_SECRET`.
 - **Derive** = `DeriveAuth` — specialized: wraps the official `derive-action-signing` package for order signing and produces `X-LYRA*` headers for REST auth. Constants baked in `exchanges/derive_constants.py` (mainnet chain_id=957, testnet 901). Env: `DERIVE_SESSION_PRIVATE_KEY`, `DERIVE_WALLET_ADDRESS` (SCW address), `DERIVE_SUBACCOUNT_ID`.
-- **Aevo** = `NoAuth` (public REST polling only — no WS option channels). Private signing deferred.
+- **Aevo** = `NoAuth` (public WebSocket market data). Private signing deferred.
 
 All exchanges are currently configured as **mainnet** in `config.yaml`. Change `network: testnet` + swap `rest_base_url`/`ws_url` to use testnet.
 

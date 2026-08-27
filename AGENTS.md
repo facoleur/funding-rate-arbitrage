@@ -38,7 +38,7 @@ option_arbitrage/
 ## Current state
 
 - **Backend Python (`backend/`)** — all phases 1-12 landed.
-  - REST + WS adapters for Deribit (inverse + linear) / Derive (public + private). Aevo: removed from screener (no WS option channels, REST polling only, auth deferred) — config kept for future use.
+  - REST + WS adapters for Deribit (inverse + linear) / Derive (public + private) / Aevo (public aggregate book-ticker + index channels; private auth deferred).
   - Screener, executor (with 4 kill-switches + market-out on single-leg fill), rebalancer (monitoring only), alerter (Telegram), perp hedger (BTC-PERPETUAL short on Deribit inverse to neutralize BTC collateral), MockExchange with SlippageModel, backtest + record CLIs.
   - 74 tests passing.
 - **Frontend (`frontend/`)** — built. Vite + React + TanStack Query + React Router, 7 pages. Served via nginx in the `frontend` Docker container. Spec in `frontend/REQUIREMENTS.md`.
@@ -70,7 +70,7 @@ API surface
 ### Data fetching strategy
 
 1. **REST bootstrap (every 6h)** — instrument metadata.
-2. **WebSocket tickers (permanent)** — one connection per exchange for those that support it (Deribit inverse, Deribit linear, Derive). **Aevo removed from screener** (no WS option channels, REST polling per-instrument too expensive).
+2. **WebSocket tickers (permanent)** — one connection per exchange (Deribit inverse, Deribit linear, Derive, Aevo). Aevo uses aggregate `book-ticker:{ASSET}:OPTION` plus `index:{ASSET}` channels.
 3. **Screener** — reads cache in-memory every 500ms, groups by normalized name, writes `opportunities` PENDING.
 4. **Executor** — before placing, does a fresh REST L2 fetch on both venues (500ms timeout), walks the book, re-verifies APR net of slippage, then places IOC limits.
 
@@ -82,7 +82,7 @@ Every adapter takes an optional `Authenticator` (see `backend/src/option_arb/exc
 |---|---|---|---|
 | Deribit | OAuth 2.0 `client_credentials` | `DeribitOAuth` | ✅ implemented — token fetch + refresh (~1h TTL) |
 | Derive (Lyra V2) | Session-key signing (custom digest: `keccak(0x1901 \|\| DOMAIN_SEPARATOR \|\| action_hash)`) | `DeriveAuth` (wraps official `derive_action_signing` lib) | ✅ implemented — signs trades + `X-LYRA*` REST headers |
-| Aevo | REST polling (no WS option channels) | `NoAuth` | ⚠️ public data only via REST polling; private auth ⏳ deferred. Removed from screener. |
+| Aevo | Aggregate public WebSocket | `NoAuth` | Public market data implemented; private auth deferred. |
 
 All exchanges are currently configured as **mainnet** in `config.yaml`. Flip `network: testnet` + swap the `rest_base_url` / `ws_url` to use testnet.
 
@@ -189,7 +189,7 @@ make backtest file=recordings/derive-*.jsonl
 3. **Read `docs/deribit-vs-derive-options.md`** before touching exchange adapters, executor, or pricing logic — contains per-exchange pricing traps, settlement differences, and auth latency risks.
 4. **Do not reintroduce funding-rate code.**
 5. **Frontend never touches Postgres directly** — read-only via REST.
-6. **When adding a new exchange**, implement `AbstractExchange` (`backend/src/option_arb/exchanges/base.py`): rate-limited HTTP via the shared wrapper, WS subscribe (or `poll_tickers` if WS unavailable), `normalized_name` output, optional `Authenticator` for private paths.
+6. **When adding a new exchange**, implement `AbstractExchange` (`backend/src/option_arb/exchanges/base.py`): rate-limited HTTP via the shared wrapper, WS subscribe, `normalized_name` output, optional `Authenticator` for private paths.
 7. **Any code touching order placement** must have a `MockExchange` path and unit tests covering the 4 kill-switches. Never wire the live executor without paper validation.
 8. **The executor is the highest-blast-radius component.** State transitions persist to `trades` + `orders` before the next await; kill-switches are honoured every loop.
 9. **Reference plan**: `~/.claude/plans/rippling-gathering-fountain.md`.
@@ -197,7 +197,7 @@ make backtest file=recordings/derive-*.jsonl
 
 ## Open decisions
 
-- [ ] Aevo private trading — signing pattern deferred (currently REST polling for public data only, removed from screener).
+- [ ] Aevo private trading — signing pattern deferred; public market data uses aggregate WebSocket channels.
 - [ ] Where to source recorded order-book data for long-window backtests.
 - [ ] Slippage-model coefficients — empirical calibration once we have real fills.
 - [ ] Secrets manager choice for prod session keys (Vault vs Doppler vs env-only).

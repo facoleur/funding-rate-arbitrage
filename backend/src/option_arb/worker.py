@@ -93,16 +93,6 @@ async def _amain() -> None:
             else []
         ),
     ]
-    for name, ex in exchanges.items():
-        upstream = getattr(ex, "upstream", ex)  # unwrap MockExchange
-        if hasattr(upstream, "poll_tickers") and name in subscriptions:
-            tasks.append(
-                asyncio.create_task(
-                    _rest_poll_loop(name, ex, subscriptions[name], cache, stop),
-                    name=f"rest-poll-{name}",
-                )
-            )
-
     await stop.wait()
     log.info("stopping tasks…")
     for t in tasks:
@@ -160,39 +150,6 @@ async def _metadata_refresh_loop(
         evicted = cache.evict_expired()
         if evicted:
             log.info("metadata_refresh: evicted %d expired instruments from cache", evicted)
-
-
-_REST_POLL_BATCH = 50
-
-
-async def _rest_poll_loop(
-    name: str,
-    exchange: AbstractExchange,
-    instruments: list[Instrument],
-    cache: BookCache,
-    stop: asyncio.Event,
-    poll_interval_sec: float = 10.0,
-) -> None:
-    log.info(
-        "rest-poll %s: %d instruments, interval=%.0fs", name, len(instruments), poll_interval_sec
-    )
-    while not stop.is_set():
-        n_updates = 0
-        for i in range(0, len(instruments), _REST_POLL_BATCH):
-            batch = instruments[i : i + _REST_POLL_BATCH]
-            try:
-                updates = await exchange.poll_tickers(batch)  # type: ignore[attr-defined]
-                for upd in updates:
-                    cache.update(upd)
-                n_updates += len(updates)
-            except Exception as e:
-                log.warning("rest-poll %s error: %s", name, e)
-        log.debug("rest-poll %s: %d updates", name, n_updates)
-        try:
-            await asyncio.wait_for(stop.wait(), timeout=poll_interval_sec)
-            break
-        except TimeoutError:
-            pass
 
 
 def main() -> None:

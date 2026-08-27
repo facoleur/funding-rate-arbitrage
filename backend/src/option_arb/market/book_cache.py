@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -29,12 +29,16 @@ class BookCache:
         self._ttl_ms = ttl_ms
         self._by_key: dict[tuple[str, str], CachedTicker] = {}
         self._instruments: dict[tuple[str, str], Instrument] = {}
+        self._heartbeats: dict[tuple[str, str], TickerUpdate] = {}
 
     def register_instruments(self, instruments: list[Instrument]) -> None:
         for inst in instruments:
             self._instruments[(inst.exchange, inst.normalized_name)] = inst
 
     def update(self, upd: TickerUpdate) -> None:
+        if upd.is_heartbeat:
+            self._heartbeats[(upd.exchange, upd.instrument)] = upd
+            return
         key = (upd.exchange, upd.instrument)
         inst = self._instruments.get(key)
         if inst is None:
@@ -70,12 +74,24 @@ class BookCache:
         age_ms = (datetime.now(UTC) - ts).total_seconds() * 1000
         return age_ms <= self._ttl_ms
 
+    def _with_heartbeat(self, ticker: CachedTicker) -> CachedTicker:
+        heartbeat = self._heartbeats.get((ticker.instrument.exchange, ticker.instrument.underlying))
+        if heartbeat is None or heartbeat.ts <= ticker.ts:
+            return ticker
+        return replace(
+            ticker,
+            ts=heartbeat.ts,
+            underlying_price=heartbeat.underlying_price or ticker.underlying_price,
+        )
+
     def snapshot(self) -> list[CachedTicker]:
-        return [t for t in self._by_key.values() if self._is_fresh(t)]
+        tickers = (self._with_heartbeat(t) for t in self._by_key.values())
+        return [ticker for ticker in tickers if self._is_fresh(ticker)]
 
     def by_normalized_name(self) -> dict[str, list[CachedTicker]]:
         out: dict[str, list[CachedTicker]] = {}
         for ticker in self._by_key.values():
-            if self._is_fresh(ticker):
-                out.setdefault(ticker.instrument.normalized_name, []).append(ticker)
+            effective = self._with_heartbeat(ticker)
+            if self._is_fresh(effective):
+                out.setdefault(effective.instrument.normalized_name, []).append(effective)
         return out

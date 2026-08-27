@@ -189,3 +189,25 @@ async def test_ws_manager_reconnects_after_drop(monkeypatch) -> None:
     await mgr.stop()
 
     assert call_count >= 2  # reconnected at least once
+
+
+@pytest.mark.asyncio
+async def test_ws_manager_dispatches_batched_ticker_updates() -> None:
+    ex = _FakeExchange("aevo")
+    received: list[TickerUpdate] = []
+
+    async def on_ticker(upd: TickerUpdate) -> None:
+        received.append(upd)
+
+    mgr = WsManager({"aevo": ex}, on_ticker=on_ticker)
+    first = ex.parse_ws_message({"type": "tick", "instrument": "BTC-20260101-30000-C"})
+    second = ex.parse_ws_message({"type": "tick", "instrument": "BTC-20260101-35000-C"})
+    assert first is not None and second is not None
+
+    ex.parse_ws_message = lambda raw: [first, second]  # type: ignore[method-assign]
+    await mgr._read_loop(_FakeWS([json.dumps({"type": "batch"})]), "aevo")
+
+    assert [update.instrument for update in received] == [
+        "BTC-20260101-30000-C",
+        "BTC-20260101-35000-C",
+    ]

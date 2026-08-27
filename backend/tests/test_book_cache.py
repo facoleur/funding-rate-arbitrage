@@ -94,3 +94,27 @@ def test_registered_names_reflects_eviction() -> None:
     cache.register_instruments([expired])
     cache.evict_expired()
     assert "BTC-20200101-10000-C" not in cache.registered_names("deribit")
+
+
+def test_heartbeat_keeps_unchanged_ticker_fresh_and_updates_underlying() -> None:
+    cache = BookCache(ttl_ms=5000)
+    cache.register_instruments([_inst("aevo")])
+    cache.update(_upd("aevo", age_ms=6000))
+    cache.update(
+        TickerUpdate(
+            exchange="aevo",
+            instrument="BTC",
+            ts=datetime.now(UTC),
+            bid_price=None,
+            bid_size=None,
+            ask_price=None,
+            ask_size=None,
+            underlying_price=Decimal("65000"),
+            is_heartbeat=True,
+        )
+    )
+
+    snapshot = cache.snapshot()
+    assert len(snapshot) == 1
+    assert snapshot[0].underlying_price == Decimal("65000")
+    assert snapshot[0].ts > datetime.now(UTC) - timedelta(seconds=1)

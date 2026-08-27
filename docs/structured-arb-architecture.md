@@ -206,6 +206,6 @@ Nouvelle page `StructuredOpportunities.tsx`, route `/structured`.
 ## Ce qui est hors scope pour cette phase
 
 - Execution multi-jambes (4 IOC en parallèle avec rollback partiel)
-- Aevo (pas de WS → hors screener, REST polling trop coûteux pour multi-leg)
+- Aevo (WebSocket public agrégé `book-ticker` + `index`; trading privé non implémenté)
 - Calendar spreads (2 expiries différentes) — possible à ajouter dans `strategies/calendar.py`
 - Iron condor (4-jambe borné, extension naturelle de vertical + vertical)

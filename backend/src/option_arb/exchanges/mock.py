@@ -82,7 +82,7 @@ class MockExchange(AbstractExchange):
             return self.upstream.ws_channels(instruments)
         return []
 
-    def parse_ws_message(self, raw: dict[str, Any]) -> TickerUpdate | None:
+    def parse_ws_message(self, raw: dict[str, Any]) -> TickerUpdate | list[TickerUpdate] | None:
         if self.upstream is not None:
             return self.upstream.parse_ws_message(raw)
         return None
@@ -99,12 +99,6 @@ class MockExchange(AbstractExchange):
             return OrderResult(status="REJECTED", reason="unknown_instrument")
         book = await self.get_orderbook_l2(instrument)
         return await self.slippage.simulate(order, book)
-
-    async def poll_tickers(self, instruments: list[Instrument]) -> list[TickerUpdate]:
-        if self.upstream is not None and hasattr(self.upstream, "poll_tickers"):
-            result = await self.upstream.poll_tickers(instruments)
-            return list(result)
-        return []
 
     async def cancel_order(self, exchange_order_id: str) -> bool:
         return True

@@ -25,7 +25,7 @@ src/option_arb/
 │   ├── deribit.py           # JSON-RPC HTTPS/WSS, price × underlying conversion, OAuth
 │   │                        #   + get_index_price(), get_perp_position_usd(), place_perp_order()
 │   ├── derive.py            # api.lyra.finance, real trade signing via DeriveAuth
-│   ├── aevo.py              # api.aevo.xyz, REST polling via /instrument/{name} (no WS option channels; removed from screener)
+│   ├── aevo.py              # api.aevo.xyz, aggregate book-ticker + index WebSocket channels
 │   ├── mock.py              # MockExchange (mirror or replay) with SlippageModel
 │   ├── slippage.py          # walk book + gaussian noise + rejection + latency + limit
 │   └── registry.py          # build_exchanges(config) — creates adapters + wires authenticators
@@ -91,7 +91,6 @@ async list_instruments(underlying, max_expiries_ahead) -> list[Instrument]
 async get_orderbook_l2(instrument) -> Book
 def   ws_channels(instruments) -> list[str]          # return [] if WS not supported
 def   parse_ws_message(raw) -> TickerUpdate | None
-async poll_tickers(instruments) -> list[TickerUpdate]  # optional: implement when ws_channels() returns []
 async place_order(order) -> OrderResult          # requires Authenticator
 async cancel_order(exchange_order_id) -> bool    # requires Authenticator
 async get_balances() -> dict[str, Decimal]       # requires Authenticator
@@ -105,7 +104,7 @@ async get_positions() -> list[dict]              # requires Authenticator
 
 Every adapter MUST emit `Instrument.normalized_name = {UNDERLYING}-{YYYYMMDD}-{STRIKE}-{C|P}`. Deribit prices come in underlying units → the adapter multiplies by `underlying_price` to convert to USD.
 
-Exchanges with `ws_channels() == []` are polled via `_rest_poll_loop` in `worker.py` (batches of 50 instruments, 10s interval). Aevo is currently excluded from the screener (no WS, per-instrument REST polling too expensive). See `docs/deribit-vs-derive-options.md` for per-exchange pricing traps.
+Aevo uses aggregate `book-ticker:{ASSET}:OPTION` and `index:{ASSET}` WebSocket channels. There is no REST ticker polling path; REST is reserved for metadata and fresh execution-time books. See `docs/deribit-vs-derive-options.md` for per-exchange pricing traps.
 
 Every adapter takes an optional `Authenticator`. Without one → private paths return `REJECTED` / empty results. Never hit the network with unauth private calls.
 
@@ -125,7 +124,7 @@ Concrete implementations:
   - `sign_rest(...)` produces the three `X-LYRAWALLET` / `X-LYRATIMESTAMP` / `X-LYRASIGNATURE` headers required on every REST `/private/*` call.
   - `ws_login_params()` returns the params for the WS `public/login` message if we ever route private orders over WS (currently REST-only).
   - Constants (DOMAIN_SEPARATOR, ACTION_TYPEHASH, TRADE_MODULE, WITHDRAW_MODULE, USDC_ASSET) live in `exchanges/derive_constants.py` for both `mainnet` (chain_id=957) and `testnet` (chain_id=901). Source: docs.derive.xyz/docs/protocol-constants.
-- Aevo — currently `NoAuth`. REST polling only. Signing pattern to be added later.
+- Aevo — currently `NoAuth`. Public market data uses WebSocket; signing pattern to be added later.
 
 `build_authenticator(exchange, settings, network)` picks the right class. Called by `registry.build_exchanges` with `network` taken from `ExchangeConfig.network` (defaults to `"testnet"` in `config.yaml`).
 
@@ -187,6 +186,6 @@ Zero direct in-process calls. Screener writes `Opportunity(status=PENDING)` in D
 
 ## Not yet wired
 
-- Aevo private trading (signing pattern deferred — currently `NoAuth`, removed from screener).
+- Aevo private trading (signing pattern deferred; public WebSocket data is wired).
 - Multi-account per exchange.
 - Sequence-number gap detection on WS (framework supports adding it in `WsManager._read_loop`).

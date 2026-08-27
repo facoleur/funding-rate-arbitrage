@@ -141,13 +141,15 @@ class WsManager:
                         state.ack_total,
                     )
                 continue
-            update = ex.parse_ws_message(msg)
-            if update is None:
+            parsed = ex.parse_ws_message(msg)
+            if parsed is None:
                 continue
-            try:
-                await self._on_ticker(update)
-            except Exception as e:
-                log.exception("ticker handler failed for %s: %s", exchange, e)
+            updates = parsed if isinstance(parsed, list) else [parsed]
+            for update in updates:
+                try:
+                    await self._on_ticker(update)
+                except Exception as e:
+                    log.exception("ticker handler failed for %s: %s", exchange, e)
 
     async def _subscribe(
         self,

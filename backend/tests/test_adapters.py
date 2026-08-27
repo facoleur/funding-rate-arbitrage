@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -74,11 +75,79 @@ def test_derive_parses_ws_ticker() -> None:
     assert upd.ask_price == Decimal("3105.0")
 
 
-def test_aevo_ws_channels_empty() -> None:
-    # Aevo has no WS option ticker channels — REST polling is used instead.
+def test_aevo_ws_channels_use_aggregate_book_and_index_channels() -> None:
     ex = AevoExchange(_rest_stub())
-    assert ex.ws_channels([]) == []
-    assert ex.parse_ws_message({"channel": "ticker:BTC-20260101-30000-C", "data": {}}) is None
+    instruments = [
+        _instrument("BTC", "BTC-28AUG26-60000-C"),
+        _instrument("BTC", "BTC-28AUG26-65000-C"),
+        _instrument("ETH", "ETH-28AUG26-3000-P"),
+    ]
+
+    assert ex.ws_channels(instruments) == [
+        "book-ticker:BTC:OPTION",
+        "book-ticker:ETH:OPTION",
+        "index:BTC",
+        "index:ETH",
+    ]
+
+
+def _instrument(underlying: str, name: str):
+    from option_arb.exchanges.base import Instrument
+
+    return Instrument(
+        exchange="aevo",
+        instrument_name=name,
+        normalized_name=normalize_deribit(name),
+        underlying=underlying,
+        expiry=datetime(2026, 8, 28, 8, tzinfo=UTC),
+        strike=Decimal(name.split("-")[2]),
+        option_type=name.rsplit("-", 1)[1],
+        maker_fee_rate=Decimal("0"),
+        taker_fee_rate=Decimal("0"),
+    )
+
+
+def test_aevo_parses_batched_book_tickers_with_index_price() -> None:
+    ex = AevoExchange(_rest_stub())
+    heartbeat = ex.parse_ws_message(
+        {
+            "channel": "index:ETH",
+            "data": {"price": "2508.50", "timestamp": "1787904000000000000"},
+        }
+    )
+    assert heartbeat is not None and not isinstance(heartbeat, list)
+    assert heartbeat.is_heartbeat
+    assert heartbeat.instrument == "ETH"
+    assert heartbeat.underlying_price == Decimal("2508.50")
+
+    updates = ex.parse_ws_message(
+        {
+            "channel": "book-ticker:ETH:OPTION",
+            "data": {
+                "timestamp": "1787904000123456789",
+                "tickers": [
+                    {
+                        "instrument_name": "ETH-28AUG26-3000-C",
+                        "bid": {"price": "12.5", "amount": "3"},
+                        "ask": {"price": "13", "amount": "2"},
+                    },
+                    {
+                        "instrument_name": "ETH-28AUG26-3000-P",
+                        "bid": {},
+                        "ask": {"price": "505", "amount": "1.5"},
+                    },
+                ],
+            },
+        }
+    )
+
+    assert updates is not None
+    assert len(updates) == 2
+    assert updates[0].instrument == "ETH-20260828-3000-C"
+    assert updates[0].bid_price == Decimal("12.5")
+    assert updates[0].ask_size == Decimal("2")
+    assert updates[1].bid_price is None
+    assert updates[1].ask_price == Decimal("505")
 
 
 def test_aevo_normalized_name() -> None:

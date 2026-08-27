@@ -62,6 +62,7 @@ class TickerUpdate:
     ask_price: Decimal | None
     ask_size: Decimal | None
     underlying_price: Decimal | None = None
+    is_heartbeat: bool = False
 
 
 @dataclass(frozen=True)
@@ -109,8 +110,8 @@ class AbstractExchange(ABC):
         """Return the WS channel names to subscribe for the given instruments."""
 
     @abstractmethod
-    def parse_ws_message(self, raw: dict[str, Any]) -> TickerUpdate | None:
-        """Parse a raw WS message into a ticker update, or None if unrelated."""
+    def parse_ws_message(self, raw: dict[str, Any]) -> TickerUpdate | list[TickerUpdate] | None:
+        """Parse a raw WS message into one or more ticker updates, or None if unrelated."""
 
     @abstractmethod
     async def place_order(self, order: OrderRequest) -> OrderResult: ...

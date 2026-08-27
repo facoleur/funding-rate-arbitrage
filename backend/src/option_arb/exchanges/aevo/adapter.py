@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -23,8 +22,7 @@ log = logging.getLogger(__name__)
 
 
 class AevoExchange(AbstractExchange):
-    """Aevo REST + WS adapter. Expiries are given in nanoseconds (str).
-    Instrument names are already canonical `{U}-{YYYYMMDD}-{STRIKE}-{C|P}`."""
+    """Aevo REST + WS adapter. Expiries are given in nanoseconds (str)."""
 
     name = "aevo"
 
@@ -94,34 +92,65 @@ class AevoExchange(AbstractExchange):
         )
 
     def ws_channels(self, instruments: list[Instrument]) -> list[str]:
-        # Aevo WS does not expose option ticker channels — REST polling used instead.
-        return []
-
-    def parse_ws_message(self, raw: dict[str, Any]) -> TickerUpdate | None:
-        return None
-
-    async def poll_tickers(self, instruments: list[Instrument]) -> list[TickerUpdate]:
-        """REST fallback: fetch top-of-book for all instruments concurrently."""
-        results = await asyncio.gather(
-            *[self._fetch_ticker(inst) for inst in instruments],
-            return_exceptions=True,
+        underlyings = {inst.underlying for inst in instruments}
+        return sorted(
+            channel
+            for underlying in underlyings
+            for channel in (f"book-ticker:{underlying}:OPTION", f"index:{underlying}")
         )
-        return [r for r in results if isinstance(r, TickerUpdate)]
 
-    async def _fetch_ticker(self, inst: Instrument) -> TickerUpdate:
-        data = await self.rest.get(f"/instrument/{inst.instrument_name}")
-        bb = data.get("best_bid") or {}
-        ba = data.get("best_ask") or {}
-        return TickerUpdate(
-            exchange=self.name,
-            instrument=inst.normalized_name,
-            ts=datetime.now(tz=UTC),
-            bid_price=Decimal(str(bb["price"])) if bb.get("price") else None,
-            ask_price=Decimal(str(ba["price"])) if ba.get("price") else None,
-            bid_size=Decimal(str(bb["amount"])) if bb.get("amount") else None,
-            ask_size=Decimal(str(ba["amount"])) if ba.get("amount") else None,
-            underlying_price=Decimal(str(data["index_price"])) if data.get("index_price") else None,
-        )
+    def parse_ws_message(self, raw: dict[str, Any]) -> TickerUpdate | list[TickerUpdate] | None:
+        channel = raw.get("channel", "")
+        data = raw.get("data") or {}
+
+        if channel.startswith("index:"):
+            underlying = channel.split(":", 1)[1]
+            if data.get("price"):
+                price = Decimal(str(data["price"]))
+                return TickerUpdate(
+                    exchange=self.name,
+                    instrument=underlying,
+                    # Freshness is local connection liveness; Aevo's server clock
+                    # can lag enough to exceed the cache TTL.
+                    ts=datetime.now(tz=UTC),
+                    bid_price=None,
+                    bid_size=None,
+                    ask_price=None,
+                    ask_size=None,
+                    underlying_price=price,
+                    is_heartbeat=True,
+                )
+            return None
+
+        # Aevo documents `book-ticker:` subscriptions but some response examples
+        # label the corresponding channel as `ticker:`.
+        if not channel.startswith(("book-ticker:", "ticker:")):
+            return None
+
+        timestamp = data.get("timestamp")
+        if timestamp is None:
+            return None
+        ts = datetime.fromtimestamp(int(timestamp) / 1_000_000_000, tz=UTC)
+
+        updates: list[TickerUpdate] = []
+        for ticker in data.get("tickers") or []:
+            instrument_name = ticker.get("instrument_name")
+            if not instrument_name:
+                continue
+            bid = ticker.get("bid") or {}
+            ask = ticker.get("ask") or {}
+            updates.append(
+                TickerUpdate(
+                    exchange=self.name,
+                    instrument=normalize_deribit(instrument_name),
+                    ts=ts,
+                    bid_price=Decimal(str(bid["price"])) if bid.get("price") else None,
+                    ask_price=Decimal(str(ask["price"])) if ask.get("price") else None,
+                    bid_size=Decimal(str(bid["amount"])) if bid.get("amount") else None,
+                    ask_size=Decimal(str(ask["amount"])) if ask.get("amount") else None,
+                )
+            )
+        return updates or None
 
     async def place_order(self, order: OrderRequest) -> OrderResult:
         if isinstance(self.auth, NoAuth):
