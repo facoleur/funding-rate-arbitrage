@@ -1,8 +1,18 @@
 arbitrage.fuca.ch {
-    handle /api/* {
-        reverse_proxy arbitrage-api:8000
-    }
-    handle {
-        reverse_proxy arbitrage-frontend:80
-    }
+	header Strict-Transport-Security "max-age=31536000"
+
+	@protected not path /health
+	basic_auth @protected {
+		__AUTH_USER__ __AUTH_HASH__
+	}
+
+	handle /health {
+		reverse_proxy arbitrage-api:8000
+	}
+	handle /api/* {
+		reverse_proxy arbitrage-api:8000
+	}
+	handle {
+		reverse_proxy arbitrage-frontend:80
+	}
 }

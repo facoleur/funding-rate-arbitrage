@@ -129,8 +129,9 @@ All exchanges are currently configured as **mainnet** in `config.yaml`. Change `
 - Réseau Docker externe `proxy` (partagé avec Caddy dockerisé) — `api` et `frontend` rejoignent ce réseau via aliases (`arbitrage-api`, `arbitrage-frontend`)
 - `docker-compose.prod.yml` déclare **toujours** `default:` dans la section `networks:` — sans ça, les services ne se trouvent pas entre eux (DNS interne cassé)
 - Health check post-deploy : `curl http://localhost:8001/health` (port hôte) — les aliases réseau Docker ne sont pas résolvables depuis le host VPS
-- Caddy dockerisé sur `/srv/caddy` ; snippet dans `/srv/caddy/sites/option-arb.caddy` (fichier `option-arb.caddy` à la racine du repo)
-- Image : `ghcr.io/facoleur/option-arb:<git-sha>` — jamais le tag `latest` en prod
+- Caddy dockerisé sur `/srv/caddy` ; snippet dans `/srv/caddy/sites/arbitrage.caddy` (fichier `arbitrage.caddy` à la racine du repo)
+- Image : `ghcr.io/facoleur/arbitrage:<git-sha>` — jamais le tag `latest` en prod
+- **Auth** : tout le site `arbitrage.fuca.ch` est derrière `basic_auth` Caddy (single user), sauf `/health` laissé ouvert pour le monitoring. Le hash bcrypt n'est **pas** commité : `arbitrage.caddy` contient les placeholders `__AUTH_USER__` / `__AUTH_HASH__`, substitués par le workflow depuis les secrets GitHub. Le job échoue si les secrets manquent — jamais de déploiement sans auth
 
 ### Secrets GitHub requis
 
@@ -146,6 +147,8 @@ All exchanges are currently configured as **mainnet** in `config.yaml`. Change `
 | `DERIVE_SESSION_PRIVATE_KEY`| Clé de session Derive                                  |
 | `BOT_TOKEN`                 | Token Telegram                                         |
 | `CHAT_ID`                   | Chat ID Telegram                                       |
+| `ARB_AUTH_USER`             | Utilisateur basic_auth du site                         |
+| `ARB_AUTH_HASH`             | Hash bcrypt : `docker run --rm -it caddy:2-alpine caddy hash-password` |
 
 Pas de secret GHCR séparé : le `GITHUB_TOKEN` du job est forwardé via SSH.
 

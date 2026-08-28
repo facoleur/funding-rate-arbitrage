@@ -69,6 +69,25 @@ jobs:
           name: frontend-dist-${{ github.sha }}
           path: frontend/dist/
 
+      - name: Inject basic_auth credentials into Caddy snippet
+        env:
+          ARB_AUTH_USER: ${{ secrets.ARB_AUTH_USER }}
+          ARB_AUTH_HASH: ${{ secrets.ARB_AUTH_HASH }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, sys
+          user = os.environ.get("ARB_AUTH_USER", "").strip()
+          pwhash = os.environ.get("ARB_AUTH_HASH", "").strip()
+          if not user or not pwhash.startswith("$2"):
+              sys.exit("secrets ARB_AUTH_USER / ARB_AUTH_HASH manquants ou invalides "
+                       "(le hash doit venir de `caddy hash-password`, format $2a$...)")
+          p = pathlib.Path("arbitrage.caddy")
+          s = p.read_text().replace("__AUTH_USER__", user).replace("__AUTH_HASH__", pwhash)
+          if "__AUTH_" in s:
+              sys.exit("placeholder non substitue dans arbitrage.caddy")
+          p.write_text(s)
+          PY
+
       - name: Copy files to VPS
         uses: appleboy/scp-action@v1
         with:
