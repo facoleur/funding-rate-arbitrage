@@ -398,3 +398,43 @@ async def test_executor_kill_and_resume(test_db: str, temp_config, tmp_path) -> 
         r = await ac.post("/api/executor/resume")
         assert r.status_code == 200
         assert not kill_path.exists()
+
+
+async def test_ticker_age_reports_the_stalest_leg(test_db: str) -> None:
+    """A row's metrics span two venues, so its age must be that of the older
+    quote. Reporting the freshest made a line look 2s old while half its
+    inputs were minutes stale."""
+    expiry = datetime.now(UTC) + timedelta(days=30)
+    fresh = datetime.now(UTC)
+    stale = fresh - timedelta(minutes=5)
+
+    def _ticker(exchange: str, updated_at: datetime) -> TickerState:
+        return TickerState(
+            exchange=exchange,
+            instrument="BTC-20270101-30000-C",
+            underlying="BTC",
+            expiry=expiry,
+            strike=30000,
+            option_type="C",
+            bid_price=100,
+            bid_size=3,
+            ask_price=101,
+            ask_size=2,
+            underlying_price=1000,
+            taker_fee_rate=0.0003,
+            updated_at=updated_at,
+        )
+
+    async with get_session() as sess:
+        sess.add_all([_ticker("derive", fresh), _ticker("deribit", stale)])
+        await sess.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.get("/api/tickers")
+
+    assert response.status_code == 200
+    row = response.json()[0]
+    assert datetime.fromisoformat(row["updated_at"]) == stale
+    # per-venue freshness stays untouched — the UI greys the stale cell
+    assert row["exchanges"]["deribit"]["is_stale"] is True
+    assert row["exchanges"]["derive"]["is_stale"] is False

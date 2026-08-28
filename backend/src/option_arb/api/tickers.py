@@ -131,9 +131,13 @@ def _group_and_compute(rows: list[TickerState]) -> list[dict[str, Any]]:
                     buy_exchange = buy_ticker.exchange
                     sell_exchange = sell_ticker.exchange
 
-        latest_timestamp = max(ticker.updated_at for ticker in tickers)
-        if latest_timestamp.tzinfo is None:
-            latest_timestamp = latest_timestamp.replace(tzinfo=UTC)
+        # A row's age is that of its STALEST leg, not its freshest: the metrics
+        # below compare two venues, so the older quote is what bounds how much
+        # the whole line can be trusted. Taking max() here read as "2s" while
+        # one side was minutes old.
+        oldest_timestamp = min(ticker.updated_at for ticker in tickers)
+        if oldest_timestamp.tzinfo is None:
+            oldest_timestamp = oldest_timestamp.replace(tzinfo=UTC)
         output.append(
             {
                 "instrument": instrument,
@@ -146,7 +150,7 @@ def _group_and_compute(rows: list[TickerState]) -> list[dict[str, Any]]:
                 **metrics,
                 "buy_exchange": buy_exchange,
                 "sell_exchange": sell_exchange,
-                "updated_at": latest_timestamp.isoformat(),
+                "updated_at": oldest_timestamp.isoformat(),
             }
         )
     return output
