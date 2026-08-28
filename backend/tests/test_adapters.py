@@ -19,7 +19,7 @@ def _rest_stub() -> RestClient:
     return RestClient("stub", "https://stub.local", rate_limit_per_sec=100)
 
 
-def _instrument(exchange: str) -> Instrument:
+def _rest_instrument(exchange: str) -> Instrument:
     return Instrument(
         exchange=exchange,
         instrument_name="BTC-1JAN27-30000-C",
@@ -223,7 +223,7 @@ async def test_deribit_rest_book_carries_underlying_price() -> None:
         }
 
     exchange._rpc = rpc  # type: ignore[method-assign]
-    book = await exchange.get_orderbook_l2(_instrument("deribit"))
+    book = await exchange.get_orderbook_l2(_rest_instrument("deribit"))
     assert book.underlying_price == Decimal("50000")
     assert book.top_bid is not None and book.top_bid.price == Decimal("100.000")
 
@@ -246,7 +246,7 @@ async def test_derive_rest_book_carries_ticker_index_price() -> None:
         return {"result": {"bids": [["100", "2"]], "asks": [["101", "2"]]}}
 
     rest.post = post  # type: ignore[method-assign]
-    book = await DeriveExchange(rest).get_orderbook_l2(_instrument("derive"))
+    book = await DeriveExchange(rest).get_orderbook_l2(_rest_instrument("derive"))
     assert book.underlying_price == Decimal("50001")
 
 
@@ -262,7 +262,7 @@ async def test_aevo_rest_book_carries_index_price() -> None:
         }
 
     rest.get = get  # type: ignore[method-assign]
-    book = await AevoExchange(rest).get_orderbook_l2(_instrument("aevo"))
+    book = await AevoExchange(rest).get_orderbook_l2(_rest_instrument("aevo"))
     assert book.underlying_price == Decimal("49999")
 
 
