@@ -16,7 +16,7 @@ from option_arb.db.session import get_session
 from option_arb.exchanges.base import Instrument, OrderRequest, OrderResult
 from option_arb.exchanges.mock import MockExchange, make_book
 from option_arb.exchanges.slippage import SlippageModel
-from option_arb.services.executor import Executor
+from option_arb.services.executor import Executor, _available_funds_usd
 
 
 def _inst(
@@ -59,11 +59,17 @@ async def _make_pending_opp(*, expiry_days: int = 30) -> int:
             sell_to="mock-deribit",
             top_ask=101.0,
             top_bid=115.0,
-            spread_pct=13.8,
+            tradeable_size=10.0,
+            buy_premium_usd=1010.0,
+            sell_premium_usd=1150.0,
+            estimated_short_margin_usd=1000.0,
+            capital_required_usd=2010.0,
+            gross_profit_usd=140.0,
+            fees_usd=0.648,
+            net_profit_usd=139.352,
+            price_spread_pct=13.86,
+            net_return_pct=6.93,
             apr_pct=160.0,
-            max_notional_usd=1000.0,
-            capital_deployed_usd=101.0,
-            net_profit_usd=138.0,
             status=OpportunityStatus.PENDING,
         )
         sess.add(opp)
@@ -91,11 +97,24 @@ def _pair(
     a.set_instruments([ia])
     b.set_instruments([ib])
     a.set_book(
-        ia.instrument_name, make_book("derive", ia.normalized_name, bids=[bids], asks=[asks])
+        ia.instrument_name,
+        make_book(
+            "derive",
+            ia.normalized_name,
+            bids=[bids],
+            asks=[asks],
+            underlying_price="1000",
+        ),
     )
     b.set_book(
         ib.instrument_name,
-        make_book("deribit", ib.normalized_name, bids=[other_bids], asks=[other_asks]),
+        make_book(
+            "deribit",
+            ib.normalized_name,
+            bids=[other_bids],
+            asks=[other_asks],
+            underlying_price="1000",
+        ),
     )
     return a, b, ia, ib
 
@@ -141,14 +160,145 @@ async def test_apr_dropped_rejects_when_spread_narrows(test_db: str) -> None:
 
 
 @pytest.mark.asyncio
+async def test_executor_gates_on_worst_ioc_prices_not_walked_prices(test_db: str) -> None:
+    a, b, ia, ib = _pair()
+    cfg = AppConfig()
+    cfg.thresholds.min_net_return_pct = 5.5
+    cfg.thresholds.min_apr_pct = 0
+    await _make_pending_opp()
+    await _executor(a, b, ia, ib, cfg)._tick()
+
+    async with get_session() as sess:
+        opp = (await sess.execute(select(Opportunity))).scalars().first()
+        trades = list((await sess.execute(select(Trade))).scalars())
+    # Walked prices return about 6.9%, but the configured +/-2% IOC limits return <5.5%.
+    assert opp.status == OpportunityStatus.REJECTED
+    assert opp.rejection_reason == "apr_dropped"
+    assert trades == []
+
+
+@pytest.mark.asyncio
+async def test_executor_rechecks_fresh_profit_and_buy_premium_thresholds(test_db: str) -> None:
+    a, b, ia, ib = _pair()
+    cfg = AppConfig()
+    cfg.thresholds.min_apr_pct = 0
+    cfg.thresholds.min_net_return_pct = 0
+    cfg.thresholds.min_net_profit_usd = 100
+    await _make_pending_opp()
+    await _executor(a, b, ia, ib, cfg)._tick()
+
+    async with get_session() as sess:
+        opp = (await sess.execute(select(Opportunity))).scalars().first()
+    assert opp.status == OpportunityStatus.REJECTED
+    assert opp.rejection_reason == "profit_too_small"
+
+    cfg.thresholds.min_net_profit_usd = 0
+    cfg.thresholds.min_buy_premium_usd = 501
+    await _make_pending_opp()
+    await _executor(a, b, ia, ib, cfg)._tick()
+    async with get_session() as sess:
+        opps = list((await sess.execute(select(Opportunity))).scalars())
+    assert opps[-1].status == OpportunityStatus.REJECTED
+    assert opps[-1].rejection_reason == "size_too_small"
+
+
+def test_available_funds_convert_only_relevant_underlying_collateral() -> None:
+    funds = {
+        "USDC": Decimal("10"),
+        "BTC": Decimal("0.01"),
+        "ETH": Decimal("100"),
+    }
+    assert _available_funds_usd(funds, "BTC", Decimal("50000")) == Decimal("510")
+    assert _available_funds_usd({}, "BTC", Decimal("50000")) is None
+
+
+def test_walk_rejects_known_zero_balances() -> None:
+    a, b, ia, ib = _pair()
+    config = AppConfig()
+    config.limits.max_contracts_per_trade = 1
+    executor = _executor(a, b, ia, ib, config)
+    buy_book = a._books[ia.instrument_name]
+    sell_book = b._books[ib.instrument_name]
+    opp = Opportunity(
+        mode=Mode.PAPER,
+        instrument=ia.normalized_name,
+        symbol="BTC",
+        expiry=datetime.now(tz=UTC) + timedelta(days=30),
+        strike=30000,
+        option_type="C",
+        buy_from="mock-derive",
+        sell_to="mock-deribit",
+        top_ask=101,
+        top_bid=115,
+        tradeable_size=1,
+        buy_premium_usd=101,
+        sell_premium_usd=115,
+        estimated_short_margin_usd=100,
+        capital_required_usd=201,
+        gross_profit_usd=14,
+        fees_usd=0,
+        net_profit_usd=14,
+        price_spread_pct=13.86,
+        net_return_pct=6.96,
+        apr_pct=84.68,
+    )
+
+    assert executor._walk_and_verify(opp, buy_book, sell_book, ia, ib, Decimal(0), None) == (
+        "insufficient_buy_funds(0)"
+    )
+    sell_result = executor._walk_and_verify(
+        opp, buy_book, sell_book, ia, ib, Decimal("1000"), Decimal(0)
+    )
+    assert sell_result == "insufficient_sell_funds(0<100)"
+
+
+@pytest.mark.asyncio
+async def test_executor_rejects_missing_fresh_spot_as_margin_unavailable(test_db: str) -> None:
+    a, b, ia, ib = _pair()
+    buy_book = await a.get_orderbook_l2(ia)
+    sell_book = await b.get_orderbook_l2(ib)
+    a.set_book(
+        ia.instrument_name,
+        make_book(
+            "derive",
+            ia.normalized_name,
+            [(str(x.price), str(x.size)) for x in buy_book.bids],
+            [(str(x.price), str(x.size)) for x in buy_book.asks],
+        ),
+    )
+    b.set_book(
+        ib.instrument_name,
+        make_book(
+            "deribit",
+            ib.normalized_name,
+            [(str(x.price), str(x.size)) for x in sell_book.bids],
+            [(str(x.price), str(x.size)) for x in sell_book.asks],
+        ),
+    )
+    await _make_pending_opp()
+    await _executor(a, b, ia, ib)._tick()
+
+    async with get_session() as sess:
+        opp = (await sess.execute(select(Opportunity))).scalars().first()
+    assert opp.status == OpportunityStatus.REJECTED
+    assert opp.rejection_reason == "margin_unavailable"
+
+
+@pytest.mark.asyncio
 async def test_empty_book_rejects(test_db: str) -> None:
     ia, ib = _inst("derive"), _inst("deribit")
     a = MockExchange("derive")
     b = MockExchange("deribit")
     a.set_instruments([ia])
     b.set_instruments([ib])
-    a.set_book(ia.instrument_name, make_book("derive", ia.normalized_name, bids=[], asks=[]))
-    b.set_book(ib.instrument_name, make_book("deribit", ib.normalized_name, bids=[], asks=[]))
+    a.set_book(
+        ia.instrument_name,
+        make_book("derive", ia.normalized_name, bids=[], asks=[], underlying_price="1000"),
+    )
+    b.set_book(
+        ib.instrument_name,
+        make_book("deribit", ib.normalized_name, bids=[], asks=[], underlying_price="1000"),
+    )
     await _make_pending_opp()
     await _executor(a, b, ia, ib)._tick()
 

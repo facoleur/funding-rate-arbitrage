@@ -144,8 +144,8 @@ opportunity(PENDING)
   ├─ kill-switch check (4 gates) → REJECTED w/ reason on trip
   ├─ fresh REST L2 refetch (parallel, both venues, timeout 500ms)
   │    on timeout/error → REJECTED (stale_book)
-  ├─ walk book + binary-search size s.t. APR ≥ min_apr and notional ≤ cap
-  │    if size < min_notional → REJECTED (size_too_small)
+  ├─ walk book + binary-search size using worst IOC limits and canonical economics
+  │    if buy premium < min_buy_premium → REJECTED (size_too_small)
   │    if no size passes APR → REJECTED (apr_dropped)
   ├─ APPROVED + create Trade(PLACING) + 2 Order(PLACING) rows
   ├─ asyncio.gather(place_order(BUY IOC), place_order(SELL IOC))
@@ -159,7 +159,7 @@ Kill-switches (4, all active):
 1. **Manual file** `data/EXECUTOR_DISABLED` (`POST /api/executor/kill` creates it).
 2. **Max open positions** = `count(trades WHERE status IN active)`.
 3. **Max daily loss** = `SUM(net_pnl_usd WHERE opened_at >= today_utc)`.
-4. **Max notional per trade** enforced inside `_walk_and_verify`.
+4. **Max buy premium per trade** enforced inside `_walk_and_verify` at the worst IOC buy limit.
 
 **Every state transition persists to `trades` + `orders` before the next await.**
 

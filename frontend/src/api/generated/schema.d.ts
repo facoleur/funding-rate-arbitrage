@@ -375,22 +375,26 @@ export interface components {
         };
         /** ExecutorConfigResponse */
         ExecutorConfigResponse: {
+            /** Ioc Slippage Limit Pct */
+            ioc_slippage_limit_pct: number;
+            /** Max Buy Premium Per Trade Usd */
+            max_buy_premium_per_trade_usd: number;
             /** Max Daily Loss Usd */
             max_daily_loss_usd: number;
             /** Max Days To Expiry */
             max_days_to_expiry: number;
-            /** Max Notional Per Trade Usd */
-            max_notional_per_trade_usd: number;
             /** Max Positions Open */
             max_positions_open: number;
             /** Min Apr Pct */
             min_apr_pct: number;
+            /** Min Buy Premium Usd */
+            min_buy_premium_usd: number;
+            /** Min Leg Premium Liquidity Usd */
+            min_leg_premium_liquidity_usd: number;
             /** Min Net Profit Usd */
             min_net_profit_usd: number;
-            /** Min Net Spread Pct */
-            min_net_spread_pct: number;
-            /** Min Notional Usd */
-            min_notional_usd: number;
+            /** Min Net Return Pct */
+            min_net_return_pct: number;
             mode: components["schemas"]["Mode"];
         };
         /** ExecutorCountersResponse */
@@ -456,14 +460,16 @@ export interface components {
             apr_pct: number;
             /** Buy From */
             buy_from: string;
-            /** Capital Deployed Usd */
-            capital_deployed_usd: number;
+            /** Buy Premium Usd */
+            buy_premium_usd: number;
+            /** Capital Required Usd */
+            capital_required_usd: number;
             /** Days To Expiry */
             days_to_expiry: number;
             detected_at: components["schemas"]["IsoDatetime"];
+            /** Estimated Short Margin Usd */
+            estimated_short_margin_usd: number;
             expiry: components["schemas"]["IsoDatetime"];
-            /** Fee Pct */
-            fee_pct: number;
             /** Fees Usd */
             fees_usd: number;
             /** Gross Profit Usd */
@@ -472,23 +478,25 @@ export interface components {
             id: number;
             /** Instrument */
             instrument: string;
-            /** Max Notional Usd */
-            max_notional_usd: number;
             mode: components["schemas"]["Mode"];
             /** Net Profit Usd */
             net_profit_usd: number;
+            /** Net Return Pct */
+            net_return_pct: number;
             network: components["schemas"]["Network"];
             /**
              * Option Type
              * @enum {string}
              */
             option_type: "C" | "P";
+            /** Price Spread Pct */
+            price_spread_pct: number;
             /** Rejection Reason */
             rejection_reason: string | null;
+            /** Sell Premium Usd */
+            sell_premium_usd: number;
             /** Sell To */
             sell_to: string;
-            /** Spread Pct */
-            spread_pct: number;
             status: components["schemas"]["OpportunityStatus"];
             /** Strike */
             strike: number;
@@ -498,12 +506,36 @@ export interface components {
             top_ask: number;
             /** Top Bid */
             top_bid: number;
+            /** Tradeable Size */
+            tradeable_size: number;
+            /** Verified Apr Pct */
+            verified_apr_pct: number | null;
+            /** Verified Buy Limit */
+            verified_buy_limit: number | null;
+            /** Verified Buy Premium Usd */
+            verified_buy_premium_usd: number | null;
+            /** Verified Capital Required Usd */
+            verified_capital_required_usd: number | null;
+            /** Verified Estimated Short Margin Usd */
+            verified_estimated_short_margin_usd: number | null;
+            /** Verified Fees Usd */
+            verified_fees_usd: number | null;
+            /** Verified Gross Profit Usd */
+            verified_gross_profit_usd: number | null;
+            /** Verified Net Profit Usd */
+            verified_net_profit_usd: number | null;
+            /** Verified Net Return Pct */
+            verified_net_return_pct: number | null;
+            /** Verified Sell Limit */
+            verified_sell_limit: number | null;
+            /** Verified Sell Premium Usd */
+            verified_sell_premium_usd: number | null;
+            /** Verified Tradeable Size */
+            verified_tradeable_size: number | null;
             /** Walked Ask */
             walked_ask: number | null;
             /** Walked Bid */
             walked_bid: number | null;
-            /** Walked Size */
-            walked_size: number | null;
         };
         /** OpportunityStatsResponse */
         OpportunityStatsResponse: {
@@ -658,34 +690,44 @@ export interface components {
             apr_pct: number | null;
             /** Buy Exchange */
             buy_exchange: string | null;
+            /** Buy Premium Usd */
+            buy_premium_usd: number | null;
+            /** Capital Required Usd */
+            capital_required_usd: number | null;
             /** Days To Expiry */
             days_to_expiry: number;
+            /** Estimated Short Margin Usd */
+            estimated_short_margin_usd: number | null;
             /** Exchanges */
             exchanges: {
                 [key: string]: components["schemas"]["TickerExchangeResponse"];
             };
             expiry: components["schemas"]["IsoDatetime"];
-            /** Gross Spread Pct */
-            gross_spread_pct: number | null;
+            /** Fees Usd */
+            fees_usd: number | null;
+            /** Gross Profit Usd */
+            gross_profit_usd: number | null;
             /** Instrument */
             instrument: string;
-            /** Max Notional Usd */
-            max_notional_usd: number | null;
-            /** Max Profit Usd */
-            max_profit_usd: number | null;
-            /** Net Spread Pct */
-            net_spread_pct: number | null;
+            /** Net Profit Usd */
+            net_profit_usd: number | null;
+            /** Net Return Pct */
+            net_return_pct: number | null;
             /**
              * Option Type
              * @enum {string}
              */
             option_type: "C" | "P";
-            /** Sell Collateral Usd */
-            sell_collateral_usd: number | null;
+            /** Price Spread Pct */
+            price_spread_pct: number | null;
             /** Sell Exchange */
             sell_exchange: string | null;
+            /** Sell Premium Usd */
+            sell_premium_usd: number | null;
             /** Strike */
             strike: number;
+            /** Tradeable Size */
+            tradeable_size: number | null;
             /** Underlying */
             underlying: string;
             updated_at: components["schemas"]["IsoDatetime"];
@@ -945,7 +987,7 @@ export interface operations {
                 sell_to?: string | null;
                 days?: number | null;
                 network?: components["schemas"]["Network"] | null;
-                sort_by?: "detected_at" | "apr_pct" | "spread_pct" | "net_profit_usd" | "max_notional_usd" | "fees_usd";
+                sort_by?: "detected_at" | "apr_pct" | "net_return_pct" | "net_profit_usd" | "buy_premium_usd" | "fees_usd";
                 sort_dir?: "asc" | "desc";
                 limit?: number;
                 offset?: number;

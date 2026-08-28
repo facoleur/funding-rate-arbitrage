@@ -115,6 +115,14 @@
       "ExecutorConfigResponse": {
         "additionalProperties": false,
         "properties": {
+          "ioc_slippage_limit_pct": {
+            "title": "Ioc Slippage Limit Pct",
+            "type": "number"
+          },
+          "max_buy_premium_per_trade_usd": {
+            "title": "Max Buy Premium Per Trade Usd",
+            "type": "number"
+          },
           "max_daily_loss_usd": {
             "title": "Max Daily Loss Usd",
             "type": "number"
@@ -122,10 +130,6 @@
           "max_days_to_expiry": {
             "title": "Max Days To Expiry",
             "type": "integer"
-          },
-          "max_notional_per_trade_usd": {
-            "title": "Max Notional Per Trade Usd",
-            "type": "number"
           },
           "max_positions_open": {
             "title": "Max Positions Open",
@@ -135,16 +139,20 @@
             "title": "Min Apr Pct",
             "type": "number"
           },
+          "min_buy_premium_usd": {
+            "title": "Min Buy Premium Usd",
+            "type": "number"
+          },
+          "min_leg_premium_liquidity_usd": {
+            "title": "Min Leg Premium Liquidity Usd",
+            "type": "number"
+          },
           "min_net_profit_usd": {
             "title": "Min Net Profit Usd",
             "type": "number"
           },
-          "min_net_spread_pct": {
-            "title": "Min Net Spread Pct",
-            "type": "number"
-          },
-          "min_notional_usd": {
-            "title": "Min Notional Usd",
+          "min_net_return_pct": {
+            "title": "Min Net Return Pct",
             "type": "number"
           },
           "mode": {
@@ -154,11 +162,13 @@
         "required": [
           "mode",
           "min_apr_pct",
-          "min_notional_usd",
+          "min_buy_premium_usd",
+          "min_leg_premium_liquidity_usd",
           "max_days_to_expiry",
           "min_net_profit_usd",
-          "min_net_spread_pct",
-          "max_notional_per_trade_usd",
+          "min_net_return_pct",
+          "max_buy_premium_per_trade_usd",
+          "ioc_slippage_limit_pct",
           "max_positions_open",
           "max_daily_loss_usd"
         ],
@@ -317,8 +327,12 @@
             "title": "Buy From",
             "type": "string"
           },
-          "capital_deployed_usd": {
-            "title": "Capital Deployed Usd",
+          "buy_premium_usd": {
+            "title": "Buy Premium Usd",
+            "type": "number"
+          },
+          "capital_required_usd": {
+            "title": "Capital Required Usd",
             "type": "number"
           },
           "days_to_expiry": {
@@ -328,12 +342,12 @@
           "detected_at": {
             "$ref": "#/components/schemas/IsoDatetime"
           },
+          "estimated_short_margin_usd": {
+            "title": "Estimated Short Margin Usd",
+            "type": "number"
+          },
           "expiry": {
             "$ref": "#/components/schemas/IsoDatetime"
-          },
-          "fee_pct": {
-            "title": "Fee Pct",
-            "type": "number"
           },
           "fees_usd": {
             "title": "Fees Usd",
@@ -351,15 +365,15 @@
             "title": "Instrument",
             "type": "string"
           },
-          "max_notional_usd": {
-            "title": "Max Notional Usd",
-            "type": "number"
-          },
           "mode": {
             "$ref": "#/components/schemas/Mode"
           },
           "net_profit_usd": {
             "title": "Net Profit Usd",
+            "type": "number"
+          },
+          "net_return_pct": {
+            "title": "Net Return Pct",
             "type": "number"
           },
           "network": {
@@ -373,6 +387,10 @@
             "title": "Option Type",
             "type": "string"
           },
+          "price_spread_pct": {
+            "title": "Price Spread Pct",
+            "type": "number"
+          },
           "rejection_reason": {
             "anyOf": [
               {
@@ -384,13 +402,13 @@
             ],
             "title": "Rejection Reason"
           },
+          "sell_premium_usd": {
+            "title": "Sell Premium Usd",
+            "type": "number"
+          },
           "sell_to": {
             "title": "Sell To",
             "type": "string"
-          },
-          "spread_pct": {
-            "title": "Spread Pct",
-            "type": "number"
           },
           "status": {
             "$ref": "#/components/schemas/OpportunityStatus"
@@ -410,6 +428,142 @@
           "top_bid": {
             "title": "Top Bid",
             "type": "number"
+          },
+          "tradeable_size": {
+            "title": "Tradeable Size",
+            "type": "number"
+          },
+          "verified_apr_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified Apr Pct"
+          },
+          "verified_buy_limit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified Buy Limit"
+          },
+          "verified_buy_premium_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified Buy Premium Usd"
+          },
+          "verified_capital_required_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified Capital Required Usd"
+          },
+          "verified_estimated_short_margin_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified Estimated Short Margin Usd"
+          },
+          "verified_fees_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified Fees Usd"
+          },
+          "verified_gross_profit_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified Gross Profit Usd"
+          },
+          "verified_net_profit_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified Net Profit Usd"
+          },
+          "verified_net_return_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified Net Return Pct"
+          },
+          "verified_sell_limit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified Sell Limit"
+          },
+          "verified_sell_premium_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified Sell Premium Usd"
+          },
+          "verified_tradeable_size": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified Tradeable Size"
           },
           "walked_ask": {
             "anyOf": [
@@ -432,17 +586,6 @@
               }
             ],
             "title": "Walked Bid"
-          },
-          "walked_size": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Walked Size"
           }
         },
         "required": [
@@ -462,15 +605,29 @@
           "top_bid",
           "walked_ask",
           "walked_bid",
-          "walked_size",
-          "spread_pct",
-          "fee_pct",
-          "apr_pct",
-          "max_notional_usd",
-          "capital_deployed_usd",
-          "net_profit_usd",
-          "fees_usd",
+          "tradeable_size",
+          "buy_premium_usd",
+          "sell_premium_usd",
+          "estimated_short_margin_usd",
+          "capital_required_usd",
           "gross_profit_usd",
+          "fees_usd",
+          "net_profit_usd",
+          "price_spread_pct",
+          "net_return_pct",
+          "apr_pct",
+          "verified_buy_limit",
+          "verified_sell_limit",
+          "verified_tradeable_size",
+          "verified_buy_premium_usd",
+          "verified_sell_premium_usd",
+          "verified_estimated_short_margin_usd",
+          "verified_capital_required_usd",
+          "verified_gross_profit_usd",
+          "verified_fees_usd",
+          "verified_net_profit_usd",
+          "verified_net_return_pct",
+          "verified_apr_pct",
           "status",
           "rejection_reason"
         ],
@@ -964,9 +1121,42 @@
             ],
             "title": "Buy Exchange"
           },
+          "buy_premium_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Buy Premium Usd"
+          },
+          "capital_required_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capital Required Usd"
+          },
           "days_to_expiry": {
             "title": "Days To Expiry",
             "type": "number"
+          },
+          "estimated_short_margin_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Short Margin Usd"
           },
           "exchanges": {
             "additionalProperties": {
@@ -978,7 +1168,7 @@
           "expiry": {
             "$ref": "#/components/schemas/IsoDatetime"
           },
-          "gross_spread_pct": {
+          "fees_usd": {
             "anyOf": [
               {
                 "type": "number"
@@ -987,13 +1177,24 @@
                 "type": "null"
               }
             ],
-            "title": "Gross Spread Pct"
+            "title": "Fees Usd"
+          },
+          "gross_profit_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gross Profit Usd"
           },
           "instrument": {
             "title": "Instrument",
             "type": "string"
           },
-          "max_notional_usd": {
+          "net_profit_usd": {
             "anyOf": [
               {
                 "type": "number"
@@ -1002,9 +1203,9 @@
                 "type": "null"
               }
             ],
-            "title": "Max Notional Usd"
+            "title": "Net Profit Usd"
           },
-          "max_profit_usd": {
+          "net_return_pct": {
             "anyOf": [
               {
                 "type": "number"
@@ -1013,18 +1214,7 @@
                 "type": "null"
               }
             ],
-            "title": "Max Profit Usd"
-          },
-          "net_spread_pct": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Net Spread Pct"
+            "title": "Net Return Pct"
           },
           "option_type": {
             "enum": [
@@ -1034,7 +1224,7 @@
             "title": "Option Type",
             "type": "string"
           },
-          "sell_collateral_usd": {
+          "price_spread_pct": {
             "anyOf": [
               {
                 "type": "number"
@@ -1043,7 +1233,7 @@
                 "type": "null"
               }
             ],
-            "title": "Sell Collateral Usd"
+            "title": "Price Spread Pct"
           },
           "sell_exchange": {
             "anyOf": [
@@ -1056,9 +1246,31 @@
             ],
             "title": "Sell Exchange"
           },
+          "sell_premium_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sell Premium Usd"
+          },
           "strike": {
             "title": "Strike",
             "type": "number"
+          },
+          "tradeable_size": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tradeable Size"
           },
           "underlying": {
             "title": "Underlying",
@@ -1076,14 +1288,19 @@
           "strike",
           "option_type",
           "exchanges",
-          "gross_spread_pct",
-          "net_spread_pct",
-          "apr_pct",
+          "price_spread_pct",
           "buy_exchange",
           "sell_exchange",
-          "max_notional_usd",
-          "max_profit_usd",
-          "sell_collateral_usd",
+          "tradeable_size",
+          "buy_premium_usd",
+          "sell_premium_usd",
+          "estimated_short_margin_usd",
+          "capital_required_usd",
+          "gross_profit_usd",
+          "fees_usd",
+          "net_profit_usd",
+          "net_return_pct",
+          "apr_pct",
           "updated_at"
         ],
         "title": "TickerResponse",
@@ -1827,9 +2044,9 @@
               "enum": [
                 "detected_at",
                 "apr_pct",
-                "spread_pct",
+                "net_return_pct",
                 "net_profit_usd",
-                "max_notional_usd",
+                "buy_premium_usd",
                 "fees_usd"
               ],
               "title": "Sort By",

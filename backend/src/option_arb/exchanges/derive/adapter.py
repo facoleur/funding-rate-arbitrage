@@ -142,6 +142,7 @@ class DeriveExchange(AbstractExchange):
             ts=datetime.now(tz=UTC),
             bids=bids,
             asks=asks,
+            underlying_price=_positive_decimal(r.get("index_price") or r.get("underlying_price")),
         )
 
     def ws_channels(self, instruments: list[Instrument]) -> list[str]:
@@ -322,3 +323,10 @@ class DeriveExchange(AbstractExchange):
             return list(result)
         except Exception:
             return []
+
+
+def _positive_decimal(value: object) -> Decimal | None:
+    if value is None:
+        return None
+    result = Decimal(str(value))
+    return result if result.is_finite() and result > 0 else None

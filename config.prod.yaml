@@ -7,19 +7,20 @@ screener:
 
 thresholds:
   min_apr_pct: 5
-  min_notional_usd: 20
-  size_threshold_usd: 100
+  min_buy_premium_usd: 20
+  min_leg_premium_liquidity_usd: 100
+  max_days_to_expiry: 60
+  min_net_profit_usd: 3
+  min_net_return_pct: 0.3
 
 executor:
   mode: live
-  order_type: ioc_limit
-  max_slippage_pct: 2
-  walk_book: true
+  ioc_slippage_limit_pct: 2
   poll_interval_ms: 200
   fresh_fetch_timeout_ms: 500
 
 limits:
-  max_notional_per_trade_usd: 40
+  max_buy_premium_per_trade_usd: 40
   max_positions_open: 3
   max_daily_loss_usd: 15
   kill_switch_file: /data/EXECUTOR_DISABLED
@@ -33,30 +34,27 @@ exchanges:
   deribit:
     network: mainnet
     rest_rate_limit_per_sec: 20
-    ws_max_subscriptions: 500
     rest_base_url: https://www.deribit.com/api/v2
     ws_url: wss://www.deribit.com/ws/api/v2
 
   deribit_linear:
     network: mainnet
     rest_rate_limit_per_sec: 20
-    ws_max_subscriptions: 500
     rest_base_url: https://www.deribit.com/api/v2
     ws_url: wss://www.deribit.com/ws/api/v2
 
   derive:
     network: mainnet
     rest_rate_limit_per_sec: 20
-    ws_max_subscriptions: 200
     rest_base_url: https://api.lyra.finance
     ws_url: wss://api.lyra.finance/ws
 
   aevo:
     network: mainnet
     rest_rate_limit_per_sec: 10
-    ws_max_subscriptions: 100
     rest_base_url: https://api.aevo.xyz
     ws_url: wss://ws.aevo.xyz
+    trade_enabled: false
 
 alerts:
   telegram:

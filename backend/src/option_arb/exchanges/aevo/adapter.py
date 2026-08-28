@@ -89,6 +89,7 @@ class AevoExchange(AbstractExchange):
             ts=datetime.now(tz=UTC),
             bids=bids,
             asks=asks,
+            underlying_price=Decimal(str(data["index_price"])) if data.get("index_price") else None,
         )
 
     def ws_channels(self, instruments: list[Instrument]) -> list[str]:

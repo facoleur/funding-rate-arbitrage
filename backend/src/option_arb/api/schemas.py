@@ -31,9 +31,9 @@ type IsoDatetime = Annotated[
 type OpportunitySortBy = Literal[
     "detected_at",
     "apr_pct",
-    "spread_pct",
+    "net_return_pct",
     "net_profit_usd",
-    "max_notional_usd",
+    "buy_premium_usd",
     "fees_usd",
 ]
 type SortDirection = Literal["asc", "desc"]
@@ -94,15 +94,29 @@ class OpportunityResponse(ApiResponse):
     top_bid: float
     walked_ask: float | None
     walked_bid: float | None
-    walked_size: float | None
-    spread_pct: float
-    fee_pct: float
-    apr_pct: float
-    max_notional_usd: float
-    capital_deployed_usd: float
-    net_profit_usd: float
-    fees_usd: float
+    tradeable_size: float
+    buy_premium_usd: float
+    sell_premium_usd: float
+    estimated_short_margin_usd: float
+    capital_required_usd: float
     gross_profit_usd: float
+    fees_usd: float
+    net_profit_usd: float
+    price_spread_pct: float
+    net_return_pct: float
+    apr_pct: float
+    verified_buy_limit: float | None
+    verified_sell_limit: float | None
+    verified_tradeable_size: float | None
+    verified_buy_premium_usd: float | None
+    verified_sell_premium_usd: float | None
+    verified_estimated_short_margin_usd: float | None
+    verified_capital_required_usd: float | None
+    verified_gross_profit_usd: float | None
+    verified_fees_usd: float | None
+    verified_net_profit_usd: float | None
+    verified_net_return_pct: float | None
+    verified_apr_pct: float | None
     status: OpportunityStatus
     rejection_reason: str | None
 
@@ -169,11 +183,13 @@ class ExchangeStateResponse(ApiResponse):
 class ExecutorConfigResponse(ApiResponse):
     mode: Mode
     min_apr_pct: float
-    min_notional_usd: float
+    min_buy_premium_usd: float
+    min_leg_premium_liquidity_usd: float
     max_days_to_expiry: int
     min_net_profit_usd: float
-    min_net_spread_pct: float
-    max_notional_per_trade_usd: float
+    min_net_return_pct: float
+    max_buy_premium_per_trade_usd: float
+    ioc_slippage_limit_pct: float
     max_positions_open: int
     max_daily_loss_usd: float
 
@@ -238,14 +254,19 @@ class TickerResponse(ApiResponse):
     strike: float
     option_type: Literal["C", "P"]
     exchanges: dict[str, TickerExchangeResponse]
-    gross_spread_pct: float | None
-    net_spread_pct: float | None
-    apr_pct: float | None
+    price_spread_pct: float | None
     buy_exchange: str | None
     sell_exchange: str | None
-    max_notional_usd: float | None
-    max_profit_usd: float | None
-    sell_collateral_usd: float | None
+    tradeable_size: float | None
+    buy_premium_usd: float | None
+    sell_premium_usd: float | None
+    estimated_short_margin_usd: float | None
+    capital_required_usd: float | None
+    gross_profit_usd: float | None
+    fees_usd: float | None
+    net_profit_usd: float | None
+    net_return_pct: float | None
+    apr_pct: float | None
     updated_at: IsoDatetime
 
 

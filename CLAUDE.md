@@ -105,8 +105,9 @@ Real exchanges (Derive, Deribit, Aevo)
 
 - **Normalized instrument name** `{UNDERLYING}-{YYYYMMDD}-{STRIKE}-{C|P}` — every adapter emits this; cross-exchange matching depends on it.
 - **Deribit prices** are in underlying units — adapter multiplies by `underlying_price` to convert to USD.
-- **Fees** applied as `taker_fee_rate` (fraction) on both legs.
-- `apr = (net_spread_pct / days_to_expiry) * 365`
+- **Fees** are charged on both leg premiums at their respective taker fee rates.
+- `capital_required = estimated_short_margin + buy_premium`; sell premium does not offset capital.
+- `apr_pct = (net_profit / capital_required × 100) × 365 / days_to_expiry`.
 - Every opportunity / trade tagged `mode ∈ {live, paper, backtest}` — same code path, different exchange adapter.
 
 ## Authentication per exchange

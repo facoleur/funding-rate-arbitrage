@@ -120,7 +120,11 @@ class MockExchange(AbstractExchange):
 
 
 def make_book(
-    exchange: str, instrument: str, bids: list[tuple[str, str]], asks: list[tuple[str, str]]
+    exchange: str,
+    instrument: str,
+    bids: list[tuple[str, str]],
+    asks: list[tuple[str, str]],
+    underlying_price: str | None = None,
 ) -> Book:
     """Helper for tests / manual replay."""
     return Book(
@@ -129,4 +133,5 @@ def make_book(
         ts=datetime.now(UTC),
         bids=[BookLevel(price=Decimal(p), size=Decimal(s)) for p, s in bids],
         asks=[BookLevel(price=Decimal(p), size=Decimal(s)) for p, s in asks],
+        underlying_price=Decimal(underlying_price) if underlying_price else None,
     )

@@ -56,6 +56,9 @@ def _snap_to_book(snap: dict[str, Any]) -> Book:
         ts=datetime.fromisoformat(snap["ts"]),
         bids=[BookLevel(price=Decimal(p), size=Decimal(s)) for p, s in snap["bids"]],
         asks=[BookLevel(price=Decimal(p), size=Decimal(s)) for p, s in snap["asks"]],
+        underlying_price=Decimal(str(snap["underlying_price"]))
+        if snap.get("underlying_price")
+        else None,
     )
 
 
@@ -125,6 +128,7 @@ async def backtest(file: Path) -> Report:
                 bid_size=top_bid.size if top_bid else None,
                 ask_price=top_ask.price if top_ask else None,
                 ask_size=top_ask.size if top_ask else None,
+                underlying_price=book.underlying_price,
             )
         )
         await screener._tick()

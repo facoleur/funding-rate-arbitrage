@@ -90,16 +90,34 @@ class Opportunity(SQLModel, table=True):
 
     walked_ask: float | None = None
     walked_bid: float | None = None
-    walked_size: float | None = None
 
     network: str = "mainnet"  # "mainnet" | "testnet"
 
-    spread_pct: float  # net of fees, as % of capital_deployed (per contract)
-    fee_pct: float = 0.0  # fees as % of capital_deployed (per contract)
+    tradeable_size: float
+    buy_premium_usd: float
+    sell_premium_usd: float
+    estimated_short_margin_usd: float
+    capital_required_usd: float
+    gross_profit_usd: float
+    fees_usd: float
+    net_profit_usd: float
+    price_spread_pct: float
+    net_return_pct: float
     apr_pct: float
-    max_notional_usd: float
-    capital_deployed_usd: float = 0.0  # capital per contract (buy premium + net sell margin)
-    net_profit_usd: float = 0.0  # total absolute profit = per_unit x qty_traded
+
+    # Fresh executor approval uses worst IOC limits, separate from screener economics.
+    verified_buy_limit: float | None = None
+    verified_sell_limit: float | None = None
+    verified_tradeable_size: float | None = None
+    verified_buy_premium_usd: float | None = None
+    verified_sell_premium_usd: float | None = None
+    verified_estimated_short_margin_usd: float | None = None
+    verified_capital_required_usd: float | None = None
+    verified_gross_profit_usd: float | None = None
+    verified_fees_usd: float | None = None
+    verified_net_profit_usd: float | None = None
+    verified_net_return_pct: float | None = None
+    verified_apr_pct: float | None = None
 
     status: OpportunityStatus = Field(default=OpportunityStatus.PENDING, index=True)
     rejection_reason: str | None = None
@@ -237,5 +255,6 @@ class BookSnapshot(SQLModel, table=True):
     ts: datetime = Field(
         sa_column=sa.Column(sa.DateTime(timezone=True), nullable=False, index=True)
     )
+    underlying_price: float | None = None
     bids_json: str
     asks_json: str

@@ -20,7 +20,7 @@ function fmtAge(iso: string) {
 // ─── Sorting ─────────────────────────────────────────────────────────────────
 
 type SortDir = 'asc' | 'desc'
-const SORTABLE = ['expiry', 'strike', 'gross', 'net', 'apr', 'notional', 'profit', 'age'] as const
+const SORTABLE = ['expiry', 'strike', 'priceSpread', 'buyPremium', 'margin', 'capital', 'netReturn', 'profit', 'apr', 'age'] as const
 type SortCol = typeof SORTABLE[number]
 
 function isSortCol(s: string | null): s is SortCol {
@@ -40,11 +40,13 @@ function sortRows(rows: BookRow[], col: SortCol | null, dir: SortDir): BookRow[]
     switch (col) {
       case 'expiry': av = new Date(a.expiry).getTime(); bv = new Date(b.expiry).getTime(); break
       case 'strike': av = a.strike; bv = b.strike; break
-      case 'gross':  av = a.gross_spread_pct ?? -Infinity; bv = b.gross_spread_pct ?? -Infinity; break
-      case 'net':    av = a.net_spread_pct ?? -Infinity; bv = b.net_spread_pct ?? -Infinity; break
+      case 'priceSpread': av = a.price_spread_pct ?? -Infinity; bv = b.price_spread_pct ?? -Infinity; break
+      case 'buyPremium': av = a.buy_premium_usd ?? -Infinity; bv = b.buy_premium_usd ?? -Infinity; break
+      case 'margin': av = a.estimated_short_margin_usd ?? -Infinity; bv = b.estimated_short_margin_usd ?? -Infinity; break
+      case 'capital': av = a.capital_required_usd ?? -Infinity; bv = b.capital_required_usd ?? -Infinity; break
+      case 'netReturn': av = a.net_return_pct ?? -Infinity; bv = b.net_return_pct ?? -Infinity; break
       case 'apr':    av = a.apr_pct ?? -Infinity; bv = b.apr_pct ?? -Infinity; break
-      case 'notional': av = a.max_notional_usd ?? -Infinity; bv = b.max_notional_usd ?? -Infinity; break
-      case 'profit': av = a.max_profit_usd ?? -Infinity; bv = b.max_profit_usd ?? -Infinity; break
+      case 'profit': av = a.net_profit_usd ?? -Infinity; bv = b.net_profit_usd ?? -Infinity; break
       case 'age':    av = new Date(a.updated_at).getTime(); bv = new Date(b.updated_at).getTime(); break
     }
     return (av! < bv! ? -1 : av! > bv! ? 1 : 0) * sign
@@ -79,26 +81,24 @@ function ExLink({ href, ex }: { href: string; ex: string }) {
   )
 }
 
-function computeLegAmounts(row: BookRow) {
-  if (!row.buy_exchange || !row.sell_exchange) return { buyAmt: null, sellAmt: null }
-  const bq = row.exchanges[row.buy_exchange]
-  if (!bq?.ask_price || !bq?.ask_size) return { buyAmt: null, sellAmt: null }
-  const sq = row.exchanges[row.sell_exchange]
-  if (!sq?.bid_size) return { buyAmt: null, sellAmt: null }
-  const size = Math.min(bq.ask_size, sq.bid_size)
-  return { buyAmt: size * bq.ask_price, sellAmt: row.sell_collateral_usd ?? null }
-}
-
 // ─── Exec criteria ───────────────────────────────────────────────────────────
 
-type Thresholds = { max_days_to_expiry: number; min_net_spread_pct: number; min_net_profit_usd: number }
+type Thresholds = {
+  max_days_to_expiry: number
+  min_apr_pct: number
+  min_buy_premium_usd: number
+  min_net_return_pct: number
+  min_net_profit_usd: number
+}
 
 function meetsExecCriteria(row: BookRow, thresholds: Thresholds | undefined): boolean {
   if (!thresholds) return true
-  if (!row.net_spread_pct || row.net_spread_pct <= 0) return false
+  if (row.net_return_pct === null || row.apr_pct === null || row.buy_premium_usd === null || row.net_profit_usd === null) return false
   if (row.days_to_expiry > thresholds.max_days_to_expiry) return false
-  if (row.net_spread_pct < thresholds.min_net_spread_pct) return false
-  if (row.max_profit_usd !== null && row.max_profit_usd < thresholds.min_net_profit_usd) return false
+  if (row.apr_pct < thresholds.min_apr_pct) return false
+  if (row.buy_premium_usd < thresholds.min_buy_premium_usd) return false
+  if (row.net_return_pct < thresholds.min_net_return_pct) return false
+  if (row.net_profit_usd < thresholds.min_net_profit_usd) return false
   return true
 }
 
@@ -172,7 +172,7 @@ export default function Book() {
   const filtered = useMemo(() =>
     data
       .filter(r => !f.optionType || r.option_type === f.optionType)
-      .filter(r => !f.onlyArb   || (r.net_spread_pct !== null && r.net_spread_pct > 0))
+      .filter(r => !f.onlyArb   || (r.net_return_pct !== null && r.net_return_pct > 0))
       .filter(r => !f.exchange  || f.exchange in r.exchanges)
       .filter(r => !f.maxExpiry || r.expiry.slice(0, 10) <= f.maxExpiry),
     [data, f.optionType, f.onlyArb, f.exchange, f.maxExpiry],
@@ -181,7 +181,7 @@ export default function Book() {
   const rows = useMemo(() => sortRows(filtered, sortCol, sortDir), [filtered, sortCol, sortDir])
 
   function handleSort(col: SortCol) {
-    const desc = sortCol === col ? sortDir === 'asc' : !['net', 'gross', 'profit', 'notional'].includes(col)
+    const desc = sortCol === col ? sortDir === 'asc' : !['priceSpread', 'netReturn', 'profit', 'buyPremium', 'margin', 'capital'].includes(col)
     f.onSortingChange([{ id: col, desc }])
   }
 
@@ -259,14 +259,14 @@ export default function Book() {
                 {allExchanges.map(ex => (
                   <th key={ex} className="pb-2 pr-3" colSpan={2}>{ex}</th>
                 ))}
-                {th('gross', 'Gross%')}
-                {th('net', 'Net%')}
-                {th('apr', 'APR%')}
-                {th('notional', 'Cap.$')}
-                {th('profit', 'Profit$')}
+                {th('priceSpread', 'Price spread %')}
+                {th('buyPremium', 'Buy premium')}
+                {th('margin', 'Est. margin')}
+                {th('capital', 'Capital')}
+                {th('netReturn', 'Net return %')}
+                {th('profit', 'Net profit')}
+                {th('apr', 'APR %')}
                 <th className="pb-2 pr-3">Arb</th>
-                <th className="pb-2 pr-3 text-sky-500/70">Buy$</th>
-                <th className="pb-2 pr-3 text-emerald-500/70" title="Collatéral requis pour la jambe vente (formule marge initiale ≈ max(10%, 15%-OTM%) × S × size)">Margin$</th>
                 {th('age', 'Age')}
               </tr>
               <tr className="border-b border-zinc-800/40 text-center text-zinc-600">
@@ -278,16 +278,15 @@ export default function Book() {
                     <span>ask</span>
                   </th>
                 ))}
-                <th colSpan={8} />
+                <th colSpan={9} />
               </tr>
             </thead>
             <tbody>
               {rows.map(row => {
-                const hasArb  = row.net_spread_pct !== null && row.net_spread_pct > 0
-                const hasGross = row.gross_spread_pct !== null && row.gross_spread_pct > 0
+                const hasArb  = row.net_return_pct !== null && row.net_return_pct > 0
+                const hasGross = row.price_spread_pct !== null && row.price_spread_pct > 0
                 const dUrl = deribitUrl(row.instrument, row.underlying)
                 const avUrl = aevoUrl(row.instrument)
-                const { buyAmt, sellAmt } = computeLegAmounts(row)
                 const eligible = meetsExecCriteria(row, thresholds)
 
                 return (
@@ -322,30 +321,30 @@ export default function Book() {
                       )
                     })}
                     <td className={`py-1 pr-3 text-right ${hasGross ? 'text-zinc-300' : 'text-zinc-500'}`}>
-                      {row.gross_spread_pct != null ? `${row.gross_spread_pct.toFixed(2)}%` : '—'}
+                      {row.price_spread_pct != null ? `${row.price_spread_pct.toFixed(2)}%` : '—'}
+                    </td>
+                    <td className={`py-1 pr-3 text-right ${hasArb ? 'text-sky-300' : 'text-zinc-600'}`}>
+                      {row.buy_premium_usd != null ? `$${row.buy_premium_usd.toFixed(2)}` : '—'}
+                    </td>
+                    <td className={`py-1 pr-3 text-right ${hasArb ? 'text-zinc-300' : 'text-zinc-600'}`}>
+                      {row.estimated_short_margin_usd != null ? `$${row.estimated_short_margin_usd.toFixed(2)}` : '—'}
+                    </td>
+                    <td className={`py-1 pr-3 text-right ${hasArb ? 'text-zinc-300' : 'text-zinc-600'}`}>
+                      {row.capital_required_usd != null ? `$${row.capital_required_usd.toFixed(2)}` : '—'}
                     </td>
                     <td className={`py-1 pr-3 text-right font-medium ${hasArb ? 'text-emerald-400' : 'text-zinc-500'}`}>
-                      {row.net_spread_pct != null ? `${row.net_spread_pct.toFixed(2)}%` : '—'}
+                      {row.net_return_pct != null ? `${row.net_return_pct.toFixed(2)}%` : '—'}
+                    </td>
+                    <td className={`py-1 pr-3 text-right font-medium ${hasArb ? 'text-emerald-300' : 'text-zinc-500'}`}>
+                      {row.net_profit_usd != null ? `$${row.net_profit_usd.toFixed(2)}` : '—'}
                     </td>
                     <td className={`py-1 pr-3 text-right font-medium ${hasArb ? 'text-emerald-300' : 'text-zinc-500'}`}>
                       {row.apr_pct != null ? `${row.apr_pct.toFixed(1)}%` : '—'}
-                    </td>
-                    <td className={`py-1 pr-3 text-right ${hasArb ? 'text-zinc-300' : 'text-zinc-600'}`}>
-                      {row.max_notional_usd != null ? `$${row.max_notional_usd.toFixed(2)}` : '—'}
-                    </td>
-                    <td className={`py-1 pr-3 text-right font-medium ${hasArb ? 'text-emerald-300' : 'text-zinc-500'}`}>
-                      {row.max_profit_usd != null ? `$${row.max_profit_usd.toFixed(2)}` : '—'}
                     </td>
                     <td className="py-1 pr-3 text-xs">
                       {hasArb
                         ? <span className="text-emerald-400">{row.buy_exchange} → {row.sell_exchange}</span>
                         : <span className="text-zinc-600">—</span>}
-                    </td>
-                    <td className={`py-1 pr-3 text-right ${hasArb ? 'text-sky-300' : 'text-zinc-600'}`}>
-                      {buyAmt != null ? `$${buyAmt.toFixed(2)}` : '—'}
-                    </td>
-                    <td className={`py-1 pr-3 text-right ${hasArb ? 'text-emerald-300' : 'text-zinc-600'}`}>
-                      {sellAmt != null ? `$${sellAmt.toFixed(2)}` : '—'}
                     </td>
                     <td className="py-1 pr-3 text-zinc-500">{fmtAge(row.updated_at)}</td>
                   </tr>

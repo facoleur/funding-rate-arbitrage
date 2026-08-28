@@ -133,6 +133,7 @@ class DeribitExchange(AbstractExchange):
                 BookLevel(price=Decimal(str(p)) * multiplier, size=Decimal(str(s)))
                 for p, s in ticker["asks"]
             ],
+            underlying_price=underlying_px,
         )
 
     def ws_channels(self, instruments: list[Instrument]) -> list[str]:

@@ -8,20 +8,20 @@ screener:
 
 thresholds:
   min_apr_pct: 0.1
-  min_notional_usd: 10
-  size_threshold_usd: 50
+  min_buy_premium_usd: 10
+  min_leg_premium_liquidity_usd: 50
   max_days_to_expiry: 60    # ignorer les options > 2 mois (liquidité faible, spread peu fiable)
   min_net_profit_usd: 3.0   # profit net minimum pour couvrir les frais fixes
-  min_net_spread_pct: 0.3   # spread net minimum (éviter les arbs bruit)
+  min_net_return_pct: 0.3   # rendement net minimum sur le capital requis
 
 executor:
   mode: paper
-  max_slippage_pct: 2
+  ioc_slippage_limit_pct: 2
   poll_interval_ms: 200
   fresh_fetch_timeout_ms: 500
 
 limits:
-  max_notional_per_trade_usd: 50
+  max_buy_premium_per_trade_usd: 50
   max_contracts_per_trade: 1.0  # max 1 ETH ou 0.1 BTC par trade
   max_positions_open: 10
   max_daily_loss_usd: 40

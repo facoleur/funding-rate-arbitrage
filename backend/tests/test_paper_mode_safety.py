@@ -125,7 +125,6 @@ async def test_build_exchanges_wraps_all_in_mock_when_paper() -> None:
     cfg.exchanges["deribit"] = ExchangeConfig(
         network="testnet",
         rest_rate_limit_per_sec=20,
-        ws_max_subscriptions=500,
         rest_base_url="https://test.deribit.com/api/v2",
         ws_url="wss://test.deribit.com/ws/api/v2",
     )
@@ -144,7 +143,6 @@ async def test_build_exchanges_does_not_wrap_when_live() -> None:
     cfg.exchanges["deribit"] = ExchangeConfig(
         network="testnet",
         rest_rate_limit_per_sec=20,
-        ws_max_subscriptions=500,
         rest_base_url="https://test.deribit.com/api/v2",
         ws_url="wss://test.deribit.com/ws/api/v2",
     )

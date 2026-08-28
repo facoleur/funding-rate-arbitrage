@@ -112,12 +112,24 @@ export default function Executor() {
               <span className="text-zinc-200">{config.min_apr_pct}%</span>
             </div>
             <div className="flex justify-between">
-              <span>Notional min</span>
-              <span className="text-zinc-200">${config.min_notional_usd}</span>
+              <span>Rendement net min</span>
+              <span className="text-zinc-200">{config.min_net_return_pct}%</span>
             </div>
             <div className="flex justify-between">
-              <span>Notional max / trade</span>
-              <span className="text-zinc-200">${config.max_notional_per_trade_usd}</span>
+              <span>Profit net min</span>
+              <span className="text-zinc-200">${config.min_net_profit_usd}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Prime achat min</span>
+              <span className="text-zinc-200">${config.min_buy_premium_usd}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Prime achat max / trade</span>
+              <span className="text-zinc-200">${config.max_buy_premium_per_trade_usd}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Slippage IOC max</span>
+              <span className="text-zinc-200">{config.ioc_slippage_limit_pct}%</span>
             </div>
             <div className="flex justify-between">
               <span>Max positions</span>

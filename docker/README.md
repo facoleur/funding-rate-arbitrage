@@ -73,7 +73,7 @@ executor:
   mode: live
 
 limits:
-  max_notional_per_trade_usd: 40
+  max_buy_premium_per_trade_usd: 40
   max_positions_open: 3
   max_daily_loss_usd: 15
 ```

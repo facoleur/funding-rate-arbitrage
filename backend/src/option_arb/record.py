@@ -63,6 +63,7 @@ def _book_to_dict(inst: Instrument, book: Book) -> dict[str, Any]:
         "exchange": inst.exchange,
         "instrument": inst.normalized_name,
         "ts": book.ts.isoformat(),
+        "underlying_price": str(book.underlying_price) if book.underlying_price else None,
         "bids": [[str(lvl.price), str(lvl.size)] for lvl in book.bids],
         "asks": [[str(lvl.price), str(lvl.size)] for lvl in book.asks],
     }
@@ -75,6 +76,9 @@ async def _persist_snapshot(inst: Instrument, d: dict[str, Any]) -> None:
                 exchange=inst.exchange,
                 instrument=inst.normalized_name,
                 ts=datetime.fromisoformat(d["ts"]),
+                underlying_price=float(d["underlying_price"])
+                if d["underlying_price"] is not None
+                else None,
                 bids_json=json.dumps(d["bids"]),
                 asks_json=json.dumps(d["asks"]),
             )

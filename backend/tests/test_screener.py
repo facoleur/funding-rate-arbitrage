@@ -65,11 +65,14 @@ async def test_screener_writes_opportunity_when_thresholds_met(test_db: str) -> 
     assert len(rows) == 1
     assert rows[0].buy_from == "derive"
     assert rows[0].sell_to == "deribit"
-    # fees_usd = 0.0003*101 + 0.0003*110 = 0.0633
-    # sell_margin = 0.10 * 1000 = 100 (strike=30000 >> spot=1000 → base_rate=0.10)
-    # fee_pct = 0.0633 / 100 * 100
-    assert rows[0].fee_pct == pytest.approx(0.0633 / 100 * 100, abs=1e-4)
-    assert rows[0].fee_pct + rows[0].spread_pct > rows[0].spread_pct
+    assert rows[0].tradeable_size == 10
+    assert rows[0].buy_premium_usd == 1010
+    assert rows[0].sell_premium_usd == 1100
+    assert rows[0].estimated_short_margin_usd == 1000
+    assert rows[0].capital_required_usd == 2010
+    assert rows[0].gross_profit_usd == 90
+    assert rows[0].fees_usd == pytest.approx(0.633)
+    assert rows[0].net_profit_usd == pytest.approx(89.367)
 
 
 @pytest.mark.asyncio

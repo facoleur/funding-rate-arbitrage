@@ -24,6 +24,7 @@ from option_arb.db.models import (
     TradeStatus,
 )
 from option_arb.db.session import get_session, init_db
+from option_arb.economics import OptionEconomics, calculate_option_economics, days_to_expiry
 from option_arb.events import Event, bus
 from option_arb.exchanges.base import (
     AbstractExchange,
@@ -48,7 +49,7 @@ class Executor:
     """State machine per PENDING opportunity:
     1. kill-switches
     2. fresh REST L2 refetch on both venues
-    3. walk book → recompute walked_size + APR net of slippage
+    3. walk book → recompute canonical economics at worst IOC prices
     4. place both IOC limits in parallel
     5. handle {both filled | single leg | none}
     6. persist every transition to trades + orders
@@ -115,17 +116,14 @@ class Executor:
             )
             return
 
-        # 2. thresholds pre-check (expiry, spread, profit)
+        # 2. expiry pre-check; all economic thresholds are rechecked on fresh books.
         exp = opp.expiry if opp.expiry.tzinfo else opp.expiry.replace(tzinfo=UTC)
-        days_remaining = (exp - datetime.now(UTC)).total_seconds() / 86400.0
-        if days_remaining > self.config.thresholds.max_days_to_expiry:
+        days_remaining = days_to_expiry(exp, datetime.now(UTC))
+        if days_remaining <= 0:
+            await self._reject(opp, "expiry_invalid")
+            return
+        if days_remaining > Decimal(self.config.thresholds.max_days_to_expiry):
             await self._reject(opp, f"expiry_too_far({days_remaining:.0f}d)")
-            return
-        if opp.spread_pct < self.config.thresholds.min_net_spread_pct:
-            await self._reject(opp, f"spread_too_small({opp.spread_pct:.3f})")
-            return
-        if opp.net_profit_usd < self.config.thresholds.min_net_profit_usd:
-            await self._reject(opp, f"profit_too_small({opp.net_profit_usd:.2f})")
             return
 
         # 3. trade_enabled check per exchange
@@ -175,8 +173,9 @@ class Executor:
             results[3] if not isinstance(results[3], BaseException) else {}
         )
 
-        buy_avail_usd = _usdc_funds(buy_funds)
-        sell_avail_usd = _usdc_funds(sell_funds)
+        spot = _valid_spot(buy_book.underlying_price) or _valid_spot(sell_book.underlying_price)
+        buy_avail_usd = _available_funds_usd(buy_funds, buy_inst.underlying, spot)
+        sell_avail_usd = _available_funds_usd(sell_funds, sell_inst.underlying, spot)
 
         # 3. walk book, recompute
         walked = self._walk_and_verify(
@@ -185,7 +184,8 @@ class Executor:
         if isinstance(walked, str):
             await self._reject(opp, walked)
             return
-        walked_ask, walked_bid, walked_size = walked
+        walked_ask, walked_bid, buy_limit, sell_limit, economics = walked
+        walked_size = economics.tradeable_size
 
         # persist walked values on the opportunity + create Trade in PLACING
         async with get_session() as sess:
@@ -193,7 +193,18 @@ class Executor:
             assert opp2 is not None
             opp2.walked_ask = float(walked_ask)
             opp2.walked_bid = float(walked_bid)
-            opp2.walked_size = float(walked_size)
+            opp2.verified_buy_limit = float(buy_limit)
+            opp2.verified_sell_limit = float(sell_limit)
+            opp2.verified_tradeable_size = float(economics.tradeable_size)
+            opp2.verified_buy_premium_usd = float(economics.buy_premium_usd)
+            opp2.verified_sell_premium_usd = float(economics.sell_premium_usd)
+            opp2.verified_estimated_short_margin_usd = float(economics.estimated_short_margin_usd)
+            opp2.verified_capital_required_usd = float(economics.capital_required_usd)
+            opp2.verified_gross_profit_usd = float(economics.gross_profit_usd)
+            opp2.verified_fees_usd = float(economics.fees_usd)
+            opp2.verified_net_profit_usd = float(economics.net_profit_usd)
+            opp2.verified_net_return_pct = float(economics.net_return_pct)
+            opp2.verified_apr_pct = float(economics.apr_pct)
             opp2.status = OpportunityStatus.APPROVED
             trade = Trade(
                 opportunity_id=opp.id,
@@ -219,10 +230,6 @@ class Executor:
         )
 
         # 4. place both IOC limits in parallel
-        slip = Decimal(str(self.config.executor.max_slippage_pct)) / Decimal(100)
-        buy_limit = walked_ask * (Decimal(1) + slip)
-        sell_limit = walked_bid * (Decimal(1) - slip)
-
         buy_req = OrderRequest(
             exchange=opp.buy_from,
             instrument=buy_inst.instrument_name,
@@ -307,62 +314,107 @@ class Executor:
         sell_book: Book,
         buy_inst: Instrument,
         sell_inst: Instrument,
-        buy_avail_usd: Decimal = Decimal(0),
-        sell_avail_usd: Decimal = Decimal(0),
-    ) -> tuple[Decimal, Decimal, Decimal] | str:
+        buy_avail_usd: Decimal | None = None,
+        sell_avail_usd: Decimal | None = None,
+    ) -> tuple[Decimal, Decimal, Decimal, Decimal, OptionEconomics] | str:
         cfg = self.config
         limits = cfg.limits
         min_apr = Decimal(str(cfg.thresholds.min_apr_pct))
-        min_notional = Decimal(str(cfg.thresholds.min_notional_usd))
-        cap = Decimal(str(limits.max_notional_per_trade_usd))
-        # cap par balance disponible sur le buy exchange (si connue)
-        if buy_avail_usd > 0:
+        min_buy_premium = Decimal(str(cfg.thresholds.min_buy_premium_usd))
+        min_net_profit = Decimal(str(cfg.thresholds.min_net_profit_usd))
+        min_net_return = Decimal(str(cfg.thresholds.min_net_return_pct))
+        cap = Decimal(str(limits.max_buy_premium_per_trade_usd))
+        if buy_avail_usd is not None:
             cap = min(cap, buy_avail_usd)
+            if cap <= 0:
+                return f"insufficient_buy_funds({buy_avail_usd:.0f})"
+        slippage = Decimal(str(cfg.executor.ioc_slippage_limit_pct)) / Decimal(100)
         max_contracts = (
             Decimal(str(limits.max_contracts_per_trade)) if limits.max_contracts_per_trade else None
         )
+        spot = _valid_spot(buy_book.underlying_price) or _valid_spot(sell_book.underlying_price)
+        if spot is None:
+            return "margin_unavailable"
+        expiry = opp.expiry if opp.expiry.tzinfo else opp.expiry.replace(tzinfo=UTC)
+        dte = days_to_expiry(expiry, datetime.now(UTC))
+        if dte <= 0:
+            return "expiry_invalid"
 
-        # Progressive size search: try increasing sizes; stop before APR drops.
-        candidate_size = _max_size_within_cap(buy_book.asks, sell_book.bids, cap, max_contracts)
+        candidate_size = _max_size_within_cap(
+            buy_book.asks,
+            sell_book.bids,
+            cap,
+            max_contracts,
+            buy_price_multiplier=Decimal(1) + slippage,
+        )
         if candidate_size <= 0:
             return "empty_book"
 
-        # binary-shrink to find the largest size that keeps APR >= threshold
-        low, high = Decimal("0"), candidate_size
-        best: tuple[Decimal, Decimal, Decimal] | None = None
-        for _ in range(20):
+        def evaluate(
+            size: Decimal,
+        ) -> tuple[Decimal, Decimal, Decimal, Decimal, OptionEconomics] | None:
+            walked_ask, filled_ask = _walk(size, buy_book.asks)
+            walked_bid, filled_bid = _walk(size, sell_book.bids)
+            if filled_ask < size or filled_bid < size:
+                return None
+            buy_limit = walked_ask * (Decimal(1) + slippage)
+            sell_limit = walked_bid * (Decimal(1) - slippage)
+            economics = calculate_option_economics(
+                buy_price=buy_limit,
+                sell_price=sell_limit,
+                quantity=size,
+                buy_taker_fee_rate=buy_inst.taker_fee_rate,
+                sell_taker_fee_rate=sell_inst.taker_fee_rate,
+                spot=spot,
+                strike=sell_inst.strike,
+                option_type=sell_inst.option_type,
+                days_to_expiry=dte,
+            )
+            if economics is None:
+                return None
+            return walked_ask, walked_bid, buy_limit, sell_limit, economics
+
+        def passes_quality(
+            result: tuple[Decimal, Decimal, Decimal, Decimal, OptionEconomics],
+        ) -> bool:
+            economics = result[4]
+            return (
+                economics.buy_premium_usd <= cap
+                and economics.net_profit_usd > 0
+                and economics.net_return_pct >= min_net_return
+                and economics.apr_pct >= min_apr
+            )
+
+        candidate = evaluate(candidate_size)
+        best = candidate if candidate is not None and passes_quality(candidate) else None
+        low, high = Decimal(0), candidate_size
+        for _ in range(20 if best is None else 0):
             mid = (low + high) / Decimal(2)
             if mid <= 0:
                 break
-            walked_ask, filled_ask = _walk(mid, buy_book.asks)
-            walked_bid, filled_bid = _walk(mid, sell_book.bids)
-            if filled_ask < mid or filled_bid < mid:
-                high = mid - Decimal("0.0001")
-                continue
-            spread_pct = (walked_bid - walked_ask) / walked_ask * Decimal(100)
-            fee_pct = (buy_inst.taker_fee_rate + sell_inst.taker_fee_rate) * Decimal(100)
-            net_pct = spread_pct - fee_pct
-            exp = opp.expiry if opp.expiry.tzinfo else opp.expiry.replace(tzinfo=UTC)
-            days = max((exp - datetime.now(UTC)).total_seconds() / 86400.0, 1e-6)
-            apr = net_pct / Decimal(str(days)) * Decimal(365)
-            if apr >= min_apr and net_pct > 0:
-                best = (walked_ask, walked_bid, mid)
-                low = mid + Decimal("0.0001")
+            result = evaluate(mid)
+            if result is not None and passes_quality(result):
+                best = result
+                low = mid
             else:
-                high = mid - Decimal("0.0001")
+                high = mid
 
         if best is None:
             return "apr_dropped"
-        walked_ask, walked_bid, walked_size = best
-        notional = walked_size * walked_ask
-        if notional < min_notional:
+        economics = best[4]
+        walked_size = economics.tradeable_size
+        if economics.buy_premium_usd < min_buy_premium:
             return "size_too_small"
+        if economics.net_profit_usd < min_net_profit:
+            return "profit_too_small"
         min_size = max(buy_inst.min_trade_amount, sell_inst.min_trade_amount)
         if min_size > 0 and walked_size < min_size:
             return f"size_below_minimum({float(walked_size):.4f}<{float(min_size):.4f})"
-        # check sell-side funds: doit couvrir au moins la prime (proxy conservateur de la marge)
-        if sell_avail_usd > 0 and sell_avail_usd < walked_size * walked_ask:
-            return f"insufficient_sell_funds({sell_avail_usd:.0f}<{float(walked_size * walked_ask):.0f})"
+        if sell_avail_usd is not None and sell_avail_usd < economics.estimated_short_margin_usd:
+            return (
+                f"insufficient_sell_funds({sell_avail_usd:.0f}"
+                f"<{economics.estimated_short_margin_usd:.0f})"
+            )
         return best
 
     async def _reject(self, opp: Opportunity, reason: str) -> None:
@@ -530,7 +582,7 @@ class Executor:
             return
 
         mid = _mid_or(entry_price, book)
-        slip = Decimal(str(self.config.executor.max_slippage_pct)) / Decimal(100)
+        slip = Decimal(str(self.config.executor.ioc_slippage_limit_pct)) / Decimal(100)
         limit = mid * (Decimal(1) - slip if side == "SELL" else Decimal(1) + slip)
         req = OrderRequest(
             exchange=ex_name,
@@ -617,24 +669,39 @@ def _max_size_within_cap(
     bids: list[BookLevel],
     cap_usd: Decimal,
     max_contracts: Decimal | None = None,
+    buy_price_multiplier: Decimal = Decimal(1),
 ) -> Decimal:
-    """Maximum size que (a) le book peut absorber, (b) reste sous le cap notionnel, (c) sous max_contracts."""
+    """Maximum size allowed by book depth, the worst-price buy-premium cap, and contracts."""
     if not asks or not bids:
         return Decimal(0)
     ask_size_total = sum((lvl.size for lvl in asks), Decimal(0))
     bid_size_total = sum((lvl.size for lvl in bids), Decimal(0))
     liquidity_size = min(ask_size_total, bid_size_total)
-    cap_size = cap_usd / asks[0].price if asks[0].price > 0 else Decimal(0)
+    effective_buy_price = asks[0].price * buy_price_multiplier
+    cap_size = cap_usd / effective_buy_price if effective_buy_price > 0 else Decimal(0)
     result = min(liquidity_size, cap_size)
     if max_contracts is not None:
         result = min(result, max_contracts)
     return result
 
 
-def _usdc_funds(funds: dict[str, Decimal]) -> Decimal:
-    """Retourne la balance USDC/USD disponible. Les balances crypto (BTC/ETH) sont ignorées
-    car la conversion nécessiterait un appel index price supplémentaire."""
-    return funds.get("USDC", Decimal(0)) + funds.get("USD", Decimal(0))
+def _valid_spot(spot: Decimal | None) -> Decimal | None:
+    if spot is None or not spot.is_finite() or spot <= 0:
+        return None
+    return spot
+
+
+def _available_funds_usd(
+    funds: dict[str, Decimal], underlying: str, spot: Decimal | None
+) -> Decimal | None:
+    relevant_assets = {"USDC", "USD", underlying.upper()}
+    if not relevant_assets.intersection(funds):
+        return None
+    stable_funds = funds.get("USDC", Decimal(0)) + funds.get("USD", Decimal(0))
+    underlying_funds = funds.get(underlying.upper(), Decimal(0))
+    if underlying_funds and spot is None:
+        return None
+    return stable_funds + underlying_funds * (spot or Decimal(0))
 
 
 def _mid_or(fallback: Decimal, book: Book) -> Decimal:
