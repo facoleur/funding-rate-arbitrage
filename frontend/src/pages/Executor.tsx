@@ -5,6 +5,7 @@ import { fetchAlerts } from '../api/alerts'
 import StatusBadge from '../components/StatusBadge'
 import ConfirmModal from '../components/ConfirmModal'
 import QueryState from '../components/ui/QueryState'
+import { DataTable, HeadRow, THead, Td, Th } from '../components/ui/table'
 import { fmtDateTime } from '../lib/format'
 
 function Bar({ value, max, danger }: { value: number; max: number; danger?: boolean }) {
@@ -162,15 +163,15 @@ export default function Executor() {
         <p className="mb-3 text-xs font-medium text-zinc-400 uppercase tracking-wide">
           Alertes récentes
         </p>
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-zinc-800 text-left text-zinc-500">
-              <th className="pb-1.5 pr-3">Niveau</th>
-              <th className="pb-1.5 pr-3">Canal</th>
-              <th className="pb-1.5 pr-3">Message</th>
-              <th className="pb-1.5">Date</th>
-            </tr>
-          </thead>
+        <DataTable>
+          <THead>
+            <HeadRow>
+              <Th>Niveau</Th>
+              <Th>Canal</Th>
+              <Th>Message</Th>
+              <Th>Date</Th>
+            </HeadRow>
+          </THead>
           <tbody>
             {(alerts ?? []).length === 0 && (
               <tr>
@@ -180,17 +181,17 @@ export default function Executor() {
               </tr>
             )}
             {(alerts ?? []).map((a) => (
-              <tr key={a.id} className="border-b border-zinc-800/40">
-                <td className="py-1 pr-3">
+              <tr key={a.id}>
+                <Td>
                   <StatusBadge value={a.level} />
-                </td>
-                <td className="py-1 pr-3 text-zinc-500">{a.channel}</td>
-                <td className="py-1 pr-3 text-zinc-300 max-w-xs truncate">{a.message}</td>
-                <td className="py-1 text-zinc-500 whitespace-nowrap">{fmtDateTime(a.sent_at)}</td>
+                </Td>
+                <Td className="text-zinc-500">{a.channel}</Td>
+                <Td className="max-w-xs truncate text-zinc-300">{a.message}</Td>
+                <Td className="whitespace-nowrap text-zinc-500">{fmtDateTime(a.sent_at)}</Td>
               </tr>
             ))}
           </tbody>
-        </table>
+        </DataTable>
       </div>
 
       {modal === 'kill' && (

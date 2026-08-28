@@ -12,6 +12,7 @@ import { exchangeColor } from '../lib/exchanges'
 import type { SortDir } from '../lib/sort'
 import { NumberField, Select } from '../components/ui/Field'
 import SortHeader from '../components/ui/SortHeader'
+import { DataTable, HeadRow, THead, Td, Th, type Align } from '../components/ui/table'
 import Pagination from '../components/ui/Pagination'
 import QueryState from '../components/ui/QueryState'
 
@@ -29,13 +30,13 @@ const STATUS_COLORS: Record<OpportunityStatus, string> = {
   EXPIRED: 'text-zinc-500',
 }
 
-const COLS: { key: SortCol; label: string; right?: boolean }[] = [
+const COLS: { key: SortCol; label: string; align?: Align }[] = [
   { key: 'detected_at', label: 'Date' },
-  { key: 'net_profit_usd', label: 'Profit net', right: true },
-  { key: 'fees_usd', label: 'Fees', right: true },
-  { key: 'buy_premium_usd', label: 'Prime achat', right: true },
-  { key: 'net_return_pct', label: 'Rendement net', right: true },
-  { key: 'apr_pct', label: 'APR', right: true },
+  { key: 'net_profit_usd', label: 'Profit net', align: 'right' },
+  { key: 'fees_usd', label: 'Fees', align: 'right' },
+  { key: 'buy_premium_usd', label: 'Prime achat', align: 'right' },
+  { key: 'net_return_pct', label: 'Rendement net', align: 'right' },
+  { key: 'apr_pct', label: 'APR', align: 'right' },
 ]
 
 export default function History() {
@@ -214,17 +215,17 @@ export default function History() {
             Cliquer sur une paire pour filtrer · profit = potentiel brut (non dédupliqué)
           </p>
           <div className="overflow-auto">
-            <table className="w-full border-separate border-spacing-0 text-xs">
-              <thead>
-                <tr className="border-b border-zinc-800 text-left text-zinc-500">
-                  <th className="pb-2 pr-4">Paire</th>
-                  <th className="pb-2 pr-4 text-right">Opps</th>
-                  <th className="pb-2 pr-4 text-right">Profit net total</th>
-                  <th className="pb-2 pr-4 text-right">Fees totales</th>
-                  <th className="pb-2 pr-4 text-right">Meilleure opp</th>
-                  <th className="pb-2 text-right">APR moy.</th>
-                </tr>
-              </thead>
+            <DataTable>
+              <THead>
+                <HeadRow>
+                  <Th>Paire</Th>
+                  <Th align="right">Opps</Th>
+                  <Th align="right">Profit net total</Th>
+                  <Th align="right">Fees totales</Th>
+                  <Th align="right">Meilleure opp</Th>
+                  <Th align="right">APR moy.</Th>
+                </HeadRow>
+              </THead>
               <tbody>
                 {stats.map((s) => (
                   <tr
@@ -233,35 +234,37 @@ export default function History() {
                       setPairFilter(pairFilter === s.pair ? '' : s.pair)
                       setOffset(0)
                     }}
-                    className={`cursor-pointer border-b border-zinc-800/40 transition-colors hover:bg-zinc-800/30 ${
+                    className={`cursor-pointer transition-colors hover:bg-zinc-800/30 ${
                       pairFilter === s.pair ? 'bg-zinc-800/50' : ''
                     }`}
                   >
-                    <td className="py-1.5 pr-4 font-medium">
+                    <Td className="font-medium">
                       <ExBadge name={s.buy_from} />
                       <span className="mx-1.5 text-zinc-400">→</span>
                       <ExBadge name={s.sell_to} />
                       {pairFilter === s.pair && (
                         <span className="ml-2 text-[10px] text-zinc-400">✓ filtré</span>
                       )}
-                    </td>
-                    <td className="py-1.5 pr-4 text-right text-zinc-400">
+                    </Td>
+                    <Td align="right" className="text-zinc-400">
                       {s.count.toLocaleString()}
-                    </td>
-                    <td className="py-1.5 pr-4 text-right font-medium text-emerald-400">
+                    </Td>
+                    <Td align="right" className="font-medium text-emerald-400">
                       {fmtUsd(s.total_net_profit_usd)}
-                    </td>
-                    <td className="py-1.5 pr-4 text-right text-zinc-500">
+                    </Td>
+                    <Td align="right" className="text-zinc-500">
                       {fmtUsd(s.total_fees_usd)}
-                    </td>
-                    <td className="py-1.5 pr-4 text-right text-zinc-300">
+                    </Td>
+                    <Td align="right" className="text-zinc-300">
                       {fmtUsd(s.best_net_profit_usd)}
-                    </td>
-                    <td className="py-1.5 text-right text-zinc-400">{s.avg_apr_pct.toFixed(1)}%</td>
+                    </Td>
+                    <Td align="right" className="text-zinc-400">
+                      {s.avg_apr_pct.toFixed(1)}%
+                    </Td>
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </DataTable>
           </div>
         </div>
       )}
@@ -301,55 +304,54 @@ export default function History() {
         {opps && opps.length > 0 && (
           <>
             <div className="max-h-[calc(100vh-24rem)] overflow-auto">
-              <table className="w-full border-separate border-spacing-0 text-xs">
-                <thead className="sticky top-0 z-10 bg-zinc-950">
-                  <tr className="border-b border-zinc-800 text-left text-zinc-500">
+              <DataTable>
+                <THead sticky>
+                  <HeadRow>
                     {COLS.map((c) => (
                       <SortHeader
                         key={c.key}
                         col={c.key}
                         label={c.label}
-                        right={c.right}
+                        align={c.align}
                         active={sortBy === c.key}
                         dir={sortDir}
                         onSort={handleSort}
-                        className="pb-2 pr-3"
                       />
                     ))}
-                    <th className="pb-2 pr-3">Instrument</th>
-                    <th className="pb-2 pr-3">Paire</th>
-                    <th className="pb-2 pr-3">Réseau</th>
-                    <th className="pb-2">Statut</th>
-                  </tr>
-                </thead>
+                    <Th>Instrument</Th>
+                    <Th>Paire</Th>
+                    <Th>Réseau</Th>
+                    <Th>Statut</Th>
+                  </HeadRow>
+                </THead>
                 <tbody>
                   {opps.map((o) => (
-                    <tr key={o.id} className="border-b border-zinc-800/30 hover:bg-zinc-900/40">
-                      <td className="whitespace-nowrap py-1 pr-3 text-zinc-500">
+                    <tr key={o.id} className="hover:bg-zinc-900/40">
+                      <Td className="whitespace-nowrap text-zinc-500">
                         {fmtDateTime(o.detected_at)}
-                      </td>
-                      <td className="py-1 pr-3 text-right font-medium text-emerald-400">
+                      </Td>
+                      <Td align="right" className="font-medium text-emerald-400">
                         {fmtUsd(o.net_profit_usd)}
-                      </td>
-                      <td className="py-1 pr-3 text-right text-zinc-500">{fmtUsd(o.fees_usd)}</td>
-                      <td className="py-1 pr-3 text-right text-zinc-400">
+                      </Td>
+                      <Td align="right" className="text-zinc-500">
+                        {fmtUsd(o.fees_usd)}
+                      </Td>
+                      <Td align="right" className="text-zinc-400">
                         {fmtUsd(o.buy_premium_usd)}
-                      </td>
-                      <td className="py-1 pr-3 text-right text-zinc-300">
+                      </Td>
+                      <Td align="right" className="text-zinc-300">
                         {o.net_return_pct.toFixed(2)}%
-                      </td>
-                      <td className="py-1 pr-3 text-right text-zinc-400">
+                      </Td>
+                      <Td align="right" className="text-zinc-400">
                         {o.apr_pct.toFixed(1)}%
-                      </td>
-                      <td className="py-1 pr-3 font-mono text-[11px] text-zinc-300">
-                        {o.instrument}
-                      </td>
-                      <td className="whitespace-nowrap py-1 pr-3">
+                      </Td>
+                      <Td className="font-mono text-[11px] text-zinc-300">{o.instrument}</Td>
+                      <Td className="whitespace-nowrap">
                         <ExBadge name={o.buy_from} />
                         <span className="mx-1 text-zinc-400">→</span>
                         <ExBadge name={o.sell_to} />
-                      </td>
-                      <td className="py-1 pr-3">
+                      </Td>
+                      <Td>
                         <span
                           className={
                             o.network === 'mainnet' ? 'text-emerald-500' : 'text-amber-500'
@@ -357,12 +359,12 @@ export default function History() {
                         >
                           {o.network}
                         </span>
-                      </td>
-                      <td className={`py-1 ${STATUS_COLORS[o.status]}`}>{o.status}</td>
+                      </Td>
+                      <Td className={STATUS_COLORS[o.status]}>{o.status}</Td>
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </DataTable>
             </div>
 
             <Pagination

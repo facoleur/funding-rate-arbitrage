@@ -30,8 +30,9 @@ Always read the relevant doc before editing:
 - **Backend `backend/` (Python + Postgres)** is the sole source of truth. All phases 1-12 landed; 152 tests passing.
 - Deribit adapter has full OAuth support (token fetch + refresh cached). Derive has full EIP-712 signing via `DeriveAuth`. Aevo uses aggregate public **WebSocket** book-ticker + index channels; private auth is deferred.
 - **Frontend `frontend/`** is built: Vite + React + TanStack Query + React Router, 7 pages (Book, Executor, Funding, History, Opportunities, Positions, Trades). Served via nginx in the `frontend` Docker container (image `nginx:alpine` + `docker/nginx.conf`; there is no frontend Dockerfile in prod).
-  - Shared code lives in `src/lib/` (`format.ts`, `exchanges.ts`, `sort.ts`, `authError.ts`) and `src/components/ui/` (Select, SortHeader, Pagination, QueryState, ColumnPicker). Add to those rather than re-deriving a formatter or a filter input in a page.
-  - Tested with **vitest** (26 tests, jsdom), formatted with **prettier** — both enforced in CI.
+  - Shared code lives in `src/lib/` (`format.ts`, `exchanges.ts`, `sort.ts`, `authError.ts`) and `src/components/ui/` (`table.tsx`, Select, SortHeader, Pagination, QueryState, ColumnPicker). Add to those rather than re-deriving a formatter or a filter input in a page.
+  - **All 6 tables go through `ui/table.tsx`** (`DataTable`/`THead`/`HeadRow`/`Th`/`Td`), calibrated on Book's dense style. It is presentational only — pages keep their own `<tr>`, `colSpan`, sticky cells and conditional colouring. Two rules it enforces: borders live on **cells**, never on `<tr>` (in `border-separate` mode, CSS ignores row borders), and alignment is an `align` prop, never a `className` (a `<th>` is centred by the UA, and competing Tailwind utilities are resolved by CSS order, not attribute order — hence `pad` is a prop too).
+  - Tested with **vitest** (39 tests, jsdom), formatted with **prettier** — both enforced in CI.
 - **Storage**: Postgres in production (docker-compose service `postgres`). SQLite retained ONLY inside pytest for speed/isolation. Model code is DB-agnostic.
 
 ## Common commands
@@ -61,7 +62,7 @@ make db-shell               # psql into postgres
 # Test + lint
 make test                   # both suites (backend pytest + frontend vitest)
 make test-backend           # pytest only (152 tests, SQLite per-test)
-make test-frontend          # vitest only (26 tests, jsdom)
+make test-frontend          # vitest only (39 tests, jsdom)
 make lint                   # ruff check
 make format                 # ruff format
 make typecheck              # mypy

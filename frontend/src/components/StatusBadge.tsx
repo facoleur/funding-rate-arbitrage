@@ -60,7 +60,13 @@ const COLORS: Record<BadgeValue, string> = {
 
 export default function StatusBadge({ value }: { value: BadgeValue }) {
   return (
-    <span className={`inline-block rounded px-1.5 py-0.5 text-xs font-medium ${COLORS[value]}`}>
+    // `leading-none` est structurel, pas cosmétique : sans lui le badge mesure
+    // 20px (line-height 16 + 2×2 de padding) contre 16px pour une ligne de texte,
+    // et c'est *lui* qui fixe la hauteur de toutes les lignes des tables où il
+    // apparaît — Opportunités, Trades et Executor étaient 4px plus hautes que Book.
+    <span
+      className={`inline-block rounded px-1.5 py-0.5 text-xs font-medium leading-none ${COLORS[value]}`}
+    >
       {value}
     </span>
   )

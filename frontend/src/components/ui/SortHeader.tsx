@@ -1,8 +1,9 @@
 import type { SortDir } from '../../lib/sort'
+import { Th, type Align } from './table'
 
 /**
- * En-tête de colonne triable. Remplace trois implémentations quasi identiques
- * (`Th` dans Book, `SortTh` dans History, `th()` dans Opportunities).
+ * En-tête de colonne triable. Repose sur `Th` : espacement, bordure et
+ * alignement viennent de l'habillage commun, seul l'indicateur de tri est ajouté.
  */
 export default function SortHeader<T extends string>({
   col,
@@ -10,8 +11,9 @@ export default function SortHeader<T extends string>({
   active,
   dir,
   onSort,
-  right = false,
+  align = 'left',
   tip,
+  divider,
   className = '',
 }: {
   col: T
@@ -19,23 +21,23 @@ export default function SortHeader<T extends string>({
   active: boolean
   dir: SortDir
   onSort: (col: T) => void
-  right?: boolean
+  align?: Align
   tip?: string
-  /** Espacement et bordures : propres à chaque table, jamais imposés ici. */
+  divider?: boolean
   className?: string
 }) {
   return (
-    <th
+    <Th
+      align={align}
+      divider={divider}
       title={tip}
       onClick={() => onSort(col)}
-      className={`cursor-pointer select-none hover:text-zinc-300 ${
-        right ? 'text-right' : ''
-      } ${className}`}
+      className={`cursor-pointer select-none hover:text-zinc-300 ${className}`}
     >
       {label}
       <span className={`ml-1 ${active ? 'text-zinc-300' : 'text-zinc-600'}`}>
         {active ? (dir === 'asc' ? '↑' : '↓') : '↕'}
       </span>
-    </th>
+    </Th>
   )
 }

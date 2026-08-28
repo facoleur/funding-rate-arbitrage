@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { fetchExchanges, fetchPositions, type ExchangeState, type Position } from '../api/positions'
 import StatusBadge from '../components/StatusBadge'
 import QueryState from '../components/ui/QueryState'
+import { DataTable, HeadRow, THead, Td, Th } from '../components/ui/table'
 import { fmtExpiry, fmtTime, hoursUntil } from '../lib/format'
 
 function ExchangeCard({ ex, positions }: { ex: ExchangeState; positions: Position[] }) {
@@ -48,32 +49,36 @@ function ExchangeCard({ ex, positions }: { ex: ExchangeState; positions: Positio
       </div>
 
       {ownPositions.length > 0 && (
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-zinc-800 text-left text-zinc-500">
-              <th className="pb-1.5 pr-4">Instrument</th>
-              <th className="pb-1.5 pr-4 text-right">Size</th>
-              <th className="pb-1.5 pr-4 text-right">Avg price</th>
-              <th className="pb-1.5">Expiry</th>
-            </tr>
-          </thead>
+        <DataTable>
+          <THead>
+            <HeadRow>
+              <Th>Instrument</Th>
+              <Th align="right">Size</Th>
+              <Th align="right">Avg price</Th>
+              <Th>Expiry</Th>
+            </HeadRow>
+          </THead>
           <tbody>
             {ownPositions.map((p) => {
               const expiry = p.instrument.split('-')[1] ?? p.last_seen_at
               const urgent = hoursUntil(expiry) < 24
               return (
-                <tr key={p.id} className="border-b border-zinc-800/40">
-                  <td className="py-1 pr-4 text-zinc-200 font-medium">{p.instrument}</td>
-                  <td className="py-1 pr-4 text-right text-zinc-300">{p.size}</td>
-                  <td className="py-1 pr-4 text-right text-zinc-300">${p.avg_price.toFixed(2)}</td>
-                  <td className={`py-1 ${urgent ? 'text-red-400 font-medium' : 'text-zinc-400'}`}>
+                <tr key={p.id}>
+                  <Td className="font-medium text-zinc-200">{p.instrument}</Td>
+                  <Td align="right" className="text-zinc-300">
+                    {p.size}
+                  </Td>
+                  <Td align="right" className="text-zinc-300">
+                    ${p.avg_price.toFixed(2)}
+                  </Td>
+                  <Td className={urgent ? 'font-medium text-red-400' : 'text-zinc-400'}>
                     {fmtExpiry(expiry)}
-                  </td>
+                  </Td>
                 </tr>
               )
             })}
           </tbody>
-        </table>
+        </DataTable>
       )}
 
       <p className="mt-2 text-xs text-zinc-600">Mis à jour {fmtTime(ex.updated_at)}</p>

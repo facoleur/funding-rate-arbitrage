@@ -8,6 +8,7 @@ import { exchangeAbbr, exchangeUrl } from '../lib/exchanges'
 import { compareValues, nullLast, type SortDir } from '../lib/sort'
 import { FIELD_CLASS, Select } from '../components/ui/Field'
 import SortHeader from '../components/ui/SortHeader'
+import { DataTable, HeadRow, THead, Td, Th } from '../components/ui/table'
 import QueryState from '../components/ui/QueryState'
 
 // ─── Sorting ─────────────────────────────────────────────────────────────────
@@ -136,9 +137,9 @@ function NumCell({
   activeClass: string
 }) {
   return (
-    <td className={`py-1 pr-3 text-right ${active ? activeClass : 'text-zinc-600'}`}>
+    <Td align="right" className={active ? activeClass : 'text-zinc-600'}>
       {value != null ? format(value) : '—'}
-    </td>
+    </Td>
   )
 }
 
@@ -182,15 +183,27 @@ export default function Book() {
     f.setSort(col, desc ? 'desc' : 'asc')
   }
 
+  /** Colonnes chiffrées : alignées à droite, comme leur contenu. */
+  const NUMERIC: SortCol[] = [
+    'strike',
+    'priceSpread',
+    'buyPremium',
+    'margin',
+    'capital',
+    'netReturn',
+    'profit',
+    'apr',
+  ]
+
   function th(col: SortCol, label: string) {
     return (
       <SortHeader
         col={col}
         label={label}
+        align={NUMERIC.includes(col) ? 'right' : 'left'}
         active={sortCol === col}
         dir={f.sortDir}
         onSort={handleSort}
-        className="pb-2 pr-3"
       />
     )
   }
@@ -273,17 +286,18 @@ export default function Book() {
 
       {rows.length > 0 && (
         <div className="-mb-6 -mr-6 min-h-0 flex-1 overflow-auto">
-          <table className="w-full whitespace-nowrap border-separate border-spacing-0 text-xs">
-            <thead className="sticky top-0 z-10 bg-zinc-950">
-              <tr className="border-b border-zinc-800 text-center text-zinc-500">
-                <th className="sticky left-0 z-20 bg-zinc-950 pb-2 pr-3 text-left">Instrument</th>
+          <DataTable className="whitespace-nowrap">
+            <THead sticky>
+              {/* Rangée 1 : libellés. Le trait est porté par la rangée 2. */}
+              <HeadRow divider={false}>
+                <Th className="sticky left-0 z-20 bg-zinc-950">Instrument</Th>
                 {th('expiry', 'Expiry')}
                 {th('strike', 'Strike')}
-                <th className="pb-2 pr-3">Type</th>
+                <Th>Type</Th>
                 {allExchanges.map((ex) => (
-                  <th key={ex} className="pb-2 pr-3" colSpan={2}>
+                  <Th key={ex} align="center" colSpan={2}>
                     {ex}
-                  </th>
+                  </Th>
                 ))}
                 {th('priceSpread', 'Price spread %')}
                 {th('buyPremium', 'Buy premium')}
@@ -292,21 +306,22 @@ export default function Book() {
                 {th('netReturn', 'Net return %')}
                 {th('profit', 'Net profit')}
                 {th('apr', 'APR %')}
-                <th className="pb-2 pr-3">Arb</th>
+                <Th>Arb</Th>
                 {th('age', 'Age')}
-              </tr>
-              <tr className="border-b border-zinc-800/40 text-center text-zinc-600">
-                <th className="sticky left-0 z-20 bg-zinc-950" />
-                <th colSpan={3} />
+              </HeadRow>
+              {/* Rangée 2 : sous-libellés bid/ask sous chaque exchange. */}
+              <HeadRow className="text-zinc-600">
+                <Th className="sticky left-0 z-20 bg-zinc-950" />
+                <Th colSpan={3} />
                 {allExchanges.map((ex) => (
-                  <th key={ex} colSpan={2} className="pb-1 text-[10px] font-normal">
+                  <Th key={ex} colSpan={2} align="center" className="pb-1 text-[10px] font-normal">
                     <span className="pr-5">bid</span>
                     <span>ask</span>
-                  </th>
+                  </Th>
                 ))}
-                <th colSpan={9} />
-              </tr>
-            </thead>
+                <Th colSpan={9} />
+              </HeadRow>
+            </THead>
             <tbody>
               {rows.map((row) => {
                 const hasArb = row.net_return_pct !== null && row.net_return_pct > 0
@@ -316,11 +331,11 @@ export default function Book() {
                 return (
                   <tr
                     key={row.instrument}
-                    className={`border-b border-zinc-800/40 ${hasArb ? 'bg-emerald-950/20' : ''} ${
+                    className={`${hasArb ? 'bg-emerald-950/20' : ''} ${
                       !row.eligible ? 'opacity-50' : ''
                     }`}
                   >
-                    <td className="sticky left-0 z-10 bg-zinc-950 py-1 pr-3">
+                    <Td className="sticky left-0 z-10 bg-zinc-950">
                       <div className="flex items-center gap-1.5">
                         <span className="font-medium text-zinc-200">{row.instrument}</span>
                         {showLinks &&
@@ -329,12 +344,12 @@ export default function Book() {
                             return href ? <ExLink key={ex} href={href} ex={ex} /> : null
                           })}
                       </div>
-                    </td>
-                    <td className="py-1 pr-3 text-zinc-400">{fmtExpiry(row.expiry)}</td>
-                    <td className="py-1 pr-3 text-right tabular-nums text-zinc-300">
+                    </Td>
+                    <Td className="text-zinc-400">{fmtExpiry(row.expiry)}</Td>
+                    <Td align="right" className="tabular-nums text-zinc-300">
                       {row.strike.toLocaleString()}
-                    </td>
-                    <td className="py-1 pr-3">
+                    </Td>
+                    <Td>
                       <span
                         className={`font-medium ${
                           row.option_type === 'C' ? 'text-blue-400' : 'text-orange-400'
@@ -342,33 +357,34 @@ export default function Book() {
                       >
                         {row.option_type === 'C' ? 'Call' : 'Put'}
                       </span>
-                    </td>
+                    </Td>
                     {allExchanges.map((ex) => {
                       const q = row.exchanges[ex]
                       return (
                         <Fragment key={ex}>
-                          <td
-                            className={`py-1 pr-1 text-right ${
+                          <Td
+                            align="right"
+                            pad="tight"
+                            className={
                               hasArb && ex === row.sell_exchange ? 'bg-emerald-950/40' : ''
-                            }`}
+                            }
                           >
                             <QuoteCell
                               q={q}
                               side="bid"
                               highlight={hasArb && ex === row.sell_exchange}
                             />
-                          </td>
-                          <td
-                            className={`py-1 pr-3 text-right ${
-                              hasArb && ex === row.buy_exchange ? 'bg-sky-950/40' : ''
-                            }`}
+                          </Td>
+                          <Td
+                            align="right"
+                            className={hasArb && ex === row.buy_exchange ? 'bg-sky-950/40' : ''}
                           >
                             <QuoteCell
                               q={q}
                               side="ask"
                               highlight={hasArb && ex === row.buy_exchange}
                             />
-                          </td>
+                          </Td>
                         </Fragment>
                       )
                     })}
@@ -414,7 +430,7 @@ export default function Book() {
                       active={hasArb}
                       activeClass="font-medium text-emerald-300"
                     />
-                    <td className="py-1 pr-3 text-xs">
+                    <Td>
                       {hasArb ? (
                         <span className="text-emerald-400">
                           {row.buy_exchange} → {row.sell_exchange}
@@ -422,13 +438,15 @@ export default function Book() {
                       ) : (
                         <span className="text-zinc-600">—</span>
                       )}
-                    </td>
-                    <td className="py-1 pr-3 text-zinc-500">{fmtAge(row.updated_at)}</td>
+                    </Td>
+                    <Td align="right" className="text-zinc-500">
+                      {fmtAge(row.updated_at)}
+                    </Td>
                   </tr>
                 )
               })}
             </tbody>
-          </table>
+          </DataTable>
         </div>
       )}
     </div>

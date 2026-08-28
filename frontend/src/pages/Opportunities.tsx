@@ -12,6 +12,7 @@ import StatusBadge from '../components/StatusBadge'
 import { NumberField, Select } from '../components/ui/Field'
 import SortHeader from '../components/ui/SortHeader'
 import ColumnPicker from '../components/ui/ColumnPicker'
+import { DataTable, HeadRow, THead, Td, Th, type Align } from '../components/ui/table'
 import QueryState from '../components/ui/QueryState'
 import { useColumnVisibility } from '../hooks/useColumnVisibility'
 import { fmtAge, fmtDte, fmtExpiry, fmtUsdOrDash } from '../lib/format'
@@ -43,7 +44,7 @@ interface Column {
   id: ColId
   label: string
   tip?: string
-  right?: boolean
+  align?: Align
   /** Une colonne non triable rend un `<th>` inerte. */
   sortable?: boolean
   defaultVisible: boolean
@@ -70,7 +71,7 @@ const COLUMNS: readonly Column[] = [
   {
     id: 'strike',
     label: 'Strike',
-    right: true,
+    align: 'right',
     defaultVisible: false,
     value: (o) => o.strike,
     cell: (o) => o.strike.toLocaleString(),
@@ -87,7 +88,7 @@ const COLUMNS: readonly Column[] = [
   {
     id: 'dte',
     label: 'DTE',
-    right: true,
+    align: 'right',
     defaultVisible: true,
     value: (o) => o.days_to_expiry,
     cell: (o) => fmtDte(o.days_to_expiry),
@@ -105,7 +106,7 @@ const COLUMNS: readonly Column[] = [
   {
     id: 'size',
     label: 'Size',
-    right: true,
+    align: 'right',
     defaultVisible: false,
     value: (_o, e) => e.tradeable_size,
     cell: (_o, e) => e.tradeable_size.toFixed(4),
@@ -114,7 +115,7 @@ const COLUMNS: readonly Column[] = [
   {
     id: 'buy_ask',
     label: 'Buy ask',
-    right: true,
+    align: 'right',
     defaultVisible: false,
     value: (_o, e) => e.buy_price,
     cell: (_o, e) => e.buy_price.toFixed(4),
@@ -123,7 +124,7 @@ const COLUMNS: readonly Column[] = [
   {
     id: 'sell_bid',
     label: 'Sell bid',
-    right: true,
+    align: 'right',
     defaultVisible: false,
     value: (_o, e) => e.sell_price,
     cell: (_o, e) => e.sell_price.toFixed(4),
@@ -132,7 +133,7 @@ const COLUMNS: readonly Column[] = [
   {
     id: 'buy_premium',
     label: 'Buy premium',
-    right: true,
+    align: 'right',
     defaultVisible: true,
     value: (_o, e) => e.buy_premium_usd,
     cell: (_o, e) => fmtUsdOrDash(e.buy_premium_usd),
@@ -141,7 +142,7 @@ const COLUMNS: readonly Column[] = [
   {
     id: 'sell_premium',
     label: 'Sell premium',
-    right: true,
+    align: 'right',
     defaultVisible: false,
     value: (_o, e) => e.sell_premium_usd,
     cell: (_o, e) => fmtUsdOrDash(e.sell_premium_usd),
@@ -150,7 +151,7 @@ const COLUMNS: readonly Column[] = [
   {
     id: 'margin',
     label: 'Est. margin',
-    right: true,
+    align: 'right',
     defaultVisible: true,
     value: (_o, e) => e.estimated_short_margin_usd,
     cell: (_o, e) => fmtUsdOrDash(e.estimated_short_margin_usd),
@@ -159,7 +160,7 @@ const COLUMNS: readonly Column[] = [
   {
     id: 'capital',
     label: 'Capital',
-    right: true,
+    align: 'right',
     defaultVisible: true,
     tip: 'Prime achat + marge short estimée, sans offset de prime vente',
     value: (_o, e) => e.capital_required_usd,
@@ -169,7 +170,7 @@ const COLUMNS: readonly Column[] = [
   {
     id: 'fees',
     label: 'Fees',
-    right: true,
+    align: 'right',
     defaultVisible: true,
     value: (_o, e) => e.fees_usd,
     cell: (_o, e) => fmtUsdOrDash(e.fees_usd),
@@ -178,7 +179,7 @@ const COLUMNS: readonly Column[] = [
   {
     id: 'net_profit',
     label: 'Net profit',
-    right: true,
+    align: 'right',
     defaultVisible: true,
     value: (_o, e) => e.net_profit_usd,
     cell: (_o, e) => fmtUsdOrDash(e.net_profit_usd),
@@ -187,7 +188,7 @@ const COLUMNS: readonly Column[] = [
   {
     id: 'net_return',
     label: 'Net return %',
-    right: true,
+    align: 'right',
     defaultVisible: true,
     tip: 'Profit net / capital requis',
     value: (_o, e) => e.net_return_pct,
@@ -197,7 +198,7 @@ const COLUMNS: readonly Column[] = [
   {
     id: 'apr',
     label: 'APR %',
-    right: true,
+    align: 'right',
     defaultVisible: true,
     tip: 'Annualisé sur capital total (prime achat + marge sell estimée)',
     value: (_o, e) => e.apr_pct,
@@ -215,7 +216,7 @@ const COLUMNS: readonly Column[] = [
   {
     id: 'age',
     label: 'Age',
-    right: true,
+    align: 'right',
     defaultVisible: true,
     value: (o) => new Date(o.detected_at).getTime(),
     cell: (o) => fmtAge(o.detected_at),
@@ -228,8 +229,6 @@ type SortKey = 'instrument' | ColId
 const STATUSES: OpportunityStatus[] = ['PENDING', 'APPROVED', 'EXECUTED', 'REJECTED', 'EXPIRED']
 const COLUMNS_STORAGE_KEY = 'opportunities-columns'
 
-const TH_EXTRA = 'whitespace-nowrap border-b border-zinc-800 pb-2 pr-6 text-zinc-500'
-const TD_BASE = 'whitespace-nowrap border-b border-zinc-800/50 py-1.5 pr-6'
 const STICKY_BG = 'bg-zinc-950'
 const HOT_BG = 'bg-emerald-950/30'
 
@@ -310,9 +309,9 @@ export default function Opportunities() {
       <QueryState isLoading={isLoading} isError={isError} />
 
       <div className="flex-1 overflow-auto">
-        <table className="border-separate border-spacing-0 text-xs">
-          <thead>
-            <tr className="text-left">
+        <DataTable className="whitespace-nowrap">
+          <THead>
+            <HeadRow>
               {/* instrument — épinglé à gauche et en haut */}
               <SortHeader
                 col="instrument"
@@ -320,29 +319,28 @@ export default function Opportunities() {
                 active={sortCol === 'instrument'}
                 dir={sortDir}
                 onSort={toggleSort}
-                className={`sticky left-0 top-0 z-30 ${STICKY_BG} ${TH_EXTRA} pl-0`}
+                className={`sticky left-0 top-0 z-30 ${STICKY_BG} pl-0`}
               />
               {shown.map((c) =>
                 c.sortable === false ? (
-                  <th key={c.id} className={`${TH_EXTRA} ${c.right ? 'text-right' : ''}`}>
+                  <Th key={c.id} align={c.align}>
                     {c.label}
-                  </th>
+                  </Th>
                 ) : (
                   <SortHeader
                     key={c.id}
                     col={c.id}
                     label={c.label}
                     tip={c.tip}
-                    right={c.right}
+                    align={c.align}
                     active={sortCol === c.id}
                     dir={sortDir}
                     onSort={toggleSort}
-                    className={TH_EXTRA}
                   />
                 ),
               )}
-            </tr>
-          </thead>
+            </HeadRow>
+          </THead>
           <tbody>
             {rows.length === 0 && (
               <tr>
@@ -357,26 +355,29 @@ export default function Opportunities() {
 
               return (
                 <tr key={o.id}>
-                  <td
-                    className={`sticky left-0 z-10 ${hot ? HOT_BG : STICKY_BG} ${TD_BASE} pl-0 font-medium text-zinc-200`}
+                  <Td
+                    className={`sticky left-0 z-10 ${
+                      hot ? HOT_BG : STICKY_BG
+                    } pl-0 font-medium text-zinc-200`}
                   >
                     {o.instrument}
-                  </td>
+                  </Td>
                   {shown.map((c) => (
-                    <td
+                    <Td
                       key={c.id}
-                      className={`${TD_BASE} ${c.right ? 'text-right tabular-nums' : ''} ${
+                      align={c.align}
+                      className={`${c.align === 'right' ? 'tabular-nums' : ''} ${
                         c.cellClass?.(hot) ?? ''
                       }`}
                     >
                       {c.cell ? c.cell(o, e) : c.value(o, e)}
-                    </td>
+                    </Td>
                   ))}
                 </tr>
               )
             })}
           </tbody>
-        </table>
+        </DataTable>
       </div>
     </div>
   )
