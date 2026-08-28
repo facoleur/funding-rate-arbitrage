@@ -22,15 +22,30 @@ function describeError(error: unknown): string {
   }
 }
 
+/** Erreur HTTP portant son statut, pour que les appelants branchent dessus
+ *  sans parser le message (401 → ré-authentification, cf. `lib/authError`). */
+export class ApiError extends Error {
+  readonly status: number
+
+  constructor(status: number, message: string) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+
 export async function apiRequest<T>(request: Promise<ApiResult<T>>): Promise<T> {
   const result = await request
   if (result.error !== undefined) {
     const status = `${result.response.status} ${result.response.statusText}`.trim()
     const detail = describeError(result.error)
-    throw new Error(detail ? `${status}: ${detail}` : status)
+    throw new ApiError(result.response.status, detail ? `${status}: ${detail}` : status)
   }
   if (result.data === undefined) {
-    throw new Error(`${result.response.status}: API response did not contain JSON data`)
+    throw new ApiError(
+      result.response.status,
+      `${result.response.status}: API response did not contain JSON data`,
+    )
   }
   return result.data
 }

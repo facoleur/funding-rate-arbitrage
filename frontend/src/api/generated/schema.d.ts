@@ -454,6 +454,36 @@ export interface components {
         Mode: "live" | "paper" | "backtest";
         /** @enum {string} */
         Network: "mainnet" | "testnet";
+        /**
+         * OpportunityEconomicsResponse
+         * @description Économie à afficher, déjà arbitrée entre valeurs vérifiées et détectées.
+         */
+        OpportunityEconomicsResponse: {
+            /** Apr Pct */
+            apr_pct: number;
+            /** Buy Premium Usd */
+            buy_premium_usd: number;
+            /** Buy Price */
+            buy_price: number;
+            /** Capital Required Usd */
+            capital_required_usd: number;
+            /** Estimated Short Margin Usd */
+            estimated_short_margin_usd: number;
+            /** Fees Usd */
+            fees_usd: number;
+            /** Gross Profit Usd */
+            gross_profit_usd: number;
+            /** Net Profit Usd */
+            net_profit_usd: number;
+            /** Net Return Pct */
+            net_return_pct: number;
+            /** Sell Premium Usd */
+            sell_premium_usd: number;
+            /** Sell Price */
+            sell_price: number;
+            /** Tradeable Size */
+            tradeable_size: number;
+        };
         /** OpportunityResponse */
         OpportunityResponse: {
             /** Apr Pct */
@@ -467,6 +497,8 @@ export interface components {
             /** Days To Expiry */
             readonly days_to_expiry: number;
             detected_at: components["schemas"]["IsoDatetime"];
+            /** @description Économie à afficher, sans que le client ait à arbitrer lui-même. */
+            readonly effective: components["schemas"]["OpportunityEconomicsResponse"];
             /** Estimated Short Margin Usd */
             estimated_short_margin_usd: number;
             expiry: components["schemas"]["IsoDatetime"];
@@ -478,6 +510,11 @@ export interface components {
             id: number;
             /** Instrument */
             instrument: string;
+            /**
+             * Is Verified
+             * @description L'executor a re-vérifié les books avant exécution.
+             */
+            readonly is_verified: boolean;
             mode: components["schemas"]["Mode"];
             /** Net Profit Usd */
             net_profit_usd: number;
@@ -696,6 +733,8 @@ export interface components {
             capital_required_usd: number | null;
             /** Days To Expiry */
             days_to_expiry: number;
+            /** Eligible */
+            eligible: boolean;
             /** Estimated Short Margin Usd */
             estimated_short_margin_usd: number | null;
             /** Exchanges */

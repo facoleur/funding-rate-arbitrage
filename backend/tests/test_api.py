@@ -373,6 +373,122 @@ async def test_ticker_api_serializes_canonical_total_economics(test_db: str) -> 
     assert row["net_profit_usd"] == pytest.approx(17.8734)
     assert row["net_return_pct"] == pytest.approx(17.8734 / 402 * 100)
     assert row["apr_pct"] is not None
+    # Largement au-dessus de chaque seuil par défaut → exécutable.
+    assert row["eligible"] is True
+
+
+@pytest.mark.asyncio
+async def test_ticker_eligible_follows_configured_thresholds(
+    test_db: str,
+    temp_config,  # type: ignore[no-untyped-def]
+) -> None:
+    """Le verdict vient du même prédicat que le screener, pas d'une copie côté client."""
+    temp_config.write_text("thresholds:\n  min_apr_pct: 100000\n")
+
+    expiry = datetime.now(UTC) + timedelta(days=30)
+    updated_at = datetime.now(UTC)
+    async with get_session() as sess:
+        sess.add_all(
+            [
+                TickerState(
+                    exchange=exchange,
+                    instrument="BTC-20270101-30000-C",
+                    underlying="BTC",
+                    expiry=expiry,
+                    strike=30000,
+                    option_type="C",
+                    bid_price=bid,
+                    bid_size=3,
+                    ask_price=ask,
+                    ask_size=2,
+                    underlying_price=1000,
+                    taker_fee_rate=0.0003,
+                    updated_at=updated_at,
+                )
+                for exchange, bid, ask in (("derive", 100, 101), ("deribit", 110, 112))
+            ]
+        )
+        await sess.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.get("/api/tickers")
+    assert response.status_code == 200
+    row = response.json()[0]
+    # Les métriques restent calculées ; seul le verdict bascule.
+    assert row["net_profit_usd"] == pytest.approx(17.8734)
+    assert row["eligible"] is False
+
+
+@pytest.mark.asyncio
+async def test_opportunity_effective_economics_without_verification(test_db: str) -> None:
+    """Sans vérification, `effective` reprend les valeurs du screening."""
+    await _insert_opportunity()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        r = await ac.get("/api/opportunities")
+    assert r.status_code == 200
+    opp = r.json()[0]
+
+    assert opp["is_verified"] is False
+    assert opp["effective"]["buy_price"] == 101.0
+    assert opp["effective"]["sell_price"] == 110.0
+    assert opp["effective"]["tradeable_size"] == 10.0
+    assert opp["effective"]["net_profit_usd"] == pytest.approx(89.367)
+    assert opp["effective"]["apr_pct"] == pytest.approx(107.0)
+
+
+@pytest.mark.asyncio
+async def test_opportunity_effective_economics_prefers_verified_values(test_db: str) -> None:
+    await _insert_opportunity(
+        verified_buy_limit=102.0,
+        verified_sell_limit=109.0,
+        verified_tradeable_size=4.0,
+        verified_buy_premium_usd=408.0,
+        verified_sell_premium_usd=436.0,
+        verified_estimated_short_margin_usd=30000.0,
+        verified_capital_required_usd=30408.0,
+        verified_gross_profit_usd=28.0,
+        verified_fees_usd=0.253,
+        verified_net_profit_usd=27.747,
+        verified_net_return_pct=0.0912,
+        verified_apr_pct=83.0,
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        r = await ac.get("/api/opportunities")
+    opp = r.json()[0]
+
+    assert opp["is_verified"] is True
+    assert opp["effective"]["buy_price"] == 102.0
+    assert opp["effective"]["tradeable_size"] == 4.0
+    assert opp["effective"]["net_profit_usd"] == pytest.approx(27.747)
+    assert opp["effective"]["apr_pct"] == pytest.approx(83.0)
+
+
+@pytest.mark.asyncio
+async def test_opportunity_effective_economics_falls_back_field_by_field(test_db: str) -> None:
+    """Une vérification partielle ne doit pas produire de trou.
+
+    Le frontend supposait « si un champ vérifié existe, les onze existent » et
+    l'affirmait avec onze assertions non-null. Ici chaque champ retombe seul.
+    """
+    await _insert_opportunity(
+        verified_tradeable_size=4.0,
+        verified_buy_limit=102.0,
+        # les neuf autres champs vérifiés restent NULL
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        r = await ac.get("/api/opportunities")
+    opp = r.json()[0]
+
+    assert opp["is_verified"] is True
+    assert opp["effective"]["tradeable_size"] == 4.0
+    assert opp["effective"]["buy_price"] == 102.0
+    # Retombe sur les valeurs du screening, sans None ni exception.
+    assert opp["effective"]["sell_price"] == 110.0
+    assert opp["effective"]["net_profit_usd"] == pytest.approx(89.367)
+    assert all(value is not None for value in opp["effective"].values())
 
 
 @pytest.mark.asyncio

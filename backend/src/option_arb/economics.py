@@ -3,7 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from option_arb.config import Thresholds
 
 
 @dataclass(frozen=True)
@@ -90,4 +93,29 @@ def calculate_option_economics(
         price_spread_pct=gross_profit / buy_premium * Decimal(100),
         net_return_pct=net_return,
         apr_pct=net_return * Decimal(365) / days_to_expiry,
+    )
+
+
+def meets_thresholds(
+    thresholds: Thresholds,
+    *,
+    apr_pct: Decimal,
+    buy_premium_usd: Decimal,
+    days_to_expiry: Decimal,
+    net_return_pct: Decimal,
+    net_profit_usd: Decimal,
+) -> bool:
+    """Single source of truth for "is this spread worth executing".
+
+    Both the screener (which persists opportunities) and `/api/tickers` (which
+    dims ineligible rows in the UI) call this. It used to be inlined in the
+    screener and re-implemented in TypeScript in the frontend — a threshold
+    added on one side silently diverged from the other.
+    """
+    return (
+        apr_pct >= Decimal(str(thresholds.min_apr_pct))
+        and buy_premium_usd >= Decimal(str(thresholds.min_buy_premium_usd))
+        and days_to_expiry <= Decimal(thresholds.max_days_to_expiry)
+        and net_return_pct >= Decimal(str(thresholds.min_net_return_pct))
+        and net_profit_usd >= Decimal(str(thresholds.min_net_profit_usd))
     )

@@ -7,6 +7,7 @@ import pytest
 from freezegun import freeze_time
 
 from option_arb.api.tickers import _group_and_compute
+from option_arb.config import Thresholds
 from option_arb.db.models import TickerState
 from option_arb.exchanges.naming import normalize_deribit, normalize_from_parts
 from option_arb.services.comparator import Quote, Spread, compare_options
@@ -205,7 +206,7 @@ def test_comparator_and_book_have_identical_economics() -> None:
         for quote in (buy_quote, sell_quote)
     ]
     with freeze_time(now):
-        book_row = _group_and_compute(rows)[0]
+        book_row = _group_and_compute(rows, Thresholds())[0]
     for field in (
         "tradeable_size",
         "buy_premium_usd",

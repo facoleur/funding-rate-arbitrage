@@ -10,6 +10,7 @@ from sqlmodel import select
 from option_arb.config import AppConfig, settings
 from option_arb.db.models import Mode, Opportunity, OpportunityStatus, TickerState
 from option_arb.db.session import get_session
+from option_arb.economics import meets_thresholds
 from option_arb.events import Event, bus
 from option_arb.market.book_cache import BookCache, CachedTicker
 from option_arb.services.comparator import Quote, compare_options
@@ -149,24 +150,18 @@ class Screener:
         if not spreads:
             return
 
-        min_apr = Decimal(str(self.config.thresholds.min_apr_pct))
-        min_buy_premium = Decimal(str(self.config.thresholds.min_buy_premium_usd))
-        max_days = self.config.thresholds.max_days_to_expiry
-        min_net_return = Decimal(str(self.config.thresholds.min_net_return_pct))
-        min_profit = Decimal(str(self.config.thresholds.min_net_profit_usd))
         mode = Mode(self.config.executor.mode)
 
         rows: list[Opportunity] = []
         for s in spreads:
-            if s.apr_pct < min_apr:
-                continue
-            if s.buy_premium_usd < min_buy_premium:
-                continue
-            if s.days_to_expiry > Decimal(max_days):
-                continue
-            if s.net_return_pct < min_net_return:
-                continue
-            if s.net_profit_usd < min_profit:
+            if not meets_thresholds(
+                self.config.thresholds,
+                apr_pct=s.apr_pct,
+                buy_premium_usd=s.buy_premium_usd,
+                days_to_expiry=s.days_to_expiry,
+                net_return_pct=s.net_return_pct,
+                net_profit_usd=s.net_profit_usd,
+            ):
                 continue
             ex_cfg = self.config.exchanges.get(s.buy_from)
             network = ex_cfg.network if ex_cfg else "mainnet"

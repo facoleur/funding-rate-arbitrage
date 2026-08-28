@@ -27,9 +27,11 @@ Always read the relevant doc before editing:
 
 ## Current state
 
-- **Backend `backend/` (Python + Postgres)** is the sole source of truth. All phases 1-12 landed; 74 tests passing.
+- **Backend `backend/` (Python + Postgres)** is the sole source of truth. All phases 1-12 landed; 152 tests passing.
 - Deribit adapter has full OAuth support (token fetch + refresh cached). Derive has full EIP-712 signing via `DeriveAuth`. Aevo uses aggregate public **WebSocket** book-ticker + index channels; private auth is deferred.
-- **Frontend `frontend/`** is built: Vite + React + TanStack Query + React Router, 7 pages (Book, Executor, Funding, History, Opportunities, Positions, Trades). Served via nginx in the `frontend` Docker container.
+- **Frontend `frontend/`** is built: Vite + React + TanStack Query + React Router, 7 pages (Book, Executor, Funding, History, Opportunities, Positions, Trades). Served via nginx in the `frontend` Docker container (image `nginx:alpine` + `docker/nginx.conf`; there is no frontend Dockerfile in prod).
+  - Shared code lives in `src/lib/` (`format.ts`, `exchanges.ts`, `sort.ts`, `authError.ts`) and `src/components/ui/` (Select, SortHeader, Pagination, QueryState, ColumnPicker). Add to those rather than re-deriving a formatter or a filter input in a page.
+  - Tested with **vitest** (26 tests, jsdom), formatted with **prettier** — both enforced in CI.
 - **Storage**: Postgres in production (docker-compose service `postgres`). SQLite retained ONLY inside pytest for speed/isolation. Model code is DB-agnostic.
 
 ## Common commands
@@ -57,7 +59,9 @@ make migrate-new msg="..."  # create new revision
 make db-shell               # psql into postgres
 
 # Test + lint
-make test                   # pytest (74 tests, SQLite per-test)
+make test                   # both suites (backend pytest + frontend vitest)
+make test-backend           # pytest only (152 tests, SQLite per-test)
+make test-frontend          # vitest only (26 tests, jsdom)
 make lint                   # ruff check
 make format                 # ruff format
 make typecheck              # mypy

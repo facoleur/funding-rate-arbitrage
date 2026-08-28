@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useSSE } from '../hooks/useSSE'
+import AuthBanner from './AuthBanner'
 import { fetchStatus } from '../api/status'
 
 const links = [
@@ -73,99 +74,103 @@ export default function Layout() {
   }
 
   return (
-    <div className="flex h-screen bg-zinc-950 text-zinc-100">
-      {/* Bouton flottant quand sidebar cachée */}
-      {collapsed && (
-        <div className="fixed top-3 left-3 z-50">
-          <ToggleButton collapsed={collapsed} onClick={toggle} />
-        </div>
-      )}
+    <div className="flex h-screen flex-col bg-zinc-950 text-zinc-100">
+      <AuthBanner />
 
-      <aside
-        className={`flex flex-col border-r border-zinc-800 bg-zinc-900 py-4 transition-[width] duration-200 ease-in-out overflow-hidden ${
-          collapsed ? 'w-0 border-r-0' : 'w-44'
-        }`}
-      >
-        <div className="flex items-center justify-between mb-6 px-4">
-          <span className="text-xs font-semibold uppercase tracking-widest text-zinc-500 truncate">
-            Option Arb
-          </span>
-          <ToggleButton collapsed={collapsed} onClick={toggle} />
-        </div>
+      <div className="flex min-h-0 flex-1">
+        {/* Bouton flottant quand sidebar cachée */}
+        {collapsed && (
+          <div className="fixed top-3 left-3 z-50">
+            <ToggleButton collapsed={collapsed} onClick={toggle} />
+          </div>
+        )}
 
-        <nav className="flex flex-col gap-0.5 px-2">
-          {links.map((l) => (
-            <NavLink
-              key={l.to}
-              to={l.to}
-              end={l.end}
-              className={({ isActive }) =>
-                `rounded px-3 py-1.5 text-sm transition-colors ${
-                  isActive
-                    ? 'bg-zinc-800 text-zinc-100'
-                    : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
-                }`
-              }
-            >
-              {l.label}
-            </NavLink>
-          ))}
-        </nav>
-
-        <div className="mt-auto px-4 space-y-2">
-          <div className="flex items-center gap-2">
-            <Dot on={sseStatus === 'connected'} pulse={sseStatus === 'connecting'} />
-            <span className="text-xs text-zinc-500">SSE</span>
+        <aside
+          className={`flex flex-col border-r border-zinc-800 bg-zinc-900 py-4 transition-[width] duration-200 ease-in-out overflow-hidden ${
+            collapsed ? 'w-0 border-r-0' : 'w-44'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-6 px-4">
+            <span className="text-xs font-semibold uppercase tracking-widest text-zinc-500 truncate">
+              Option Arb
+            </span>
+            <ToggleButton collapsed={collapsed} onClick={toggle} />
           </div>
 
-          {appStatus && (
-            <div className="flex items-center gap-2">
-              <Dot on={executorRunning} />
-              <span className={`text-xs ${executorRunning ? 'text-zinc-400' : 'text-red-400'}`}>
-                {executorRunning ? 'Executor' : 'KILLED'}
-                {mode && <span className="text-zinc-500"> · {mode}</span>}
-              </span>
-            </div>
-          )}
-
-          {appStatus &&
-            Object.entries(appStatus.exchanges).map(([name, ex]) => (
-              <div
-                key={name}
-                className="flex items-center gap-2"
-                title={[
-                  ex.rest_base_url && `REST: ${ex.rest_base_url}`,
-                  ex.ws_url && `WS:   ${ex.ws_url}`,
-                ]
-                  .filter(Boolean)
-                  .join('\n')}
+          <nav className="flex flex-col gap-0.5 px-2">
+            {links.map((l) => (
+              <NavLink
+                key={l.to}
+                to={l.to}
+                end={l.end}
+                className={({ isActive }) =>
+                  `rounded px-3 py-1.5 text-sm transition-colors ${
+                    isActive
+                      ? 'bg-zinc-800 text-zinc-100'
+                      : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
+                  }`
+                }
               >
-                <Dot on={ex.live} />
-                {ex.network && (
-                  <span
-                    className={`text-[9px] font-bold ${
-                      ex.network === 'mainnet' ? 'text-amber-400' : 'text-sky-500'
-                    }`}
-                  >
-                    {ex.network === 'mainnet' ? 'MAIN' : 'TEST'}
-                  </span>
-                )}
-                <span className="text-xs text-zinc-500">
-                  {name}
-                  <span className="ml-1 text-zinc-500">{ex.instruments}</span>
+                {l.label}
+              </NavLink>
+            ))}
+          </nav>
+
+          <div className="mt-auto px-4 space-y-2">
+            <div className="flex items-center gap-2">
+              <Dot on={sseStatus === 'connected'} pulse={sseStatus === 'connecting'} />
+              <span className="text-xs text-zinc-500">SSE</span>
+            </div>
+
+            {appStatus && (
+              <div className="flex items-center gap-2">
+                <Dot on={executorRunning} />
+                <span className={`text-xs ${executorRunning ? 'text-zinc-400' : 'text-red-400'}`}>
+                  {executorRunning ? 'Executor' : 'KILLED'}
+                  {mode && <span className="text-zinc-500"> · {mode}</span>}
                 </span>
               </div>
-            ))}
+            )}
 
-          <div className="pt-1 border-t border-zinc-800">
-            <span className="text-[10px] text-zinc-600">{appVersion}</span>
+            {appStatus &&
+              Object.entries(appStatus.exchanges).map(([name, ex]) => (
+                <div
+                  key={name}
+                  className="flex items-center gap-2"
+                  title={[
+                    ex.rest_base_url && `REST: ${ex.rest_base_url}`,
+                    ex.ws_url && `WS:   ${ex.ws_url}`,
+                  ]
+                    .filter(Boolean)
+                    .join('\n')}
+                >
+                  <Dot on={ex.live} />
+                  {ex.network && (
+                    <span
+                      className={`text-[9px] font-bold ${
+                        ex.network === 'mainnet' ? 'text-amber-400' : 'text-sky-500'
+                      }`}
+                    >
+                      {ex.network === 'mainnet' ? 'MAIN' : 'TEST'}
+                    </span>
+                  )}
+                  <span className="text-xs text-zinc-500">
+                    {name}
+                    <span className="ml-1 text-zinc-500">{ex.instruments}</span>
+                  </span>
+                </div>
+              ))}
+
+            <div className="pt-1 border-t border-zinc-800">
+              <span className="text-[10px] text-zinc-600">{appVersion}</span>
+            </div>
           </div>
-        </div>
-      </aside>
+        </aside>
 
-      <main className="flex-1 overflow-auto p-6">
-        <Outlet />
-      </main>
+        <main className="flex-1 overflow-auto p-6">
+          <Outlet />
+        </main>
+      </div>
     </div>
   )
 }

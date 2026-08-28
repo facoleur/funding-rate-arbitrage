@@ -1,27 +1,25 @@
 import { useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import type { OnChangeFn, SortingState } from '@tanstack/react-table'
 
-export interface BookFilters {
-  underlying: string
-  optionType: string
-  exchange: string
-  maxExpiry: string
-  onlyArb: boolean
-}
+import type { SortDir } from '../lib/sort'
 
+/**
+ * Filtres et tri de la page Book, persistés dans l'URL (partageable, rechargeable).
+ *
+ * Expose directement `sortCol` / `sortDir` : la version précédente renvoyait le
+ * `SortingState` de @tanstack/react-table, que l'appelant reconvertissait aussitôt
+ * — l'abstraction était façonnée pour une bibliothèque qui n'était pas utilisée.
+ */
 export function useBookFilters() {
   const [params, setParams] = useSearchParams()
 
   const underlying = params.get('u') ?? ''
   const optionType = params.get('t') ?? ''
-  const exchange   = params.get('ex') ?? ''
-  const maxExpiry  = params.get('maxexp') ?? ''
-  const onlyArb    = params.get('arb') === '1'
-  const sortId     = params.get('sort') ?? ''
-  const sortDesc   = params.get('dir') !== 'asc'
-
-  const sorting: SortingState = sortId ? [{ id: sortId, desc: sortDesc }] : []
+  const exchange = params.get('ex') ?? ''
+  const maxExpiry = params.get('maxexp') ?? ''
+  const onlyArb = params.get('arb') === '1'
+  const sortCol = params.get('sort') ?? ''
+  const sortDir: SortDir = params.get('dir') === 'asc' ? 'asc' : 'desc'
 
   const patch = useCallback(
     (updates: Record<string, string>) => {
@@ -40,14 +38,7 @@ export function useBookFilters() {
     [setParams],
   )
 
-  const onSortingChange: OnChangeFn<SortingState> = useCallback(
-    (updater) => {
-      const next = typeof updater === 'function' ? updater(sorting) : updater
-      const [first] = next
-      patch(first ? { sort: first.id, dir: first.desc ? 'desc' : 'asc' } : { sort: '', dir: '' })
-    },
-    [sorting, patch],
-  )
+  const setSort = useCallback((col: string, dir: SortDir) => patch({ sort: col, dir }), [patch])
 
   const hasFilters = !!(underlying || optionType || exchange || maxExpiry || onlyArb)
 
@@ -58,13 +49,14 @@ export function useBookFilters() {
     maxExpiry,
     onlyArb,
     hasFilters,
-    sorting,
-    onSortingChange,
+    sortCol,
+    sortDir,
+    setSort,
     setUnderlying: (v: string) => patch({ u: v }),
     setOptionType: (v: string) => patch({ t: v }),
-    setExchange:   (v: string) => patch({ ex: v }),
-    setMaxExpiry:  (v: string) => patch({ maxexp: v }),
-    setOnlyArb:    (v: boolean) => patch({ arb: v ? '1' : '' }),
-    resetFilters:  () => patch({ u: '', t: '', ex: '', maxexp: '', arb: '' }),
+    setExchange: (v: string) => patch({ ex: v }),
+    setMaxExpiry: (v: string) => patch({ maxexp: v }),
+    setOnlyArb: (v: boolean) => patch({ arb: v ? '1' : '' }),
+    resetFilters: () => patch({ u: '', t: '', ex: '', maxexp: '', arb: '' }),
   }
 }

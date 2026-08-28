@@ -1,236 +1,259 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+
 import { fetchTickers, type BookRow, type ExchangeQuote } from '../api/tickers'
-import { fetchExecutorState } from '../api/executor'
 import { useBookFilters } from '../hooks/useBookFilters'
-
-// ─── Formatters ──────────────────────────────────────────────────────────────
-
-function fmtExpiry(iso: string) {
-  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: '2-digit' })
-}
-
-function fmtAge(iso: string) {
-  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
-  if (s < 60) return `${s}s`
-  if (s < 3600) return `${Math.floor(s / 60)}m`
-  return `${Math.floor(s / 3600)}h`
-}
+import { fmtAge, fmtExpiry } from '../lib/format'
+import { exchangeAbbr, exchangeUrl } from '../lib/exchanges'
+import { compareValues, nullLast, type SortDir } from '../lib/sort'
+import { FIELD_CLASS, Select } from '../components/ui/Field'
+import SortHeader from '../components/ui/SortHeader'
+import QueryState from '../components/ui/QueryState'
 
 // ─── Sorting ─────────────────────────────────────────────────────────────────
 
-type SortDir = 'asc' | 'desc'
-const SORTABLE = ['expiry', 'strike', 'priceSpread', 'buyPremium', 'margin', 'capital', 'netReturn', 'profit', 'apr', 'age'] as const
-type SortCol = typeof SORTABLE[number]
+const SORTABLE = [
+  'expiry',
+  'strike',
+  'priceSpread',
+  'buyPremium',
+  'margin',
+  'capital',
+  'netReturn',
+  'profit',
+  'apr',
+  'age',
+] as const
+type SortCol = (typeof SORTABLE)[number]
 
-function isSortCol(s: string | null): s is SortCol {
-  return SORTABLE.includes(s as SortCol)
+/** Colonnes où le tri le plus utile part du plus grand. */
+const DESC_FIRST: SortCol[] = [
+  'priceSpread',
+  'netReturn',
+  'profit',
+  'buyPremium',
+  'margin',
+  'capital',
+]
+
+function isSortCol(s: string): s is SortCol {
+  return (SORTABLE as readonly string[]).includes(s)
+}
+
+function sortValue(row: BookRow, col: SortCol): number {
+  switch (col) {
+    case 'expiry':
+      return new Date(row.expiry).getTime()
+    case 'strike':
+      return row.strike
+    case 'priceSpread':
+      return nullLast(row.price_spread_pct)
+    case 'buyPremium':
+      return nullLast(row.buy_premium_usd)
+    case 'margin':
+      return nullLast(row.estimated_short_margin_usd)
+    case 'capital':
+      return nullLast(row.capital_required_usd)
+    case 'netReturn':
+      return nullLast(row.net_return_pct)
+    case 'apr':
+      return nullLast(row.apr_pct)
+    case 'profit':
+      return nullLast(row.net_profit_usd)
+    case 'age':
+      return new Date(row.updated_at).getTime()
+  }
 }
 
 function sortRows(rows: BookRow[], col: SortCol | null, dir: SortDir): BookRow[] {
-  if (!col) return rows.slice().sort((a, b) => {
-    if (a.underlying !== b.underlying) return a.underlying.localeCompare(b.underlying)
-    if (a.expiry !== b.expiry) return a.expiry.localeCompare(b.expiry)
-    if (a.strike !== b.strike) return a.strike - b.strike
-    return a.option_type.localeCompare(b.option_type)
-  })
-  const sign = dir === 'asc' ? 1 : -1
-  return rows.slice().sort((a, b) => {
-    let av: number, bv: number
-    switch (col) {
-      case 'expiry': av = new Date(a.expiry).getTime(); bv = new Date(b.expiry).getTime(); break
-      case 'strike': av = a.strike; bv = b.strike; break
-      case 'priceSpread': av = a.price_spread_pct ?? -Infinity; bv = b.price_spread_pct ?? -Infinity; break
-      case 'buyPremium': av = a.buy_premium_usd ?? -Infinity; bv = b.buy_premium_usd ?? -Infinity; break
-      case 'margin': av = a.estimated_short_margin_usd ?? -Infinity; bv = b.estimated_short_margin_usd ?? -Infinity; break
-      case 'capital': av = a.capital_required_usd ?? -Infinity; bv = b.capital_required_usd ?? -Infinity; break
-      case 'netReturn': av = a.net_return_pct ?? -Infinity; bv = b.net_return_pct ?? -Infinity; break
-      case 'apr':    av = a.apr_pct ?? -Infinity; bv = b.apr_pct ?? -Infinity; break
-      case 'profit': av = a.net_profit_usd ?? -Infinity; bv = b.net_profit_usd ?? -Infinity; break
-      case 'age':    av = new Date(a.updated_at).getTime(); bv = new Date(b.updated_at).getTime(); break
-    }
-    return (av! < bv! ? -1 : av! > bv! ? 1 : 0) * sign
-  })
+  if (!col) {
+    return rows.slice().sort((a, b) => {
+      if (a.underlying !== b.underlying) return a.underlying.localeCompare(b.underlying)
+      if (a.expiry !== b.expiry) return a.expiry.localeCompare(b.expiry)
+      if (a.strike !== b.strike) return a.strike - b.strike
+      return a.option_type.localeCompare(b.option_type)
+    })
+  }
+  return rows.slice().sort((a, b) => compareValues(sortValue(a, col), sortValue(b, col), dir))
 }
 
-// ─── Exchange URL helpers ─────────────────────────────────────────────────────
-
-const _M = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
-
-function toDeribitName(n: string) {
-  const m = n.match(/^([A-Z]+)-(\d{4})(\d{2})(\d{2})-(\d+(?:\.\d+)?)-([CP])$/)
-  if (!m) return null
-  return `${m[1]}-${parseInt(m[4])}${_M[parseInt(m[3])-1]}${m[2].slice(2)}-${m[5]}-${m[6]}`
-}
-
-function deribitUrl(inst: string, ul: string) {
-  const n = toDeribitName(inst); if (!n) return null
-  const [a, b] = n.split('-'); return `https://www.deribit.com/options/${ul}/${a}-${b}/${n}`
-}
-function deriveUrl(inst: string) { return `https://app.derive.xyz/trade/${inst}` }
-function aevoUrl(inst: string) { const n = toDeribitName(inst); if (!n) return null; return `https://app.aevo.xyz/trade/${n}` }
-
-const ABBR: Record<string, string> = { deribit: 'Db', deribit_linear: 'DL', derive: 'Dr', aevo: 'Av' }
+// ─── Cells ───────────────────────────────────────────────────────────────────
 
 function ExLink({ href, ex }: { href: string; ex: string }) {
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer"
-      className="text-[9px] font-semibold px-1 py-px rounded bg-zinc-800 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-700 transition-colors leading-none">
-      {ABBR[ex] ?? ex.slice(0, 2)}
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="rounded bg-zinc-800 px-1 py-px text-[9px] font-semibold leading-none text-zinc-500 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
+    >
+      {exchangeAbbr(ex)}
     </a>
   )
 }
 
-// ─── Exec criteria ───────────────────────────────────────────────────────────
-
-type Thresholds = {
-  max_days_to_expiry: number
-  min_apr_pct: number
-  min_buy_premium_usd: number
-  min_net_return_pct: number
-  min_net_profit_usd: number
-}
-
-function meetsExecCriteria(row: BookRow, thresholds: Thresholds | undefined): boolean {
-  if (!thresholds) return true
-  if (row.net_return_pct === null || row.apr_pct === null || row.buy_premium_usd === null || row.net_profit_usd === null) return false
-  if (row.days_to_expiry > thresholds.max_days_to_expiry) return false
-  if (row.apr_pct < thresholds.min_apr_pct) return false
-  if (row.buy_premium_usd < thresholds.min_buy_premium_usd) return false
-  if (row.net_return_pct < thresholds.min_net_return_pct) return false
-  if (row.net_profit_usd < thresholds.min_net_profit_usd) return false
-  return true
-}
-
-// ─── Shared styles ────────────────────────────────────────────────────────────
-
-const SELECT = 'rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-200 focus:outline-none'
-
-function Th({
-  label, col, active, dir, onClick, className = '',
+function QuoteCell({
+  q,
+  side,
+  highlight,
 }: {
-  label: string; col: SortCol; active: boolean; dir: SortDir
-  onClick: (col: SortCol) => void; className?: string
+  q: ExchangeQuote | undefined
+  side: 'bid' | 'ask'
+  highlight: boolean
 }) {
-  return (
-    <th onClick={() => onClick(col)}
-      className={`pb-2 pr-3 cursor-pointer select-none hover:text-zinc-300 ${className}`}>
-      {label}
-      <span className={`ml-1 ${active ? 'text-zinc-300' : 'text-zinc-600'}`}>
-        {active ? (dir === 'asc' ? '↑' : '↓') : '↕'}
-      </span>
-    </th>
-  )
-}
-
-function QuoteCell({ q, side, highlight }: { q: ExchangeQuote | undefined; side: 'bid' | 'ask'; highlight: boolean }) {
   if (!q) return <span className="text-zinc-700">—</span>
   const price = side === 'bid' ? q.bid_price : q.ask_price
-  const size  = side === 'bid' ? q.bid_size  : q.ask_size
+  const size = side === 'bid' ? q.bid_size : q.ask_size
   const stale = q.is_stale
-  const color = stale ? 'text-zinc-600'
-    : highlight ? (side === 'bid' ? 'text-emerald-300 font-semibold' : 'text-sky-300 font-semibold')
-    : side === 'bid' ? 'text-emerald-400' : 'text-red-400'
+  const color = stale
+    ? 'text-zinc-600'
+    : highlight
+      ? side === 'bid'
+        ? 'text-emerald-300 font-semibold'
+        : 'text-sky-300 font-semibold'
+      : side === 'bid'
+        ? 'text-emerald-400'
+        : 'text-red-400'
   return (
     <span className={color} title={stale ? 'Données > 60s' : undefined}>
       {stale && price != null && <span className="mr-0.5 text-amber-600">⚠</span>}
       {price != null ? price.toFixed(2) : '—'}
-      {size != null && <span className="text-zinc-500 ml-1">{size.toFixed(3)}</span>}
+      {size != null && <span className="ml-1 text-zinc-500">{size.toFixed(3)}</span>}
     </span>
   )
 }
 
-// ─── Page ─────────────────────────────────────────────────────────────────────
+/** Cellule numérique nullable : même mise en forme partout, `—` quand absente. */
+function NumCell({
+  value,
+  format,
+  active,
+  activeClass,
+}: {
+  value: number | null
+  format: (v: number) => string
+  active: boolean
+  activeClass: string
+}) {
+  return (
+    <td className={`py-1 pr-3 text-right ${active ? activeClass : 'text-zinc-600'}`}>
+      {value != null ? format(value) : '—'}
+    </td>
+  )
+}
+
+// ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function Book() {
   const f = useBookFilters()
   const [showLinks, setShowLinks] = useState(true)
-  const sortCol  = isSortCol(f.sorting[0]?.id ?? null) ? (f.sorting[0]!.id as SortCol) : null
-  const sortDir: SortDir = f.sorting[0]?.desc === false ? 'asc' : 'desc'
+  const sortCol = isSortCol(f.sortCol) ? f.sortCol : null
 
-  const { data = [], isLoading, isError } = useQuery({
+  const {
+    data = [],
+    isLoading,
+    isError,
+  } = useQuery({
     queryKey: ['tickers', f.underlying],
     queryFn: () => fetchTickers({ underlying: f.underlying || undefined }),
     refetchInterval: 5000,
   })
 
-  const { data: execState } = useQuery({
-    queryKey: ['executor-state'],
-    queryFn: fetchExecutorState,
-    refetchInterval: 30_000,
-    retry: false,
-  })
-  const thresholds = execState?.config
-
-  // Stable exchange list — only recompute when the set of exchange names actually changes
   const allExchanges = useMemo(() => {
     const set = new Set<string>()
     for (const r of data) for (const ex of Object.keys(r.exchanges)) set.add(ex)
     return [...set].sort()
-  }, [data.map(r => Object.keys(r.exchanges).sort().join()).join('|')])  // eslint-disable-line
+  }, [data])
 
-  const filtered = useMemo(() =>
-    data
-      .filter(r => !f.optionType || r.option_type === f.optionType)
-      .filter(r => !f.onlyArb   || (r.net_return_pct !== null && r.net_return_pct > 0))
-      .filter(r => !f.exchange  || f.exchange in r.exchanges)
-      .filter(r => !f.maxExpiry || r.expiry.slice(0, 10) <= f.maxExpiry),
+  const filtered = useMemo(
+    () =>
+      data
+        .filter((r) => !f.optionType || r.option_type === f.optionType)
+        .filter((r) => !f.onlyArb || (r.net_return_pct !== null && r.net_return_pct > 0))
+        .filter((r) => !f.exchange || f.exchange in r.exchanges)
+        .filter((r) => !f.maxExpiry || r.expiry.slice(0, 10) <= f.maxExpiry),
     [data, f.optionType, f.onlyArb, f.exchange, f.maxExpiry],
   )
 
-  const rows = useMemo(() => sortRows(filtered, sortCol, sortDir), [filtered, sortCol, sortDir])
+  const rows = useMemo(() => sortRows(filtered, sortCol, f.sortDir), [filtered, sortCol, f.sortDir])
 
   function handleSort(col: SortCol) {
-    const desc = sortCol === col ? sortDir === 'asc' : !['priceSpread', 'netReturn', 'profit', 'buyPremium', 'margin', 'capital'].includes(col)
-    f.onSortingChange([{ id: col, desc }])
+    const desc = sortCol === col ? f.sortDir === 'asc' : DESC_FIRST.includes(col)
+    f.setSort(col, desc ? 'desc' : 'asc')
   }
 
-  function th(col: SortCol, label: string, className = '') {
-    return <Th col={col} label={label} active={sortCol === col} dir={sortDir} onClick={handleSort} className={className} />
+  function th(col: SortCol, label: string) {
+    return (
+      <SortHeader
+        col={col}
+        label={label}
+        active={sortCol === col}
+        dir={f.sortDir}
+        onSort={handleSort}
+        className="pb-2 pr-3"
+      />
+    )
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="flex h-full flex-col">
       <div className="mb-4 flex items-center gap-4">
         <h1 className="text-base font-semibold text-zinc-100">Book</h1>
         <span className="text-xs text-zinc-500">
-          {rows.length}{data.length !== rows.length ? ` / ${data.length}` : ''} instruments
+          {rows.length}
+          {data.length !== rows.length ? ` / ${data.length}` : ''} instruments
         </span>
       </div>
 
-      <div className="mb-4 flex flex-wrap gap-3 items-center">
-        <select value={f.underlying} onChange={e => f.setUnderlying(e.target.value)} className={SELECT}>
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <Select value={f.underlying} onChange={f.setUnderlying}>
           <option value="">BTC + ETH</option>
           <option value="BTC">BTC</option>
           <option value="ETH">ETH</option>
-        </select>
+        </Select>
 
-        <select value={f.optionType} onChange={e => f.setOptionType(e.target.value)} className={SELECT}>
+        <Select value={f.optionType} onChange={f.setOptionType}>
           <option value="">Calls + Puts</option>
           <option value="C">Calls</option>
           <option value="P">Puts</option>
-        </select>
+        </Select>
 
-        <select value={f.exchange} onChange={e => f.setExchange(e.target.value)} className={SELECT}>
+        <Select value={f.exchange} onChange={f.setExchange}>
           <option value="">Tous les exchanges</option>
-          {allExchanges.map(ex => <option key={ex} value={ex}>{ex}</option>)}
-        </select>
+          {allExchanges.map((ex) => (
+            <option key={ex} value={ex}>
+              {ex}
+            </option>
+          ))}
+        </Select>
 
         <div className="flex items-center gap-1.5">
           <label className="text-xs text-zinc-500">Expiry ≤</label>
-          <input type="date" value={f.maxExpiry} onChange={e => f.setMaxExpiry(e.target.value)}
-            className={SELECT + ' w-36'} />
+          <input
+            type="date"
+            value={f.maxExpiry}
+            onChange={(e) => f.setMaxExpiry(e.target.value)}
+            className={`${FIELD_CLASS} w-36`}
+          />
         </div>
 
-        <label className="flex items-center gap-1.5 text-xs text-zinc-400 cursor-pointer select-none">
-          <input type="checkbox" checked={f.onlyArb} onChange={e => f.setOnlyArb(e.target.checked)}
-            className="accent-emerald-500" />
+        <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-zinc-400">
+          <input
+            type="checkbox"
+            checked={f.onlyArb}
+            onChange={(e) => f.setOnlyArb(e.target.checked)}
+            className="accent-emerald-500"
+          />
           Arb seulement
         </label>
 
-        <label className="flex items-center gap-1.5 text-xs text-zinc-400 cursor-pointer select-none">
-          <input type="checkbox" checked={showLinks} onChange={e => setShowLinks(e.target.checked)}
-            className="accent-zinc-500" />
+        <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-zinc-400">
+          <input
+            type="checkbox"
+            checked={showLinks}
+            onChange={(e) => setShowLinks(e.target.checked)}
+            className="accent-zinc-500"
+          />
           Liens exchanges
         </label>
 
@@ -241,23 +264,26 @@ export default function Book() {
         )}
       </div>
 
-      {isLoading && <p className="text-xs text-zinc-500">Chargement...</p>}
-      {isError   && <p className="text-xs text-red-400">Erreur de chargement</p>}
-      {!isLoading && rows.length === 0 && !isError && (
-        <p className="text-xs text-zinc-500">Aucune donnée.</p>
-      )}
+      <QueryState
+        isLoading={isLoading}
+        isError={isError}
+        isEmpty={rows.length === 0}
+        emptyLabel="Aucune donnée."
+      />
 
       {rows.length > 0 && (
-        <div className="flex-1 min-h-0 overflow-auto -mr-6 -mb-6">
-          <table className="w-full text-xs border-separate border-spacing-0 whitespace-nowrap">
+        <div className="-mb-6 -mr-6 min-h-0 flex-1 overflow-auto">
+          <table className="w-full whitespace-nowrap border-separate border-spacing-0 text-xs">
             <thead className="sticky top-0 z-10 bg-zinc-950">
               <tr className="border-b border-zinc-800 text-center text-zinc-500">
-                <th className="pb-2 pr-3 text-left sticky left-0 bg-zinc-950 z-20">Instrument</th>
+                <th className="sticky left-0 z-20 bg-zinc-950 pb-2 pr-3 text-left">Instrument</th>
                 {th('expiry', 'Expiry')}
                 {th('strike', 'Strike')}
                 <th className="pb-2 pr-3">Type</th>
-                {allExchanges.map(ex => (
-                  <th key={ex} className="pb-2 pr-3" colSpan={2}>{ex}</th>
+                {allExchanges.map((ex) => (
+                  <th key={ex} className="pb-2 pr-3" colSpan={2}>
+                    {ex}
+                  </th>
                 ))}
                 {th('priceSpread', 'Price spread %')}
                 {th('buyPremium', 'Buy premium')}
@@ -270,10 +296,10 @@ export default function Book() {
                 {th('age', 'Age')}
               </tr>
               <tr className="border-b border-zinc-800/40 text-center text-zinc-600">
-                <th className="sticky left-0 bg-zinc-950 z-20" />
+                <th className="sticky left-0 z-20 bg-zinc-950" />
                 <th colSpan={3} />
-                {allExchanges.map(ex => (
-                  <th key={ex} colSpan={2} className="pb-1 font-normal text-[10px]">
+                {allExchanges.map((ex) => (
+                  <th key={ex} colSpan={2} className="pb-1 text-[10px] font-normal">
                     <span className="pr-5">bid</span>
                     <span>ask</span>
                   </th>
@@ -282,69 +308,120 @@ export default function Book() {
               </tr>
             </thead>
             <tbody>
-              {rows.map(row => {
-                const hasArb  = row.net_return_pct !== null && row.net_return_pct > 0
+              {rows.map((row) => {
+                const hasArb = row.net_return_pct !== null && row.net_return_pct > 0
                 const hasGross = row.price_spread_pct !== null && row.price_spread_pct > 0
-                const dUrl = deribitUrl(row.instrument, row.underlying)
-                const avUrl = aevoUrl(row.instrument)
-                const eligible = meetsExecCriteria(row, thresholds)
+                // `eligible` est le verdict du backend — même prédicat que le screener.
 
                 return (
-                  <tr key={row.instrument} className={`border-b border-zinc-800/40 ${hasArb ? 'bg-emerald-950/20' : ''} ${!eligible ? 'opacity-50' : ''}`}>
-                    <td className="py-1 pr-3 sticky left-0 bg-zinc-950 z-10">
+                  <tr
+                    key={row.instrument}
+                    className={`border-b border-zinc-800/40 ${hasArb ? 'bg-emerald-950/20' : ''} ${
+                      !row.eligible ? 'opacity-50' : ''
+                    }`}
+                  >
+                    <td className="sticky left-0 z-10 bg-zinc-950 py-1 pr-3">
                       <div className="flex items-center gap-1.5">
                         <span className="font-medium text-zinc-200">{row.instrument}</span>
-                        {showLinks && row.exchanges['deribit'] && dUrl && <ExLink href={dUrl} ex="deribit" />}
-                        {showLinks && row.exchanges['deribit_linear'] && dUrl && <ExLink href={dUrl} ex="deribit_linear" />}
-                        {showLinks && row.exchanges['derive'] && <ExLink href={deriveUrl(row.instrument)} ex="derive" />}
-                        {showLinks && row.exchanges['aevo'] && avUrl && <ExLink href={avUrl} ex="aevo" />}
+                        {showLinks &&
+                          Object.keys(row.exchanges).map((ex) => {
+                            const href = exchangeUrl(ex, row.instrument, row.underlying)
+                            return href ? <ExLink key={ex} href={href} ex={ex} /> : null
+                          })}
                       </div>
                     </td>
                     <td className="py-1 pr-3 text-zinc-400">{fmtExpiry(row.expiry)}</td>
-                    <td className="py-1 pr-3 text-right text-zinc-300 tabular-nums">{row.strike.toLocaleString()}</td>
+                    <td className="py-1 pr-3 text-right tabular-nums text-zinc-300">
+                      {row.strike.toLocaleString()}
+                    </td>
                     <td className="py-1 pr-3">
-                      <span className={`font-medium ${row.option_type === 'C' ? 'text-blue-400' : 'text-orange-400'}`}>
+                      <span
+                        className={`font-medium ${
+                          row.option_type === 'C' ? 'text-blue-400' : 'text-orange-400'
+                        }`}
+                      >
                         {row.option_type === 'C' ? 'Call' : 'Put'}
                       </span>
                     </td>
-                    {allExchanges.map(ex => {
+                    {allExchanges.map((ex) => {
                       const q = row.exchanges[ex]
                       return (
-                        <>
-                          <td key={`${ex}-bid`} className={`py-1 pr-1 text-right ${hasArb && ex === row.sell_exchange ? 'bg-emerald-950/40' : ''}`}>
-                            <QuoteCell q={q} side="bid" highlight={hasArb && ex === row.sell_exchange} />
+                        <Fragment key={ex}>
+                          <td
+                            className={`py-1 pr-1 text-right ${
+                              hasArb && ex === row.sell_exchange ? 'bg-emerald-950/40' : ''
+                            }`}
+                          >
+                            <QuoteCell
+                              q={q}
+                              side="bid"
+                              highlight={hasArb && ex === row.sell_exchange}
+                            />
                           </td>
-                          <td key={`${ex}-ask`} className={`py-1 pr-3 text-right ${hasArb && ex === row.buy_exchange ? 'bg-sky-950/40' : ''}`}>
-                            <QuoteCell q={q} side="ask" highlight={hasArb && ex === row.buy_exchange} />
+                          <td
+                            className={`py-1 pr-3 text-right ${
+                              hasArb && ex === row.buy_exchange ? 'bg-sky-950/40' : ''
+                            }`}
+                          >
+                            <QuoteCell
+                              q={q}
+                              side="ask"
+                              highlight={hasArb && ex === row.buy_exchange}
+                            />
                           </td>
-                        </>
+                        </Fragment>
                       )
                     })}
-                    <td className={`py-1 pr-3 text-right ${hasGross ? 'text-zinc-300' : 'text-zinc-500'}`}>
-                      {row.price_spread_pct != null ? `${row.price_spread_pct.toFixed(2)}%` : '—'}
-                    </td>
-                    <td className={`py-1 pr-3 text-right ${hasArb ? 'text-sky-300' : 'text-zinc-600'}`}>
-                      {row.buy_premium_usd != null ? `$${row.buy_premium_usd.toFixed(2)}` : '—'}
-                    </td>
-                    <td className={`py-1 pr-3 text-right ${hasArb ? 'text-zinc-300' : 'text-zinc-600'}`}>
-                      {row.estimated_short_margin_usd != null ? `$${row.estimated_short_margin_usd.toFixed(2)}` : '—'}
-                    </td>
-                    <td className={`py-1 pr-3 text-right ${hasArb ? 'text-zinc-300' : 'text-zinc-600'}`}>
-                      {row.capital_required_usd != null ? `$${row.capital_required_usd.toFixed(2)}` : '—'}
-                    </td>
-                    <td className={`py-1 pr-3 text-right font-medium ${hasArb ? 'text-emerald-400' : 'text-zinc-500'}`}>
-                      {row.net_return_pct != null ? `${row.net_return_pct.toFixed(2)}%` : '—'}
-                    </td>
-                    <td className={`py-1 pr-3 text-right font-medium ${hasArb ? 'text-emerald-300' : 'text-zinc-500'}`}>
-                      {row.net_profit_usd != null ? `$${row.net_profit_usd.toFixed(2)}` : '—'}
-                    </td>
-                    <td className={`py-1 pr-3 text-right font-medium ${hasArb ? 'text-emerald-300' : 'text-zinc-500'}`}>
-                      {row.apr_pct != null ? `${row.apr_pct.toFixed(1)}%` : '—'}
-                    </td>
+                    <NumCell
+                      value={row.price_spread_pct}
+                      format={(v) => `${v.toFixed(2)}%`}
+                      active={hasGross}
+                      activeClass="text-zinc-300"
+                    />
+                    <NumCell
+                      value={row.buy_premium_usd}
+                      format={(v) => `$${v.toFixed(2)}`}
+                      active={hasArb}
+                      activeClass="text-sky-300"
+                    />
+                    <NumCell
+                      value={row.estimated_short_margin_usd}
+                      format={(v) => `$${v.toFixed(2)}`}
+                      active={hasArb}
+                      activeClass="text-zinc-300"
+                    />
+                    <NumCell
+                      value={row.capital_required_usd}
+                      format={(v) => `$${v.toFixed(2)}`}
+                      active={hasArb}
+                      activeClass="text-zinc-300"
+                    />
+                    <NumCell
+                      value={row.net_return_pct}
+                      format={(v) => `${v.toFixed(2)}%`}
+                      active={hasArb}
+                      activeClass="font-medium text-emerald-400"
+                    />
+                    <NumCell
+                      value={row.net_profit_usd}
+                      format={(v) => `$${v.toFixed(2)}`}
+                      active={hasArb}
+                      activeClass="font-medium text-emerald-300"
+                    />
+                    <NumCell
+                      value={row.apr_pct}
+                      format={(v) => `${v.toFixed(1)}%`}
+                      active={hasArb}
+                      activeClass="font-medium text-emerald-300"
+                    />
                     <td className="py-1 pr-3 text-xs">
-                      {hasArb
-                        ? <span className="text-emerald-400">{row.buy_exchange} → {row.sell_exchange}</span>
-                        : <span className="text-zinc-600">—</span>}
+                      {hasArb ? (
+                        <span className="text-emerald-400">
+                          {row.buy_exchange} → {row.sell_exchange}
+                        </span>
+                      ) : (
+                        <span className="text-zinc-600">—</span>
+                      )}
                     </td>
                     <td className="py-1 pr-3 text-zinc-500">{fmtAge(row.updated_at)}</td>
                   </tr>

@@ -4,6 +4,8 @@ import { fetchExecutorState, killExecutor, resumeExecutor } from '../api/executo
 import { fetchAlerts } from '../api/alerts'
 import StatusBadge from '../components/StatusBadge'
 import ConfirmModal from '../components/ConfirmModal'
+import QueryState from '../components/ui/QueryState'
+import { fmtDateTime } from '../lib/format'
 
 function Bar({ value, max, danger }: { value: number; max: number; danger?: boolean }) {
   const pct = Math.min(100, Math.abs(max) > 0 ? (Math.abs(value) / Math.abs(max)) * 100 : 0)
@@ -21,7 +23,11 @@ export default function Executor() {
   const qc = useQueryClient()
   const [modal, setModal] = useState<'kill' | 'resume' | null>(null)
 
-  const { data: state, isLoading, isError } = useQuery({
+  const {
+    data: state,
+    isLoading,
+    isError,
+  } = useQuery({
     queryKey: ['executor'],
     queryFn: fetchExecutorState,
     refetchInterval: 5000,
@@ -43,8 +49,9 @@ export default function Executor() {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['executor'] }),
   })
 
-  if (isLoading) return <p className="text-xs text-zinc-500">Chargement...</p>
-  if (isError || !state) return <p className="text-xs text-red-400">Erreur de chargement</p>
+  if (isLoading || isError || !state) {
+    return <QueryState isLoading={isLoading} isError={isError || !state} />
+  }
 
   const { config, counters } = state
   const dailyLossUsed = -Math.min(0, counters.daily_pnl_usd)
@@ -77,12 +84,16 @@ export default function Executor() {
 
       <div className="mb-6 grid grid-cols-2 gap-3">
         <div className="rounded border border-zinc-800 bg-zinc-900 p-3">
-          <p className="mb-3 text-xs font-medium text-zinc-400 uppercase tracking-wide">Limites actives</p>
+          <p className="mb-3 text-xs font-medium text-zinc-400 uppercase tracking-wide">
+            Limites actives
+          </p>
           <div className="space-y-3 text-xs">
             <div>
               <div className="flex justify-between text-zinc-400">
                 <span>Positions ouvertes</span>
-                <span className="text-zinc-200">{counters.open_positions} / {config.max_positions_open}</span>
+                <span className="text-zinc-200">
+                  {counters.open_positions} / {config.max_positions_open}
+                </span>
               </div>
               <Bar value={counters.open_positions} max={config.max_positions_open} />
             </div>
@@ -93,7 +104,11 @@ export default function Executor() {
                   ${dailyLossUsed.toFixed(2)} / ${config.max_daily_loss_usd}
                 </span>
               </div>
-              <Bar value={dailyLossUsed} max={config.max_daily_loss_usd} danger={dailyLossUsed > config.max_daily_loss_usd * 0.8} />
+              <Bar
+                value={dailyLossUsed}
+                max={config.max_daily_loss_usd}
+                danger={dailyLossUsed > config.max_daily_loss_usd * 0.8}
+              />
             </div>
             <div className="flex justify-between text-zinc-400">
               <span>PnL journalier</span>
@@ -144,7 +159,9 @@ export default function Executor() {
       </div>
 
       <div>
-        <p className="mb-3 text-xs font-medium text-zinc-400 uppercase tracking-wide">Alertes récentes</p>
+        <p className="mb-3 text-xs font-medium text-zinc-400 uppercase tracking-wide">
+          Alertes récentes
+        </p>
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-zinc-800 text-left text-zinc-500">
@@ -157,20 +174,19 @@ export default function Executor() {
           <tbody>
             {(alerts ?? []).length === 0 && (
               <tr>
-                <td colSpan={4} className="pt-4 text-center text-zinc-600">Aucune alerte</td>
+                <td colSpan={4} className="pt-4 text-center text-zinc-600">
+                  Aucune alerte
+                </td>
               </tr>
             )}
             {(alerts ?? []).map((a) => (
               <tr key={a.id} className="border-b border-zinc-800/40">
-                <td className="py-1 pr-3"><StatusBadge value={a.level} /></td>
+                <td className="py-1 pr-3">
+                  <StatusBadge value={a.level} />
+                </td>
                 <td className="py-1 pr-3 text-zinc-500">{a.channel}</td>
                 <td className="py-1 pr-3 text-zinc-300 max-w-xs truncate">{a.message}</td>
-                <td className="py-1 text-zinc-500 whitespace-nowrap">
-                  {new Date(a.sent_at).toLocaleString('fr-FR', {
-                    day: '2-digit', month: '2-digit',
-                    hour: '2-digit', minute: '2-digit',
-                  })}
-                </td>
+                <td className="py-1 text-zinc-500 whitespace-nowrap">{fmtDateTime(a.sent_at)}</td>
               </tr>
             ))}
           </tbody>
@@ -180,14 +196,20 @@ export default function Executor() {
       {modal === 'kill' && (
         <ConfirmModal
           message="Confirmer le kill-switch de l'executor ? Aucun nouvel ordre ne sera placé."
-          onConfirm={() => { killMut.mutate(); setModal(null) }}
+          onConfirm={() => {
+            killMut.mutate()
+            setModal(null)
+          }}
           onCancel={() => setModal(null)}
         />
       )}
       {modal === 'resume' && (
         <ConfirmModal
           message="Relancer l'executor ? Les ordres pourront à nouveau être placés."
-          onConfirm={() => { resumeMut.mutate(); setModal(null) }}
+          onConfirm={() => {
+            resumeMut.mutate()
+            setModal(null)
+          }}
           onCancel={() => setModal(null)}
         />
       )}

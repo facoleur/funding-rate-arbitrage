@@ -9,9 +9,10 @@ from fastapi import APIRouter
 from sqlmodel import col, select
 
 from option_arb.api.schemas import TickerResponse
+from option_arb.config import Thresholds, load_config
 from option_arb.db.models import TickerState
 from option_arb.db.session import get_session
-from option_arb.economics import calculate_option_economics, days_to_expiry
+from option_arb.economics import calculate_option_economics, days_to_expiry, meets_thresholds
 
 router = APIRouter(prefix="/api/tickers", tags=["tickers"])
 
@@ -34,10 +35,10 @@ async def list_tickers(
         stmt = stmt.where(TickerState.exchange == exchange)
     async with get_session() as sess:
         rows = list((await sess.execute(stmt)).scalars())
-    return _group_and_compute(rows)
+    return _group_and_compute(rows, load_config().thresholds)
 
 
-def _group_and_compute(rows: list[TickerState]) -> list[dict[str, Any]]:
+def _group_and_compute(rows: list[TickerState], thresholds: Thresholds) -> list[dict[str, Any]]:
     by_instrument: dict[str, list[TickerState]] = defaultdict(list)
     for row in rows:
         by_instrument[row.instrument].append(row)
@@ -108,6 +109,7 @@ def _group_and_compute(rows: list[TickerState]) -> list[dict[str, Any]]:
         }
         buy_exchange = None
         sell_exchange = None
+        eligible = False
         if best_pair is not None:
             buy_ticker, sell_ticker = best_pair
             spot_value = sell_ticker.underlying_price or buy_ticker.underlying_price
@@ -127,6 +129,14 @@ def _group_and_compute(rows: list[TickerState]) -> list[dict[str, Any]]:
             )
             if economics is not None:
                 metrics = {field: float(getattr(economics, field)) for field in metrics}
+                eligible = meets_thresholds(
+                    thresholds,
+                    apr_pct=economics.apr_pct,
+                    buy_premium_usd=economics.buy_premium_usd,
+                    days_to_expiry=dte,
+                    net_return_pct=economics.net_return_pct,
+                    net_profit_usd=economics.net_profit_usd,
+                )
                 if economics.net_profit_usd > 0:
                     buy_exchange = buy_ticker.exchange
                     sell_exchange = sell_ticker.exchange
@@ -150,6 +160,7 @@ def _group_and_compute(rows: list[TickerState]) -> list[dict[str, Any]]:
                 **metrics,
                 "buy_exchange": buy_exchange,
                 "sell_exchange": sell_exchange,
+                "eligible": eligible,
                 "updated_at": oldest_timestamp.isoformat(),
             }
         )

@@ -3,6 +3,8 @@ import type { components, operations } from './generated/schema'
 
 export type OpportunityStatus = components['schemas']['OpportunityStatus']
 export type Opportunity = components['schemas']['OpportunityResponse']
+/** Économie déjà arbitrée par l'API entre valeurs vérifiées et détectées. */
+export type OpportunityEconomics = components['schemas']['OpportunityEconomicsResponse']
 export type OpportunityStats = components['schemas']['OpportunityStatsResponse']
 
 type OpportunityQuery = NonNullable<

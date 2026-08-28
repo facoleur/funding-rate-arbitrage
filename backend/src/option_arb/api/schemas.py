@@ -79,6 +79,33 @@ class OpportunityStatsResponse(ApiResponse):
     best_net_profit_usd: float
 
 
+def _pick(verified: float | None, detected: float) -> float:
+    """Valeur vérifiée si elle existe, sinon celle du screening.
+
+    Chaque champ retombe individuellement : l'invariant « si un champ vérifié est
+    renseigné, les onze le sont » n'est garanti nulle part, et le supposer était
+    précisément ce que le frontend faisait avec onze assertions non-null.
+    """
+    return verified if verified is not None else detected
+
+
+class OpportunityEconomicsResponse(ApiResponse):
+    """Économie à afficher, déjà arbitrée entre valeurs vérifiées et détectées."""
+
+    buy_price: float
+    sell_price: float
+    tradeable_size: float
+    buy_premium_usd: float
+    sell_premium_usd: float
+    estimated_short_margin_usd: float
+    capital_required_usd: float
+    gross_profit_usd: float
+    fees_usd: float
+    net_profit_usd: float
+    net_return_pct: float
+    apr_pct: float
+
+
 class OpportunityResponse(ApiResponse):
     id: int
     detected_at: IsoDatetime
@@ -126,6 +153,35 @@ class OpportunityResponse(ApiResponse):
     def days_to_expiry(self) -> float:
         expiry = self.expiry if self.expiry.tzinfo else self.expiry.replace(tzinfo=UTC)
         return round(max((expiry - datetime.now(UTC)).total_seconds() / 86400.0, 0), 2)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def is_verified(self) -> bool:
+        """L'executor a re-vérifié les books avant exécution."""
+        return self.verified_tradeable_size is not None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def effective(self) -> OpportunityEconomicsResponse:
+        """Économie à afficher, sans que le client ait à arbitrer lui-même."""
+        return OpportunityEconomicsResponse(
+            buy_price=_pick(self.verified_buy_limit, self.top_ask),
+            sell_price=_pick(self.verified_sell_limit, self.top_bid),
+            tradeable_size=_pick(self.verified_tradeable_size, self.tradeable_size),
+            buy_premium_usd=_pick(self.verified_buy_premium_usd, self.buy_premium_usd),
+            sell_premium_usd=_pick(self.verified_sell_premium_usd, self.sell_premium_usd),
+            estimated_short_margin_usd=_pick(
+                self.verified_estimated_short_margin_usd, self.estimated_short_margin_usd
+            ),
+            capital_required_usd=_pick(
+                self.verified_capital_required_usd, self.capital_required_usd
+            ),
+            gross_profit_usd=_pick(self.verified_gross_profit_usd, self.gross_profit_usd),
+            fees_usd=_pick(self.verified_fees_usd, self.fees_usd),
+            net_profit_usd=_pick(self.verified_net_profit_usd, self.net_profit_usd),
+            net_return_pct=_pick(self.verified_net_return_pct, self.net_return_pct),
+            apr_pct=_pick(self.verified_apr_pct, self.apr_pct),
+        )
 
 
 class TradeResponse(ApiResponse):
@@ -274,6 +330,10 @@ class TickerResponse(ApiResponse):
     net_profit_usd: float | None
     net_return_pct: float | None
     apr_pct: float | None
+    # Verdict des seuils du screener, calculé par `economics.meets_thresholds`.
+    # Sert à l'UI pour atténuer les lignes non exécutables sans réimplémenter
+    # le prédicat côté client.
+    eligible: bool
     updated_at: IsoDatetime
 
 

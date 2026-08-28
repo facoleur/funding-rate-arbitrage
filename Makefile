@@ -75,8 +75,13 @@ migrate-new: ## Create new migration (usage: make migrate-new msg="add foo")
 
 # ---------- Tests & lint ----------
 
-test: ## Run backend tests
+test: test-backend test-frontend ## Run the whole test suite
+
+test-backend: ## Run backend tests (pytest)
 	cd backend && uv run pytest
+
+test-frontend: ## Run frontend tests (vitest)
+	npm test --prefix frontend
 
 lint: ## Ruff lint
 	cd backend && uv run ruff check src tests
@@ -121,5 +126,5 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 .PHONY: release up down logs live db db-shell dev-api dev-worker dev-executor \
-        migrate migrate-new test lint format typecheck contract-deps-check contract-generate contract-check record backtest \
+        migrate migrate-new test test-backend test-frontend lint format typecheck contract-deps-check contract-generate contract-check record backtest \
         kill resume deploy deploy-env help

@@ -5,9 +5,11 @@ from decimal import Decimal
 
 import pytest
 
+from option_arb.config import Thresholds
 from option_arb.economics import (
     calculate_option_economics,
     days_to_expiry,
+    meets_thresholds,
     sell_margin_per_unit,
 )
 
@@ -88,3 +90,54 @@ def test_invalid_inputs_do_not_produce_economics(field: str, value: object) -> N
 def test_days_to_expiry_uses_exact_decimal_duration() -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     assert days_to_expiry(now + timedelta(days=2, hours=12), now) == Decimal("2.5")
+
+
+# ─── meets_thresholds ────────────────────────────────────────────────────────
+
+# Confortablement au-dessus de chaque borne par défaut de `Thresholds`.
+_PASSING: dict[str, Decimal] = {
+    "apr_pct": Decimal("50"),
+    "buy_premium_usd": Decimal("100"),
+    "days_to_expiry": Decimal("30"),
+    "net_return_pct": Decimal("5"),
+    "net_profit_usd": Decimal("10"),
+}
+
+
+def test_meets_thresholds_accepts_a_spread_above_every_bound() -> None:
+    assert meets_thresholds(Thresholds(), **_PASSING)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("apr_pct", Decimal("9.99")),  # min_apr_pct = 10
+        ("buy_premium_usd", Decimal("19.99")),  # min_buy_premium_usd = 20
+        ("days_to_expiry", Decimal("60.01")),  # max_days_to_expiry = 60
+        ("net_return_pct", Decimal("0.29")),  # min_net_return_pct = 0.3
+        ("net_profit_usd", Decimal("2.99")),  # min_net_profit_usd = 3
+    ],
+)
+def test_meets_thresholds_rejects_each_bound_individually(field: str, value: Decimal) -> None:
+    """Chaque seuil doit pouvoir rejeter à lui seul, sans dépendre des autres."""
+    assert not meets_thresholds(Thresholds(), **{**_PASSING, field: value})
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("apr_pct", Decimal("10")),
+        ("buy_premium_usd", Decimal("20")),
+        ("days_to_expiry", Decimal("60")),
+        ("net_return_pct", Decimal("0.3")),
+        ("net_profit_usd", Decimal("3")),
+    ],
+)
+def test_meets_thresholds_bounds_are_inclusive(field: str, value: Decimal) -> None:
+    """Pile sur la borne passe : les seuils sont des minima/maxima acceptés."""
+    assert meets_thresholds(Thresholds(), **{**_PASSING, field: value})
+
+
+def test_meets_thresholds_honours_a_custom_configuration() -> None:
+    assert not meets_thresholds(Thresholds(min_apr_pct=60.0), **_PASSING)
+    assert meets_thresholds(Thresholds(min_apr_pct=1.0), **_PASSING)
