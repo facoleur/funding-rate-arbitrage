@@ -107,9 +107,10 @@ Storage rules (both):
 
 - **Normalized instrument name**: `{UNDERLYING}-{YYYYMMDD}-{STRIKE}-{C|P}` (e.g. `BTC-20251025-30000-C`). Every adapter MUST emit this.
 - **Prices** in quote currency (USD). Deribit returns bid/ask in underlying units — the adapter multiplies by `underlying_price` to convert.
-- **Fees** applied as `taker_fee_rate` (fraction) on both legs.
-- **APR** = `(net_spread_pct / days_to_expiry) * 365`.
-- **Liquidity floor**: `bid_price * bid_qty >= size_threshold_usd` (default $50).
+- **Fees** = `buy_premium × buy_taker_fee_rate + sell_premium × sell_taker_fee_rate`.
+- **Capital required** = standalone estimated short margin + buy premium. Sell premium does not offset capital.
+- **Net return** = `net_profit_usd / capital_required_usd × 100`; **APR** = `net_return_pct × 365 / days_to_expiry`.
+- **Liquidity floor**: `bid_price × bid_qty >= min_leg_premium_liquidity_usd` (default $50).
 - **Decimal, not float** for prices in the comparator + executor.
 - **Modes**: every opportunity / trade tagged `mode ∈ {live, paper, backtest}`.
 
@@ -118,15 +119,15 @@ Storage rules (both):
 Central YAML at `config.yaml` (mounted read-only into every container). Env `.env` holds only secrets + `DATABASE_URL` + `CONFIG_PATH`.
 
 Key knobs:
-- `thresholds.min_apr_pct`, `min_notional_usd`, `size_threshold_usd`
-- `executor.mode` (paper|live), `max_slippage_pct`, `walk_book`
-- `limits.max_notional_per_trade_usd`, `max_positions_open`, `max_daily_loss_usd`, `kill_switch_file`
+- `thresholds.min_apr_pct`, `min_net_return_pct`, `min_net_profit_usd`, `min_buy_premium_usd`, `min_leg_premium_liquidity_usd`
+- `executor.mode` (paper|live), `ioc_slippage_limit_pct`
+- `limits.max_buy_premium_per_trade_usd`, `max_positions_open`, `max_daily_loss_usd`, `kill_switch_file`
 - `perp_hedge.enabled`, `rebalance_threshold_usd`, `poll_interval_sec`, `kill_switch_file`
 - `exchanges.*.rest_rate_limit_per_sec`, `ws_max_subscriptions`
 
 ## Executor kill-switches (4, all active)
 
-1. **Max notional per trade** — refuses if `walked_size > cap`.
+1. **Max buy premium per trade** — refuses if worst-IOC buy premium exceeds the cap.
 2. **Max open positions** — refuses when active-trade count is at cap.
 3. **Max daily loss** — refuses if realised PnL since midnight UTC is below `-cap`.
 4. **Manual** — file `data/EXECUTOR_DISABLED` OR `POST /api/executor/kill`. Checked every loop iteration.

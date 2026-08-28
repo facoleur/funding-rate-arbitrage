@@ -142,15 +142,17 @@ class Screener:
 
         spreads = compare_options(
             groups,
-            size_threshold_usd=Decimal(str(self.config.thresholds.size_threshold_usd)),
+            min_leg_premium_liquidity_usd=Decimal(
+                str(self.config.thresholds.min_leg_premium_liquidity_usd)
+            ),
         )
         if not spreads:
             return
 
         min_apr = Decimal(str(self.config.thresholds.min_apr_pct))
-        min_notional = Decimal(str(self.config.thresholds.min_notional_usd))
+        min_buy_premium = Decimal(str(self.config.thresholds.min_buy_premium_usd))
         max_days = self.config.thresholds.max_days_to_expiry
-        min_net_spread = Decimal(str(self.config.thresholds.min_net_spread_pct))
+        min_net_return = Decimal(str(self.config.thresholds.min_net_return_pct))
         min_profit = Decimal(str(self.config.thresholds.min_net_profit_usd))
         mode = Mode(self.config.executor.mode)
 
@@ -158,11 +160,11 @@ class Screener:
         for s in spreads:
             if s.apr_pct < min_apr:
                 continue
-            if s.max_notional_usd < min_notional:
+            if s.buy_premium_usd < min_buy_premium:
                 continue
-            if s.days_to_expiry > max_days:
+            if s.days_to_expiry > Decimal(max_days):
                 continue
-            if s.net_spread_pct < min_net_spread:
+            if s.net_return_pct < min_net_return:
                 continue
             if s.net_profit_usd < min_profit:
                 continue
@@ -182,12 +184,17 @@ class Screener:
                     sell_to=s.sell_to,
                     top_ask=float(s.buy_ask),
                     top_bid=float(s.sell_bid),
-                    spread_pct=float(s.net_spread_pct),
-                    fee_pct=float(s.fee_pct),
-                    apr_pct=float(s.apr_pct),
-                    max_notional_usd=float(s.max_notional_usd),
-                    capital_deployed_usd=float(s.capital_deployed_usd),
+                    tradeable_size=float(s.tradeable_size),
+                    buy_premium_usd=float(s.buy_premium_usd),
+                    sell_premium_usd=float(s.sell_premium_usd),
+                    estimated_short_margin_usd=float(s.estimated_short_margin_usd),
+                    capital_required_usd=float(s.capital_required_usd),
+                    gross_profit_usd=float(s.gross_profit_usd),
+                    fees_usd=float(s.fees_usd),
                     net_profit_usd=float(s.net_profit_usd),
+                    price_spread_pct=float(s.price_spread_pct),
+                    net_return_pct=float(s.net_return_pct),
+                    apr_pct=float(s.apr_pct),
                     status=OpportunityStatus.PENDING,
                 )
             )
@@ -212,12 +219,17 @@ class Screener:
                 if existing is not None:
                     existing.top_ask = row.top_ask
                     existing.top_bid = row.top_bid
-                    existing.spread_pct = row.spread_pct
-                    existing.fee_pct = row.fee_pct
-                    existing.apr_pct = row.apr_pct
-                    existing.max_notional_usd = row.max_notional_usd
-                    existing.capital_deployed_usd = row.capital_deployed_usd
+                    existing.tradeable_size = row.tradeable_size
+                    existing.buy_premium_usd = row.buy_premium_usd
+                    existing.sell_premium_usd = row.sell_premium_usd
+                    existing.estimated_short_margin_usd = row.estimated_short_margin_usd
+                    existing.capital_required_usd = row.capital_required_usd
+                    existing.gross_profit_usd = row.gross_profit_usd
+                    existing.fees_usd = row.fees_usd
                     existing.net_profit_usd = row.net_profit_usd
+                    existing.price_spread_pct = row.price_spread_pct
+                    existing.net_return_pct = row.net_return_pct
+                    existing.apr_pct = row.apr_pct
                     continue
                 # don't recreate if already seen recently (any status)
                 recent = (
@@ -247,7 +259,7 @@ class Screener:
                         "apr_pct": row.apr_pct,
                         "buy_from": row.buy_from,
                         "sell_to": row.sell_to,
-                        "max_notional_usd": row.max_notional_usd,
+                        "max_notional_usd": row.buy_premium_usd,
                         "max_profit_usd": max_profit_usd,
                     },
                 )

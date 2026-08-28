@@ -15,6 +15,7 @@ from option_arb.db.models import (
     TradeStatus,
 )
 from option_arb.db.session import get_session
+from option_arb.economics import calculate_option_economics
 from option_arb.exchanges.base import Instrument, OrderRequest, OrderResult
 from option_arb.exchanges.mock import MockExchange, make_book
 from option_arb.exchanges.slippage import SlippageModel
@@ -69,11 +70,23 @@ def _mock_pair(
     b.set_instruments([inst_b])
     a.set_book(
         inst_a.instrument_name,
-        make_book("derive", inst_a.normalized_name, bids=[("100", "10")], asks=[("101", "10")]),
+        make_book(
+            "derive",
+            inst_a.normalized_name,
+            bids=[("100", "10")],
+            asks=[("101", "10")],
+            underlying_price="1000",
+        ),
     )
     b.set_book(
         inst_b.instrument_name,
-        make_book("deribit", inst_b.normalized_name, bids=[("115", "10")], asks=[("116", "10")]),
+        make_book(
+            "deribit",
+            inst_b.normalized_name,
+            bids=[("115", "10")],
+            asks=[("116", "10")],
+            underlying_price="1000",
+        ),
     )
     return a, b, inst_a, inst_b
 
@@ -92,11 +105,17 @@ async def _make_pending_opp(inst: str = "BTC-20260101-30000-C") -> int:
             sell_to="mock-deribit",
             top_ask=101.0,
             top_bid=115.0,
-            spread_pct=13.8,
+            tradeable_size=10.0,
+            buy_premium_usd=1010.0,
+            sell_premium_usd=1150.0,
+            estimated_short_margin_usd=1000.0,
+            capital_required_usd=2010.0,
+            gross_profit_usd=140.0,
+            fees_usd=0.648,
+            net_profit_usd=139.352,
+            price_spread_pct=13.86,
+            net_return_pct=6.93,
             apr_pct=160.0,
-            max_notional_usd=1000.0,
-            capital_deployed_usd=101.0,
-            net_profit_usd=138.0,
             status=OpportunityStatus.PENDING,
         )
         sess.add(opp)
@@ -125,6 +144,39 @@ async def test_executor_fills_both_legs_happy_path(test_db: str) -> None:
     assert trades[0].status == TradeStatus.FILLED
     assert trades[0].net_pnl_usd is not None and trades[0].net_pnl_usd > 0
     assert opp.status == OpportunityStatus.EXECUTED
+    assert opp.verified_buy_limit is not None
+    assert opp.verified_sell_limit is not None
+    assert opp.verified_capital_required_usd is not None
+    assert opp.verified_apr_pct is not None
+    assert opp.verified_buy_premium_usd is not None
+    assert opp.verified_buy_premium_usd <= cfg.limits.max_buy_premium_per_trade_usd
+    assert opp.verified_gross_profit_usd == pytest.approx(
+        opp.verified_sell_premium_usd - opp.verified_buy_premium_usd
+    )
+    assert opp.verified_net_profit_usd == pytest.approx(
+        opp.verified_gross_profit_usd - opp.verified_fees_usd
+    )
+    assert opp.verified_capital_required_usd == pytest.approx(
+        opp.verified_estimated_short_margin_usd + opp.verified_buy_premium_usd
+    )
+    assert opp.verified_net_return_pct == pytest.approx(
+        opp.verified_net_profit_usd / opp.verified_capital_required_usd * 100
+    )
+    expected = calculate_option_economics(
+        buy_price=Decimal(str(opp.verified_buy_limit)),
+        sell_price=Decimal(str(opp.verified_sell_limit)),
+        quantity=Decimal(str(opp.verified_tradeable_size)),
+        buy_taker_fee_rate=ia.taker_fee_rate,
+        sell_taker_fee_rate=ib.taker_fee_rate,
+        spot=Decimal("1000"),
+        strike=ib.strike,
+        option_type=ib.option_type,
+        days_to_expiry=Decimal(1),
+    )
+    assert expected is not None
+    assert opp.verified_buy_premium_usd == pytest.approx(float(expected.buy_premium_usd))
+    assert opp.verified_net_profit_usd == pytest.approx(float(expected.net_profit_usd))
+    assert opp.verified_net_return_pct == pytest.approx(float(expected.net_return_pct))
 
 
 @pytest.mark.asyncio

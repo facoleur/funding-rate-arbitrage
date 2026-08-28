@@ -201,11 +201,11 @@ Piège détecté : les strikes Derive peuvent être décimaux (`3000.5`), Deribi
 Le comparateur reçoit une liste de `Quote` (snapshot du cache), les groupe par `normalized_name`, et pour chaque groupe teste toutes les paires d'exchanges. La logique :
 
 1. Filtrer les quotes invalides (prix ou taille nuls).
-2. Filtrer les quotes en dessous du plancher de liquidité (`bid_price × bid_qty >= size_threshold_usd`).
+2. Filtrer les quotes en dessous du plancher de liquidité (`bid_price × bid_qty >= min_leg_premium_liquidity_usd`).
 3. Trouver `lowest_ask` (achat) et `highest_bid` (vente) **sur des exchanges différents**.
-4. Calculer `spread_net% = spread_brut% - fee%`. Si ≤ 0, ignorer.
-5. Calculer `APR = (spread_net% / jours) × 365`.
-6. `max_notional_usd = min(ask_qty × ask_price, bid_qty × bid_price)` — le notionnel liquide maximal, côté le plus petit.
+4. Prendre une quantité commune `q = min(ask_qty, bid_qty)`.
+5. Appeler le calculateur canonique : primes, marge short standalone, capital requis, profits et frais totaux.
+6. Calculer `net_return_pct = net_profit_usd / capital_required_usd × 100`, puis `APR = net_return_pct × 365 / jours`.
 
 Tout est en `Decimal` pour éviter les erreurs flottantes sur des spreads parfois inférieurs à 0.1%.
 
@@ -215,7 +215,7 @@ C'est un port direct du `compareOptions` TypeScript du prototype — la sémanti
 
 Le screener tourne dans le container `workers`, toutes les 500ms. Il lit le `BookCache`, appelle le comparateur, et pour chaque `Spread` détecté :
 
-- Si une opportunité identique (même instrument, mêmes exchanges, statut `PENDING`) existe déjà, il la met à jour en place (top_ask, top_bid, max_notional, spread_pct, apr_pct) sans créer de doublon.
+- Si une opportunité identique (même instrument, mêmes exchanges, statut `PENDING`) existe déjà, il met à jour en place les prix et tous les totaux économiques top-of-book sans créer de doublon.
 - Sinon, il insère une nouvelle ligne `opportunities` avec `status=PENDING`.
 - Publie un événement `opportunity_detected` sur le bus asyncio.
 
@@ -240,7 +240,7 @@ _tick()
 1. Fichier `data/EXECUTOR_DISABLED` — créé par `POST /api/executor/kill` ou `make kill`.
 2. Nombre de trades actifs ≥ `max_positions_open`.
 3. PnL journalier ≤ `-max_daily_loss_usd`.
-4. (Implicite dans `_walk_and_verify`) Notionnel calculé > `max_notional_per_trade_usd`.
+4. (Implicite dans `_walk_and_verify`) Prime achat au pire prix IOC > `max_buy_premium_per_trade_usd`.
 
 Si un kill-switch se déclenche → `REJECTED` avec la raison, événement `kill_switch_tripped`.
 
@@ -255,16 +255,17 @@ Si le L2 fetch timeout ou échoue → `REJECTED(stale_book)`.
 `_walk_and_verify()` est l'étape de re-vérification. On ne fait pas confiance aux prix du screener (qui datent de jusqu'à 700ms) — on recalcule sur les vrais carnets L2 frais.
 
 La recherche de taille : on essaie des tailles croissantes et on s'arrête dès que l'APR descend en dessous du seuil minimum. On cap par :
-- `max_notional_per_trade_usd`
+- `max_buy_premium_per_trade_usd`
 - `buy_avail_usd` (si la balance buy est connue)
 - `max_contracts_per_trade` (cap en contrats)
 
 Rejets possibles :
 - `empty_book` — le carnet est vide
 - `apr_dropped` — l'APR recalculé est insuffisant
-- `size_too_small` — la taille optimale est sous `min_notional_usd`
+- `size_too_small` — la prime achat est sous `min_buy_premium_usd`
 - `size_below_minimum(x<y)` — sous le minimum de l'exchange
-- `insufficient_sell_funds` — balance sell-side insuffisante pour couvrir la prime
+- `margin_unavailable` — aucun spot valide dans les carnets REST frais
+- `insufficient_sell_funds` — balance sell-side insuffisante pour couvrir la marge short estimée
 
 **Étape 4 — Placement des ordres**
 
@@ -277,7 +278,7 @@ asyncio.gather(
 )
 ```
 
-Les prix limite incluent un slippage de ±`max_slippage_pct` (défaut 2%) par rapport au mid recalculé.
+Les prix limite incluent ±`ioc_slippage_limit_pct` (défaut 2%) par rapport aux prix moyens walkés. Les seuils APR, rendement, profit et prime achat sont évalués avec ces limites défavorables, pas avec les prix walkés.
 
 **Étape 5 — Dispatch du résultat**
 
@@ -324,7 +325,7 @@ Dix types d'événements : `opportunity_detected`, `trade_opened`, `trade_filled
 
 Sept tables SQLModel :
 
-- **`opportunities`** — le journal de chaque spread détecté. Contient les prix snapshot (top_ask, top_bid), les prix walkés post-execution (walked_ask, walked_bid, walked_size), les métriques (spread_pct net de frais, fee_pct, apr_pct, max_notional_usd), et le statut.
+- **`opportunities`** — le journal de chaque spread détecté. Contient les prix snapshot, les totaux économiques top-of-book explicites, puis des champs `verified_*` séparés calculés aux pires limites IOC lors de l'approbation executor.
 - **`trades`** — une entrée par tentative d'exécution. Lie à une opportunity. Contient buy/sell exchange, taille demandée, taille et prix de fill réels, PnL.
 - **`orders`** — une entrée par jambe (buy + sell). Lie à un trade. Contient l'exchange_order_id retourné par l'exchange, statut, fill.
 - **`alerts`** — log persistant des événements alerter.
@@ -345,7 +346,7 @@ Le code modèle (SQLModel) est DB-agnostic. Les migrations Alembic utilisent des
 
 FastAPI, read-only sauf `POST /api/executor/kill` et `POST /api/executor/resume`. Les routers :
 
-- **`opportunities.py`** — liste paginée avec filtres (status, min_apr, symbol, days, network), tri configurable côté serveur. `_serialize()` calcule `net_profit_usd`, `fees_usd`, `days_to_expiry` à la volée, et expose les `walked_*` pour le frontend.
+- **`opportunities.py`** — liste paginée avec filtres (status, min_apr, symbol, days, network), tri configurable côté serveur. Les totaux économiques persistés sont sérialisés directement; seul le DTE courant est recalculé.
 - **`trades.py`** — historique des trades avec leurs ordres.
 - **`positions.py`** — positions + balances par exchange, état WS.
 - **`executor.py`** — état des kill-switches, boutons kill/resume.
@@ -357,7 +358,7 @@ Stack : Vite + React 19 + TypeScript + TanStack Query + React Router + Tailwind 
 
 | Page | Description |
 |---|---|
-| **Opportunities** | Tableau principal. Colonnes triables + masquables : instrument (sticky left), DTE, route, buy capital, sell premium received, fees, net profit, spread %, APR %. Scroll horizontal sans text-wrap. |
+| **Opportunities** | Tableau principal. Colonnes explicites pour taille, primes, marge estimée, capital, frais, profit net, rendement net et APR. Les valeurs `verified_*` sont utilisées ensemble après approbation. |
 | **Book** | Carnet d'ordres live par exchange. |
 | **Trades** | Historique des trades avec filtres mode/status, pagination. |
 | **History** | Historique des opportunités détectées. |
@@ -423,7 +424,7 @@ Entre le moment où le screener détecte le spread et le moment où l'executor p
 
 **Solution** : l'executor **refetch les carnets L2 via REST** sur les deux exchanges avant de placer quoi que ce soit (timeout 500ms). Puis il recalcule le spread, re-vérifie l'APR, re-calcule la taille optimale. Ce n'est qu'après cette vérification qu'il place les ordres.
 
-C'est une double passe délibérée : le screener détecte, l'executor re-valide. Les `walked_ask`, `walked_bid`, `walked_size` enregistrés sur l'opportunité sont les valeurs de l'executor, pas du screener.
+C'est une double passe délibérée : le screener détecte au top-of-book, puis l'executor re-valide. `walked_ask` et `walked_bid` auditent le walk frais; les champs `verified_*` auditent séparément les limites IOC et leurs totaux économiques.
 
 ### 6. L'exécution partielle : une jambe remplie, l'autre non
 

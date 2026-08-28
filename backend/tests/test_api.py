@@ -25,7 +25,7 @@ from option_arb.api.schemas import (
     TradeDetailResponse,
     TradeResponse,
 )
-from option_arb.db.models import Mode, Opportunity, OpportunityStatus
+from option_arb.db.models import Mode, Opportunity, OpportunityStatus, TickerState
 from option_arb.db.session import get_session
 from option_arb.main import app
 
@@ -143,9 +143,9 @@ def test_openapi_has_named_schemas_for_all_json_responses() -> None:
     assert opportunity_parameters["sort_by"]["enum"] == [
         "detected_at",
         "apr_pct",
-        "spread_pct",
+        "net_return_pct",
         "net_profit_usd",
-        "max_notional_usd",
+        "buy_premium_usd",
         "fees_usd",
     ]
     assert opportunity_parameters["sort_dir"]["enum"] == ["asc", "desc"]
@@ -174,12 +174,17 @@ async def _insert_opportunity(**kwargs) -> Opportunity:  # type: ignore[no-untyp
         sell_to="deribit",
         top_ask=101.0,
         top_bid=110.0,
-        spread_pct=8.85,
-        fee_pct=0.06,
+        tradeable_size=10.0,
+        buy_premium_usd=1010.0,
+        sell_premium_usd=1100.0,
+        estimated_short_margin_usd=75000.0,
+        capital_required_usd=76010.0,
+        gross_profit_usd=90.0,
+        fees_usd=0.633,
+        net_profit_usd=89.367,
+        price_spread_pct=8.9109,
+        net_return_pct=0.1176,
         apr_pct=107.0,
-        max_notional_usd=1010.0,
-        capital_deployed_usd=101.0,
-        net_profit_usd=89.37,
         status=OpportunityStatus.PENDING,
     )
     defaults.update(kwargs)
@@ -237,15 +242,15 @@ async def test_opportunities_empty(test_db: str) -> None:
 
 @pytest.mark.asyncio
 async def test_opportunity_serialization_includes_profit_fields(test_db: str) -> None:
-    # spread_pct=10.0, fee_pct=0.10, net_profit_usd=100 → fees = 100*0.10/10 = 1.0
     detected_at = datetime(2026, 1, 2, 3, 4, 5, 123456)
     await _insert_opportunity(
         detected_at=detected_at,
-        max_notional_usd=1000.0,
-        spread_pct=10.0,
-        fee_pct=0.10,
+        buy_premium_usd=1000.0,
+        gross_profit_usd=101.0,
+        fees_usd=1.0,
         net_profit_usd=100.0,
-        capital_deployed_usd=1000.0,
+        capital_required_usd=2000.0,
+        net_return_pct=5.0,
     )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         r = await ac.get("/api/opportunities")
@@ -253,15 +258,16 @@ async def test_opportunity_serialization_includes_profit_fields(test_db: str) ->
     body = r.json()
     assert len(body) == 1
     opp = body[0]
-    assert "fee_pct" in opp
+    assert "buy_premium_usd" in opp
     assert "net_profit_usd" in opp
     assert "fees_usd" in opp
     assert "gross_profit_usd" in opp
-    assert opp["fee_pct"] == pytest.approx(0.10)
     assert opp["net_profit_usd"] == pytest.approx(100.0, abs=0.01)
-    assert opp["fees_usd"] == pytest.approx(1.0, abs=0.01)  # 100 * 0.10 / 10
+    assert opp["fees_usd"] == pytest.approx(1.0, abs=0.01)
     assert opp["gross_profit_usd"] == pytest.approx(101.0, abs=0.01)
-    assert "capital_deployed_usd" in opp
+    assert opp["capital_required_usd"] == pytest.approx(2000.0)
+    assert opp["net_return_pct"] == pytest.approx(5.0)
+    assert opp["verified_apr_pct"] is None
     assert opp["detected_at"] == detected_at.isoformat()
 
 
@@ -270,25 +276,22 @@ async def test_opportunity_stats_groups_by_pair(test_db: str) -> None:
     await _insert_opportunity(
         buy_from="derive",
         sell_to="deribit",
-        max_notional_usd=1000.0,
-        spread_pct=10.0,
-        fee_pct=0.06,
+        buy_premium_usd=1000.0,
+        fees_usd=0.6,
         net_profit_usd=100.0,
     )
     await _insert_opportunity(
         buy_from="derive",
         sell_to="deribit",
-        max_notional_usd=500.0,
-        spread_pct=5.0,
-        fee_pct=0.06,
+        buy_premium_usd=500.0,
+        fees_usd=0.3,
         net_profit_usd=25.0,
     )
     await _insert_opportunity(
         buy_from="derive",
         sell_to="deribit_linear",
-        max_notional_usd=200.0,
-        spread_pct=8.0,
-        fee_pct=0.06,
+        buy_premium_usd=200.0,
+        fees_usd=0.12,
         net_profit_usd=16.0,
     )
 
@@ -313,6 +316,63 @@ async def test_opportunity_stats_empty(test_db: str) -> None:
         r = await ac.get("/api/opportunities/stats")
     assert r.status_code == 200
     assert r.json() == []
+
+
+@pytest.mark.asyncio
+async def test_ticker_api_serializes_canonical_total_economics(test_db: str) -> None:
+    expiry = datetime.now(UTC) + timedelta(days=30)
+    updated_at = datetime.now(UTC)
+    async with get_session() as sess:
+        sess.add_all(
+            [
+                TickerState(
+                    exchange="derive",
+                    instrument="BTC-20270101-30000-C",
+                    underlying="BTC",
+                    expiry=expiry,
+                    strike=30000,
+                    option_type="C",
+                    bid_price=100,
+                    bid_size=3,
+                    ask_price=101,
+                    ask_size=2,
+                    underlying_price=1000,
+                    taker_fee_rate=0.0003,
+                    updated_at=updated_at,
+                ),
+                TickerState(
+                    exchange="deribit",
+                    instrument="BTC-20270101-30000-C",
+                    underlying="BTC",
+                    expiry=expiry,
+                    strike=30000,
+                    option_type="C",
+                    bid_price=110,
+                    bid_size=4,
+                    ask_price=112,
+                    ask_size=3,
+                    underlying_price=1000,
+                    taker_fee_rate=0.0003,
+                    updated_at=updated_at,
+                ),
+            ]
+        )
+        await sess.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.get("/api/tickers")
+    assert response.status_code == 200
+    row = response.json()[0]
+    assert row["tradeable_size"] == 2
+    assert row["buy_premium_usd"] == 202
+    assert row["sell_premium_usd"] == 220
+    assert row["estimated_short_margin_usd"] == 200
+    assert row["capital_required_usd"] == 402
+    assert row["gross_profit_usd"] == 18
+    assert row["fees_usd"] == pytest.approx(0.1266)
+    assert row["net_profit_usd"] == pytest.approx(17.8734)
+    assert row["net_return_pct"] == pytest.approx(17.8734 / 402 * 100)
+    assert row["apr_pct"] is not None
 
 
 @pytest.mark.asyncio

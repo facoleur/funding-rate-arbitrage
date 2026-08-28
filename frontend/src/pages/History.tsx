@@ -44,8 +44,8 @@ const COLS: { key: SortCol; label: string; right?: boolean }[] = [
   { key: 'detected_at',     label: 'Date' },
   { key: 'net_profit_usd',  label: 'Profit net',   right: true },
   { key: 'fees_usd',        label: 'Fees',          right: true },
-  { key: 'max_notional_usd',label: 'Notionnel',     right: true },
-  { key: 'spread_pct',      label: 'Spread net',    right: true },
+  { key: 'buy_premium_usd', label: 'Prime achat',   right: true },
+  { key: 'net_return_pct',  label: 'Rendement net', right: true },
   { key: 'apr_pct',         label: 'APR',           right: true },
 ]
 
@@ -299,8 +299,8 @@ export default function History() {
                       <td className="py-1 pr-3 text-zinc-500 whitespace-nowrap">{fmtDate(o.detected_at)}</td>
                       <td className="py-1 pr-3 text-right font-medium text-emerald-400">{fmt$(o.net_profit_usd)}</td>
                       <td className="py-1 pr-3 text-right text-zinc-500">{fmt$(o.fees_usd)}</td>
-                      <td className="py-1 pr-3 text-right text-zinc-400">{fmt$(o.max_notional_usd)}</td>
-                      <td className="py-1 pr-3 text-right text-zinc-300">{o.spread_pct.toFixed(2)}%</td>
+                      <td className="py-1 pr-3 text-right text-zinc-400">{fmt$(o.buy_premium_usd)}</td>
+                      <td className="py-1 pr-3 text-right text-zinc-300">{o.net_return_pct.toFixed(2)}%</td>
                       <td className="py-1 pr-3 text-right text-zinc-400">{o.apr_pct.toFixed(1)}%</td>
                       <td className="py-1 pr-3 text-zinc-300 font-mono text-[11px]">{o.instrument}</td>
                       <td className="py-1 pr-3 whitespace-nowrap">

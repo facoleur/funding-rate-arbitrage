@@ -48,7 +48,7 @@ async def opportunity_stats(
             sell_to,
             COUNT(*)                                                                          AS count,
             SUM(net_profit_usd)                                                               AS total_net_profit_usd,
-            SUM(CASE WHEN spread_pct != 0 THEN net_profit_usd * fee_pct / spread_pct ELSE 0 END) AS total_fees_usd,
+            SUM(fees_usd)                                                                      AS total_fees_usd,
             AVG(apr_pct)                                                                      AS avg_apr_pct,
             MAX(net_profit_usd)                                                               AS best_net_profit_usd
         FROM opportunities
@@ -79,10 +79,10 @@ async def opportunity_stats(
 _SORT_COLS = {
     "detected_at": "detected_at",
     "apr_pct": "apr_pct",
-    "spread_pct": "spread_pct",
+    "net_return_pct": "net_return_pct",
     "net_profit_usd": "net_profit_usd",
-    "max_notional_usd": "max_notional_usd",
-    "fees_usd": "CASE WHEN spread_pct != 0 THEN net_profit_usd * fee_pct / spread_pct ELSE 0 END",
+    "buy_premium_usd": "buy_premium_usd",
+    "fees_usd": "fees_usd",
 }
 
 
@@ -145,8 +145,6 @@ async def get_opportunity(opp_id: int) -> dict[str, Any]:
 
 
 def _serialize(o: Opportunity) -> dict[str, Any]:
-    net_profit = o.net_profit_usd
-    fees = net_profit * o.fee_pct / o.spread_pct if o.spread_pct else 0.0
     expiry_utc = o.expiry if o.expiry.tzinfo else o.expiry.replace(tzinfo=UTC)
     days_to_expiry = max((expiry_utc - datetime.now(UTC)).total_seconds() / 86400.0, 0)
     return {
@@ -166,15 +164,29 @@ def _serialize(o: Opportunity) -> dict[str, Any]:
         "top_bid": o.top_bid,
         "walked_ask": o.walked_ask,
         "walked_bid": o.walked_bid,
-        "walked_size": o.walked_size,
-        "spread_pct": o.spread_pct,
-        "fee_pct": o.fee_pct,
+        "tradeable_size": o.tradeable_size,
+        "buy_premium_usd": o.buy_premium_usd,
+        "sell_premium_usd": o.sell_premium_usd,
+        "estimated_short_margin_usd": o.estimated_short_margin_usd,
+        "capital_required_usd": o.capital_required_usd,
+        "gross_profit_usd": o.gross_profit_usd,
+        "fees_usd": o.fees_usd,
+        "net_profit_usd": o.net_profit_usd,
+        "price_spread_pct": o.price_spread_pct,
+        "net_return_pct": o.net_return_pct,
         "apr_pct": o.apr_pct,
-        "max_notional_usd": o.max_notional_usd,
-        "capital_deployed_usd": o.capital_deployed_usd,
-        "net_profit_usd": round(net_profit, 2),
-        "fees_usd": round(fees, 2),
-        "gross_profit_usd": round(net_profit + fees, 2),
+        "verified_buy_limit": o.verified_buy_limit,
+        "verified_sell_limit": o.verified_sell_limit,
+        "verified_tradeable_size": o.verified_tradeable_size,
+        "verified_buy_premium_usd": o.verified_buy_premium_usd,
+        "verified_sell_premium_usd": o.verified_sell_premium_usd,
+        "verified_estimated_short_margin_usd": o.verified_estimated_short_margin_usd,
+        "verified_capital_required_usd": o.verified_capital_required_usd,
+        "verified_gross_profit_usd": o.verified_gross_profit_usd,
+        "verified_fees_usd": o.verified_fees_usd,
+        "verified_net_profit_usd": o.verified_net_profit_usd,
+        "verified_net_return_pct": o.verified_net_return_pct,
+        "verified_apr_pct": o.verified_apr_pct,
         "status": o.status.value,
         "rejection_reason": o.rejection_reason,
     }

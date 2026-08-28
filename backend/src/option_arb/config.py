@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # repo root = 3 parents up from this file (src/option_arb/config.py → src/ → backend/ → root)
@@ -13,7 +13,11 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 type Network = Literal["mainnet", "testnet"]
 
 
-class ScreenerConfig(BaseModel):
+class ConfigModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class ScreenerConfig(ConfigModel):
     poll_interval_ms: int = 500
     underlyings: list[str] = Field(default_factory=lambda: ["BTC", "ETH"])
     exchanges: list[str] = Field(default_factory=lambda: ["derive", "deribit", "aevo"])
@@ -22,37 +26,37 @@ class ScreenerConfig(BaseModel):
     book_cache_ttl_ms: int = 5000
 
 
-class Thresholds(BaseModel):
+class Thresholds(ConfigModel):
     min_apr_pct: float = 10.0
-    min_notional_usd: float = 20.0
-    size_threshold_usd: float = 100.0
+    min_buy_premium_usd: float = 20.0
+    min_leg_premium_liquidity_usd: float = 100.0
     max_days_to_expiry: int = 60
     min_net_profit_usd: float = 3.0
-    min_net_spread_pct: float = 0.3
+    min_net_return_pct: float = 0.3
 
 
-class ExecutorConfig(BaseModel):
+class ExecutorConfig(ConfigModel):
     mode: Literal["paper", "live", "backtest"] = "paper"
-    max_slippage_pct: float = 2.0
+    ioc_slippage_limit_pct: float = 2.0
     poll_interval_ms: int = 200
     fresh_fetch_timeout_ms: int = 500
 
 
-class Limits(BaseModel):
-    max_notional_per_trade_usd: float = 500.0
+class Limits(ConfigModel):
+    max_buy_premium_per_trade_usd: float = 500.0
     max_contracts_per_trade: float | None = None  # cap en nombre de contrats (unités sous-jacentes)
     max_positions_open: int = 10
     max_daily_loss_usd: float = 100.0
     kill_switch_file: str = "/data/EXECUTOR_DISABLED"
 
 
-class RebalancerConfig(BaseModel):
+class RebalancerConfig(ConfigModel):
     poll_interval_sec: int = 300
     expiry_warning_hours: int = 24
     balance_low_threshold_usd: float = 100.0
 
 
-class ExchangeConfig(BaseModel):
+class ExchangeConfig(ConfigModel):
     rest_rate_limit_per_sec: int = 10
     rest_base_url: str
     ws_url: str
@@ -60,25 +64,25 @@ class ExchangeConfig(BaseModel):
     trade_enabled: bool = True
 
 
-class TelegramConfig(BaseModel):
+class TelegramConfig(ConfigModel):
     enabled: bool = True
     apr_threshold_pct: float = 10.0
     levels: list[str] = Field(default_factory=lambda: ["info", "warn", "error"])
     opportunity_cooldown_hours: float = 1.0
 
 
-class AlertsConfig(BaseModel):
+class AlertsConfig(ConfigModel):
     telegram: TelegramConfig = Field(default_factory=TelegramConfig)
 
 
-class PerpHedgeConfig(BaseModel):
+class PerpHedgeConfig(ConfigModel):
     enabled: bool = False
     rebalance_threshold_usd: float = 5.0
     poll_interval_sec: int = 60
     kill_switch_file: str = "/data/PERP_HEDGE_DISABLED"
 
 
-class AppConfig(BaseModel):
+class AppConfig(ConfigModel):
     screener: ScreenerConfig = Field(default_factory=ScreenerConfig)
     thresholds: Thresholds = Field(default_factory=Thresholds)
     executor: ExecutorConfig = Field(default_factory=ExecutorConfig)

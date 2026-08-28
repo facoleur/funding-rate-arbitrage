@@ -40,6 +40,7 @@ class Book:
     ts: datetime
     bids: list[BookLevel] = field(default_factory=list)
     asks: list[BookLevel] = field(default_factory=list)
+    underlying_price: Decimal | None = None
 
     @property
     def top_bid(self) -> BookLevel | None:

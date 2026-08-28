@@ -27,17 +27,21 @@ function fmtUsd(n: number) {
   return `$${n.toFixed(2)}`
 }
 
-// Derived values computed from raw row.
-// - size: walked if available, else infer from top_ask
-// - totalCapital: total capital locked = capital_deployed_usd × size (premium + sell margin)
-// - sellRecv:     premium received on sell side (USD)
-function computeDerived(o: Opportunity) {
-  const buyAsk = o.walked_ask ?? o.top_ask
-  const sellBid = o.walked_bid ?? o.top_bid
-  const size = o.walked_size ?? (o.top_ask > 0 ? o.max_notional_usd / o.top_ask : 0)
-  const totalCapital = o.capital_deployed_usd * size
-  const sellRecv = sellBid * size
-  return { buyAsk, sellBid, size, totalCapital, sellRecv }
+function displayEconomics(o: Opportunity) {
+  const verified = o.verified_tradeable_size !== null
+  return {
+    buyPrice: verified ? o.verified_buy_limit! : o.top_ask,
+    sellPrice: verified ? o.verified_sell_limit! : o.top_bid,
+    size: verified ? o.verified_tradeable_size! : o.tradeable_size,
+    buyPremium: verified ? o.verified_buy_premium_usd! : o.buy_premium_usd,
+    sellPremium: verified ? o.verified_sell_premium_usd! : o.sell_premium_usd,
+    margin: verified ? o.verified_estimated_short_margin_usd! : o.estimated_short_margin_usd,
+    capital: verified ? o.verified_capital_required_usd! : o.capital_required_usd,
+    fees: verified ? o.verified_fees_usd! : o.fees_usd,
+    netProfit: verified ? o.verified_net_profit_usd! : o.net_profit_usd,
+    netReturn: verified ? o.verified_net_return_pct! : o.net_return_pct,
+    apr: verified ? o.verified_apr_pct! : o.apr_pct,
+  }
 }
 
 // ─── columns ──────────────────────────────────────────────────────────────────
@@ -45,8 +49,8 @@ function computeDerived(o: Opportunity) {
 type ColId =
   | 'type' | 'strike' | 'expiry' | 'dte' | 'route'
   | 'size' | 'buy_ask' | 'sell_bid'
-  | 'buy_capital' | 'sell_recv' | 'fees' | 'net_profit'
-  | 'spread' | 'apr' | 'status' | 'age'
+  | 'buy_premium' | 'sell_premium' | 'margin' | 'capital' | 'fees' | 'net_profit'
+  | 'net_return' | 'apr' | 'status' | 'age'
 
 interface ColDef {
   id: ColId
@@ -65,11 +69,13 @@ const COLS: ColDef[] = [
   { id: 'size',        label: 'Size',        right: true, defaultVisible: false },
   { id: 'buy_ask',     label: 'Buy ask',     right: true, defaultVisible: false },
   { id: 'sell_bid',    label: 'Sell bid',    right: true, defaultVisible: false },
-  { id: 'buy_capital', label: 'Capital',     tip: 'Capital total immobilisé (prime achat + marge sell estimée)', right: true, defaultVisible: true },
-  { id: 'sell_recv',   label: 'Sell recv.',  tip: 'Prime encaissée côté vente', right: true, defaultVisible: true },
+  { id: 'buy_premium', label: 'Buy premium', right: true, defaultVisible: true },
+  { id: 'sell_premium',label: 'Sell premium', right: true, defaultVisible: false },
+  { id: 'margin',      label: 'Est. margin', right: true, defaultVisible: true },
+  { id: 'capital',     label: 'Capital',     tip: 'Prime achat + marge short estimée, sans offset de prime vente', right: true, defaultVisible: true },
   { id: 'fees',        label: 'Fees',        right: true, defaultVisible: true },
   { id: 'net_profit',  label: 'Net profit',  right: true, defaultVisible: true },
-  { id: 'spread',      label: 'Spread %',    tip: 'Net de frais — % du capital total (prime achat + marge sell)', right: true, defaultVisible: true },
+  { id: 'net_return',  label: 'Net return %', tip: 'Profit net / capital requis', right: true, defaultVisible: true },
   { id: 'apr',         label: 'APR %',       tip: 'Annualisé sur capital total (prime achat + marge sell estimée)', right: true, defaultVisible: true },
   { id: 'status',      label: 'Status',      defaultVisible: true },
   { id: 'age',         label: 'Age',         right: true, defaultVisible: true },
@@ -80,7 +86,7 @@ const COLS: ColDef[] = [
 type SortKey = 'instrument' | ColId
 
 function sortVal(o: Opportunity, col: SortKey): number | string {
-  const d = computeDerived(o)
+  const d = displayEconomics(o)
   switch (col) {
     case 'instrument':  return o.instrument
     case 'type':        return o.option_type
@@ -89,14 +95,16 @@ function sortVal(o: Opportunity, col: SortKey): number | string {
     case 'dte':         return o.days_to_expiry
     case 'route':       return `${o.buy_from}→${o.sell_to}`
     case 'size':        return d.size
-    case 'buy_ask':     return d.buyAsk
-    case 'sell_bid':    return d.sellBid
-    case 'buy_capital': return d.totalCapital
-    case 'sell_recv':   return d.sellRecv
-    case 'fees':        return o.fees_usd
-    case 'net_profit':  return o.net_profit_usd
-    case 'spread':      return o.spread_pct
-    case 'apr':         return o.apr_pct
+    case 'buy_ask':     return d.buyPrice
+    case 'sell_bid':    return d.sellPrice
+    case 'buy_premium': return d.buyPremium
+    case 'sell_premium':return d.sellPremium
+    case 'margin':      return d.margin
+    case 'capital':     return d.capital
+    case 'fees':        return d.fees
+    case 'net_profit':  return d.netProfit
+    case 'net_return':  return d.netReturn
+    case 'apr':         return d.apr
     case 'status':      return o.status
     case 'age':         return new Date(o.detected_at).getTime()
     default:            return 0
@@ -143,7 +151,7 @@ export default function Opportunities() {
   })
 
   const filtered: Opportunity[] = (data ?? []).filter((o) => {
-    if (minApr && o.apr_pct < parseFloat(minApr)) return false
+    if (minApr && displayEconomics(o).apr < parseFloat(minApr)) return false
     if (underlying && !o.symbol.startsWith(underlying)) return false
     if (statusFilter && o.status !== statusFilter) return false
     return true
@@ -275,11 +283,13 @@ export default function Opportunities() {
               {visible.has('size')        && th('size',        'Size',       { right: true })}
               {visible.has('buy_ask')     && th('buy_ask',     'Buy ask',    { right: true })}
               {visible.has('sell_bid')    && th('sell_bid',    'Sell bid',   { right: true })}
-              {visible.has('buy_capital') && th('buy_capital', 'Capital',    { right: true, tip: 'Capital total immobilisé (prime achat + marge sell estimée)' })}
-              {visible.has('sell_recv')   && th('sell_recv',   'Sell recv.', { right: true, tip: 'Prime encaissée côté vente' })}
+              {visible.has('buy_premium') && th('buy_premium', 'Buy premium', { right: true })}
+              {visible.has('sell_premium')&& th('sell_premium','Sell premium', { right: true })}
+              {visible.has('margin')      && th('margin',      'Est. margin', { right: true })}
+              {visible.has('capital')     && th('capital',     'Capital',    { right: true, tip: 'Prime achat + marge short estimée, sans offset de prime vente' })}
               {visible.has('fees')        && th('fees',        'Fees',       { right: true })}
               {visible.has('net_profit')  && th('net_profit',  'Net profit', { right: true })}
-              {visible.has('spread')      && th('spread',      'Spread %',   { right: true, tip: 'Net de frais — % du capital total (prime achat + marge sell)' })}
+              {visible.has('net_return')  && th('net_return',  'Net return %', { right: true, tip: 'Profit net / capital requis' })}
               {visible.has('apr')         && th('apr',         'APR %',      { right: true, tip: 'Annualisé sur capital total (prime achat + marge sell estimée)' })}
               {visible.has('status')      && <th className={`${TH_BASE}`}>Status</th>}
               {visible.has('age')         && th('age',         'Age',        { right: true })}
@@ -294,8 +304,8 @@ export default function Opportunities() {
               </tr>
             )}
             {rows.map((o) => {
-              const d = computeDerived(o)
-              const hot = o.apr_pct >= 10
+              const d = displayEconomics(o)
+              const hot = d.apr >= 10
               const rowBg = hot ? HOT_BG : STICKY_BG
 
               return (
@@ -333,42 +343,52 @@ export default function Opportunities() {
                   )}
                   {visible.has('buy_ask') && (
                     <td className={`${TD_BASE} text-right tabular-nums text-zinc-300`}>
-                      {d.buyAsk.toFixed(4)}
+                      {d.buyPrice.toFixed(4)}
                     </td>
                   )}
                   {visible.has('sell_bid') && (
                     <td className={`${TD_BASE} text-right tabular-nums text-zinc-300`}>
-                      {d.sellBid.toFixed(4)}
+                      {d.sellPrice.toFixed(4)}
                     </td>
                   )}
-                  {visible.has('buy_capital') && (
+                  {visible.has('buy_premium') && (
                     <td className={`${TD_BASE} text-right tabular-nums text-zinc-300`}>
-                      {fmtUsd(d.totalCapital)}
+                      {fmtUsd(d.buyPremium)}
                     </td>
                   )}
-                  {visible.has('sell_recv') && (
+                  {visible.has('sell_premium') && (
                     <td className={`${TD_BASE} text-right tabular-nums text-zinc-300`}>
-                      {fmtUsd(d.sellRecv)}
+                      {fmtUsd(d.sellPremium)}
+                    </td>
+                  )}
+                  {visible.has('margin') && (
+                    <td className={`${TD_BASE} text-right tabular-nums text-zinc-300`}>
+                      {fmtUsd(d.margin)}
+                    </td>
+                  )}
+                  {visible.has('capital') && (
+                    <td className={`${TD_BASE} text-right tabular-nums text-zinc-300`}>
+                      {fmtUsd(d.capital)}
                     </td>
                   )}
                   {visible.has('fees') && (
                     <td className={`${TD_BASE} text-right tabular-nums text-zinc-500`}>
-                      {fmtUsd(o.fees_usd)}
+                      {fmtUsd(d.fees)}
                     </td>
                   )}
                   {visible.has('net_profit') && (
                     <td className={`${TD_BASE} text-right tabular-nums ${hot ? 'text-emerald-400' : 'text-zinc-300'}`}>
-                      {fmtUsd(o.net_profit_usd)}
+                      {fmtUsd(d.netProfit)}
                     </td>
                   )}
-                  {visible.has('spread') && (
+                  {visible.has('net_return') && (
                     <td className={`${TD_BASE} text-right tabular-nums ${hot ? 'text-emerald-400' : 'text-zinc-300'}`}>
-                      {o.spread_pct.toFixed(2)}%
+                      {d.netReturn.toFixed(2)}%
                     </td>
                   )}
                   {visible.has('apr') && (
                     <td className={`${TD_BASE} text-right tabular-nums font-medium ${hot ? 'text-emerald-400' : 'text-zinc-300'}`}>
-                      {o.apr_pct.toFixed(1)}%
+                      {d.apr.toFixed(1)}%
                     </td>
                   )}
                   {visible.has('status') && (

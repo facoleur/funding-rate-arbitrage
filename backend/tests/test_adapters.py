@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
 
 from option_arb.exchanges.aevo import AevoExchange
+from option_arb.exchanges.base import Instrument
 from option_arb.exchanges.deribit import DeribitExchange
 from option_arb.exchanges.derive import DeriveExchange
 from option_arb.exchanges.http import RestClient
@@ -15,6 +17,20 @@ from option_arb.exchanges.naming import normalize_deribit
 
 def _rest_stub() -> RestClient:
     return RestClient("stub", "https://stub.local", rate_limit_per_sec=100)
+
+
+def _instrument(exchange: str) -> Instrument:
+    return Instrument(
+        exchange=exchange,
+        instrument_name="BTC-1JAN27-30000-C",
+        normalized_name="BTC-20270101-30000-C",
+        underlying="BTC",
+        expiry=datetime(2027, 1, 1, tzinfo=UTC),
+        strike=Decimal("30000"),
+        option_type="C",
+        maker_fee_rate=Decimal(0),
+        taker_fee_rate=Decimal("0.001"),
+    )
 
 
 def test_deribit_parses_ws_ticker() -> None:
@@ -124,6 +140,62 @@ def test_deribit_linear_name_and_no_price_multiplication() -> None:
     assert upd.instrument == "BTC-20251025-30000-C"
     assert upd.bid_price == Decimal("3000.0")  # no 60000
     assert upd.ask_price == Decimal("3600.0")
+
+
+@pytest.mark.asyncio
+async def test_deribit_rest_book_carries_underlying_price() -> None:
+    exchange = DeribitExchange(_rest_stub())
+
+    async def rpc(*args, **kwargs):  # type: ignore[no-untyped-def]
+        return {
+            "underlying_price": "50000",
+            "timestamp": 1_700_000_000_000,
+            "bids": [["0.002", "2"]],
+            "asks": [["0.003", "3"]],
+        }
+
+    exchange._rpc = rpc  # type: ignore[method-assign]
+    book = await exchange.get_orderbook_l2(_instrument("deribit"))
+    assert book.underlying_price == Decimal("50000")
+    assert book.top_bid is not None and book.top_bid.price == Decimal("100.000")
+
+
+@pytest.mark.asyncio
+async def test_derive_rest_book_carries_ticker_index_price() -> None:
+    rest = _rest_stub()
+
+    async def post(path, **kwargs):  # type: ignore[no-untyped-def]
+        if path == "public/get_ticker":
+            return {
+                "result": {
+                    "index_price": "50001",
+                    "best_bid_price": "100",
+                    "best_bid_amount": "2",
+                    "best_ask_price": "101",
+                    "best_ask_amount": "2",
+                }
+            }
+        return {"result": {"bids": [["100", "2"]], "asks": [["101", "2"]]}}
+
+    rest.post = post  # type: ignore[method-assign]
+    book = await DeriveExchange(rest).get_orderbook_l2(_instrument("derive"))
+    assert book.underlying_price == Decimal("50001")
+
+
+@pytest.mark.asyncio
+async def test_aevo_rest_book_carries_index_price() -> None:
+    rest = _rest_stub()
+
+    async def get(*args, **kwargs):  # type: ignore[no-untyped-def]
+        return {
+            "index_price": "49999",
+            "best_bid": {"price": "100", "amount": "2"},
+            "best_ask": {"price": "101", "amount": "2"},
+        }
+
+    rest.get = get  # type: ignore[method-assign]
+    book = await AevoExchange(rest).get_orderbook_l2(_instrument("aevo"))
+    assert book.underlying_price == Decimal("49999")
 
 
 # ---------- place_order should REJECT cleanly when no auth ----------

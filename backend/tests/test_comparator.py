@@ -4,7 +4,10 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
+from freezegun import freeze_time
 
+from option_arb.api.tickers import _group_and_compute
+from option_arb.db.models import TickerState
 from option_arb.exchanges.naming import normalize_deribit, normalize_from_parts
 from option_arb.services.comparator import Quote, Spread, compare_options, group_by_instrument
 
@@ -72,17 +75,15 @@ def test_spread_detected_when_cross_venue_and_positive_net() -> None:
     assert s.buy_ask == Decimal("101")
     assert s.sell_bid == Decimal("110")
 
-    # capital = sell margin = 0.15 * 50000 = 7500
-    # fees_usd = 0.0003*101 + 0.0003*110 = 0.0633
-    expected_fee_pct = Decimal("0.0633") / Decimal("7500") * 100
-    assert s.fee_pct == pytest.approx(expected_fee_pct, abs=Decimal("0.001"))  # type: ignore[call-overload]
-
-    # net_profit_per_unit = 8.9367; qty_traded=10 (ask_notional=1010 <= bid_notional=1100)
-    expected_net_pct = Decimal("8.9367") / Decimal("7500") * 100
-    assert s.net_spread_pct == pytest.approx(expected_net_pct, abs=Decimal("0.001"))  # type: ignore[call-overload]
-
-    assert s.capital_deployed_usd == pytest.approx(Decimal("7500"), abs=Decimal("1"))  # type: ignore[call-overload]
-    assert s.net_profit_usd == pytest.approx(Decimal("8.9367") * 10, abs=Decimal("0.001"))  # type: ignore[call-overload]
+    assert s.tradeable_size == Decimal("10")
+    assert s.buy_premium_usd == Decimal("1010")
+    assert s.sell_premium_usd == Decimal("1100")
+    assert s.estimated_short_margin_usd == Decimal("75000.00")
+    assert s.capital_required_usd == Decimal("76010.00")
+    assert s.gross_profit_usd == Decimal("90")
+    assert s.fees_usd == Decimal("0.6330")
+    assert s.net_profit_usd == Decimal("89.3670")
+    assert s.net_return_pct == s.net_profit_usd / s.capital_required_usd * 100
 
 
 def test_no_spread_when_no_underlying_price() -> None:
@@ -130,8 +131,8 @@ def test_apr_scales_with_time_to_expiry() -> None:
     assert s_soon.apr_pct > s_later.apr_pct
 
 
-def test_capital_deployed_is_sell_margin_only_when_underlying_known() -> None:
-    """capital_deployed = sell margin only (not premium + margin).
+def test_capital_required_is_buy_premium_plus_unoffset_short_margin() -> None:
+    """Capital required includes both the buy premium and standalone short margin.
     OTM call: strike=30000, spot=28000 → OTM_frac=(30000-28000)/28000≈0.0714
     base_rate = max(0.15-0.0714, 0.10) = max(0.0786, 0.10) = 0.10
     margin_sell = 0.10 * 28000 = 2800"""
@@ -150,14 +151,11 @@ def test_capital_deployed_is_sell_margin_only_when_underlying_known() -> None:
     spreads = compare_options([[a, b]], now=now)
     assert len(spreads) == 1
     s = spreads[0]
-    # capital = sell margin only = 0.10 * 28000 = 2800 (premium excluded)
-    assert s.capital_deployed_usd == pytest.approx(Decimal("2800"), abs=Decimal("0.01"))  # type: ignore[call-overload]
-    # net_spread_pct relative to capital (2800): (400-200-fees)/2800*100 ≈ 7.1%
-    assert Decimal("5") < s.net_spread_pct < Decimal("10")
-    # apr annualises net_spread_pct — consistent denominator
-    assert pytest.approx(float(s.apr_pct), rel=1e-3) == float(
-        s.net_spread_pct / Decimal(str(s.days_to_expiry)) * 365
-    )  # type: ignore[call-overload]
+    # q=10: margin=28,000 and buy premium=2,000. Sell premium does not offset either.
+    assert s.estimated_short_margin_usd == pytest.approx(Decimal("28000"))
+    assert s.capital_required_usd == pytest.approx(Decimal("30000"))
+    assert Decimal("5") < s.net_return_pct < Decimal("10")
+    assert s.apr_pct == pytest.approx(s.net_return_pct / s.days_to_expiry * Decimal(365))
 
 
 def test_itm_call_has_higher_margin_than_otm() -> None:
@@ -174,7 +172,59 @@ def test_itm_call_has_higher_margin_than_otm() -> None:
     otm = _pair("35000")  # strike > spot → OTM → base_rate=max(0.15-0.167,0.10)=0.10
 
     assert len(itm) == 1 and len(otm) == 1
-    # ITM capital = margin only = 0.15*30000=4500; OTM = 0.10*30000=3000
-    assert itm[0].capital_deployed_usd == pytest.approx(Decimal("4500"), abs=Decimal("1"))  # type: ignore[call-overload]
-    assert otm[0].capital_deployed_usd == pytest.approx(Decimal("3000"), abs=Decimal("1"))  # type: ignore[call-overload]
-    assert itm[0].capital_deployed_usd > otm[0].capital_deployed_usd
+    # q=10 and buy premium=2,000: ITM capital=45,000+2,000; OTM=30,000+2,000.
+    assert itm[0].capital_required_usd == pytest.approx(Decimal("47000"), abs=Decimal("1"))
+    assert otm[0].capital_required_usd == pytest.approx(Decimal("32000"), abs=Decimal("1"))
+    assert itm[0].capital_required_usd > otm[0].capital_required_usd
+
+
+def test_comparator_and_book_have_identical_economics() -> None:
+    now = datetime(2025, 1, 1, tzinfo=UTC)
+    expiry = now + timedelta(days=30)
+    buy_quote = Quote(
+        **{
+            **_q("derive", "100", "101", qty="2", underlying_price="1000").__dict__,
+            "expiry": expiry,
+        }
+    )
+    sell_quote = Quote(
+        **{
+            **_q("deribit", "110", "112", qty="3", underlying_price="1000").__dict__,
+            "expiry": expiry,
+        }
+    )
+    spread = compare_options([[buy_quote, sell_quote]], now=now)[0]
+    rows = [
+        TickerState(
+            exchange=quote.exchange,
+            instrument=quote.normalized_name,
+            underlying=quote.underlying,
+            expiry=expiry,
+            strike=float(quote.strike),
+            option_type=quote.option_type,
+            bid_price=float(quote.bid_price),
+            bid_size=float(quote.bid_qty),
+            ask_price=float(quote.ask_price),
+            ask_size=float(quote.ask_qty),
+            underlying_price=float(quote.underlying_price or 0),
+            taker_fee_rate=float(quote.taker_fee_rate),
+            updated_at=now,
+        )
+        for quote in (buy_quote, sell_quote)
+    ]
+    with freeze_time(now):
+        book_row = _group_and_compute(rows)[0]
+    for field in (
+        "tradeable_size",
+        "buy_premium_usd",
+        "sell_premium_usd",
+        "estimated_short_margin_usd",
+        "capital_required_usd",
+        "gross_profit_usd",
+        "fees_usd",
+        "net_profit_usd",
+        "price_spread_pct",
+        "net_return_pct",
+        "apr_pct",
+    ):
+        assert book_row[field] == pytest.approx(float(getattr(spread, field)))
