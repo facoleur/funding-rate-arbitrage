@@ -30,6 +30,10 @@ class _FakeExchange(AbstractExchange):
     def ws_channels(self, instruments: list[Instrument]) -> list[str]:
         return [f"ticker.{i.instrument_name}.100ms" for i in instruments]
 
+    def ws_subscribe_payloads(self, channels: list[str]) -> list[dict[str, Any]]:
+        # One frame per channel — lets the manager's send loop be observed.
+        return [{"sub": c} for c in channels]
+
     def parse_ws_message(self, raw: dict[str, Any]) -> TickerUpdate | None:
         self.parsed.append(raw)
         if raw.get("type") == "tick":
@@ -104,9 +108,9 @@ class _FakeWS:
 
 
 @pytest.mark.asyncio
-async def test_subscribe_payload_uses_exchange_shape(monkeypatch) -> None:
-    """WsManager should send the right subscribe shape per exchange
-    (JSON-RPC for deribit/derive, `op:subscribe` for the fallback/aevo)."""
+async def test_manager_sends_exactly_what_the_adapter_returns(monkeypatch) -> None:
+    """The manager owns connection lifecycle, not wire format: it sends the
+    adapter's payloads verbatim, one frame each."""
     ex = _FakeExchange("deribit")
     inst = _inst()
 
@@ -130,10 +134,7 @@ async def test_subscribe_payload_uses_exchange_shape(monkeypatch) -> None:
     await asyncio.sleep(0.05)
     await mgr.stop()
 
-    assert len(fake.sent) == 1
-    subscribe = json.loads(fake.sent[0])
-    assert subscribe["method"] == "public/subscribe"
-    assert subscribe["params"]["channels"] == [f"ticker.{inst.instrument_name}.100ms"]
+    assert [json.loads(m) for m in fake.sent] == [{"sub": f"ticker.{inst.instrument_name}.100ms"}]
     assert len(received) == 1
     assert received[0].instrument == inst.normalized_name
 
@@ -157,9 +158,7 @@ async def test_ws_manager_status_reflects_connection(monkeypatch) -> None:
     await mgr.start({"aevo": [inst]})
     # let it connect + read one message + disconnect
     await asyncio.sleep(0.05)
-    # aevo uses op:subscribe shape
-    payload = json.loads(fake.sent[0])
-    assert payload["op"] == "subscribe"
+    assert json.loads(fake.sent[0]) == {"sub": f"ticker.{inst.instrument_name}.100ms"}
     await mgr.stop()
 
 

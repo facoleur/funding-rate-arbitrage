@@ -139,6 +139,20 @@ class DeribitExchange(AbstractExchange):
     def ws_channels(self, instruments: list[Instrument]) -> list[str]:
         return [f"ticker.{i.instrument_name}.100ms" for i in instruments]
 
+    # Deribit rejects frames over 32KB — cap each subscribe at 200 channels.
+    _WS_BATCH = 200
+
+    def ws_subscribe_payloads(self, channels: list[str]) -> list[dict[str, Any]]:
+        return [
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "public/subscribe",
+                "params": {"channels": channels[i : i + self._WS_BATCH]},
+            }
+            for i in range(0, len(channels), self._WS_BATCH)
+        ]
+
     def parse_ws_message(self, raw: dict[str, Any]) -> TickerUpdate | None:
         params = raw.get("params")
         if not params or params.get("channel", "").startswith("ticker.") is False:
@@ -172,6 +186,9 @@ class DeribitExchange(AbstractExchange):
         except (KeyError, ValueError) as e:
             log.debug("skip malformed deribit ticker: %s", e)
             return None
+
+    async def aclose(self) -> None:
+        await self.rest.aclose()
 
     async def place_order(self, order: OrderRequest) -> OrderResult:
         if isinstance(self.auth, NoAuth):

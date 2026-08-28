@@ -100,6 +100,11 @@ class AevoExchange(AbstractExchange):
             for channel in (f"book-ticker:{underlying}:OPTION", f"index:{underlying}")
         )
 
+    def ws_subscribe_payloads(self, channels: list[str]) -> list[dict[str, Any]]:
+        if not channels:
+            return []
+        return [{"op": "subscribe", "data": channels}]
+
     def parse_ws_message(self, raw: dict[str, Any]) -> TickerUpdate | list[TickerUpdate] | None:
         channel = raw.get("channel", "")
         data = raw.get("data") or {}
@@ -152,6 +157,9 @@ class AevoExchange(AbstractExchange):
                 )
             )
         return updates or None
+
+    async def aclose(self) -> None:
+        await self.rest.aclose()
 
     async def place_order(self, order: OrderRequest) -> OrderResult:
         if isinstance(self.auth, NoAuth):

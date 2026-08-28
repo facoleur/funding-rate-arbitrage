@@ -82,6 +82,11 @@ class MockExchange(AbstractExchange):
             return self.upstream.ws_channels(instruments)
         return []
 
+    def ws_subscribe_payloads(self, channels: list[str]) -> list[dict[str, Any]]:
+        if self.upstream is not None:
+            return self.upstream.ws_subscribe_payloads(channels)
+        return []
+
     def parse_ws_message(self, raw: dict[str, Any]) -> TickerUpdate | list[TickerUpdate] | None:
         if self.upstream is not None:
             return self.upstream.parse_ws_message(raw)
@@ -102,6 +107,10 @@ class MockExchange(AbstractExchange):
 
     async def cancel_order(self, exchange_order_id: str) -> bool:
         return True
+
+    async def aclose(self) -> None:
+        if self.upstream is not None:
+            await self.upstream.aclose()
 
     async def get_balances(self) -> dict[str, Decimal]:
         if self.upstream is None:

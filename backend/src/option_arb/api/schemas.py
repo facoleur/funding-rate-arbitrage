@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, PlainSerializer, WithJsonSchema
+from pydantic import BaseModel, ConfigDict, PlainSerializer, WithJsonSchema, computed_field
 
 from option_arb.config import Network
 from option_arb.db.models import (
@@ -40,7 +40,9 @@ type SortDirection = Literal["asc", "desc"]
 
 
 class ApiResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    # `from_attributes` lets routes return ORM rows directly — the response
+    # model is the only place the field list is written down.
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
 
 
 class HealthResponse(ApiResponse):
@@ -85,7 +87,6 @@ class OpportunityResponse(ApiResponse):
     instrument: str
     symbol: str
     expiry: IsoDatetime
-    days_to_expiry: float
     strike: float
     option_type: Literal["C", "P"]
     buy_from: str
@@ -119,6 +120,12 @@ class OpportunityResponse(ApiResponse):
     verified_apr_pct: float | None
     status: OpportunityStatus
     rejection_reason: str | None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def days_to_expiry(self) -> float:
+        expiry = self.expiry if self.expiry.tzinfo else self.expiry.replace(tzinfo=UTC)
+        return round(max((expiry - datetime.now(UTC)).total_seconds() / 86400.0, 0), 2)
 
 
 class TradeResponse(ApiResponse):

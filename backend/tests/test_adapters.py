@@ -289,3 +289,65 @@ async def test_place_order_rejects_without_auth() -> None:
         assert (
             "no_auth" in (r.reason or "").lower() or "not_implemented" in (r.reason or "").lower()
         )
+
+
+# ---------------------------------------------------------------------------
+# WS subscribe payloads — wire format now lives in the adapters, not WsManager
+# ---------------------------------------------------------------------------
+
+
+def test_deribit_subscribe_is_json_rpc() -> None:
+    ex = DeribitExchange(_rest_stub())
+
+    payloads = ex.ws_subscribe_payloads(["ticker.BTC-1JAN25-1-C.100ms"])
+
+    assert payloads == [
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "public/subscribe",
+            "params": {"channels": ["ticker.BTC-1JAN25-1-C.100ms"]},
+        }
+    ]
+
+
+def test_deribit_batches_subscribes_under_the_frame_cap() -> None:
+    """Deribit rejects frames over 32KB; 974 channels must be split."""
+    ex = DeribitExchange(_rest_stub())
+    channels = [f"ticker.C{i}.100ms" for i in range(450)]
+
+    payloads = ex.ws_subscribe_payloads(channels)
+
+    assert len(payloads) == 3
+    assert [len(p["params"]["channels"]) for p in payloads] == [200, 200, 50]
+    # every channel is subscribed exactly once, order preserved
+    sent = [c for p in payloads for c in p["params"]["channels"]]
+    assert sent == channels
+
+
+def test_derive_subscribe_is_single_frame() -> None:
+    ex = DeriveExchange(_rest_stub())
+
+    assert ex.ws_subscribe_payloads(["ticker_slim.BTC-20250101-1-C.1000"]) == [
+        {
+            "method": "subscribe",
+            "params": {"channels": ["ticker_slim.BTC-20250101-1-C.1000"]},
+            "id": "1",
+        }
+    ]
+
+
+def test_aevo_subscribe_uses_op_shape() -> None:
+    ex = AevoExchange(_rest_stub())
+
+    assert ex.ws_subscribe_payloads(["book-ticker:BTC:OPTION"]) == [
+        {"op": "subscribe", "data": ["book-ticker:BTC:OPTION"]}
+    ]
+
+
+def test_empty_channel_list_produces_no_frames() -> None:
+    for ex in (
+        DeribitExchange(_rest_stub()),
+        DeriveExchange(_rest_stub()),
+    ):
+        assert ex.ws_subscribe_payloads([]) == []

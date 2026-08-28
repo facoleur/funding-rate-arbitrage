@@ -31,6 +31,29 @@ class BookLevel:
     size: Decimal
 
 
+def walk_book(size: Decimal, levels: list[BookLevel]) -> tuple[Decimal, Decimal]:
+    """Consume `levels` until `size` is filled or the book runs out.
+
+    Returns `(volume_weighted_price, filled_size)`; `(0, 0)` when nothing can
+    be filled. Shared by the executor (sizing a real trade) and the paper
+    SlippageModel (simulating the fill) — the two must not drift."""
+    if not levels or size <= 0:
+        return Decimal(0), Decimal(0)
+    remaining = size
+    total_cost = Decimal(0)
+    total_filled = Decimal(0)
+    for lvl in levels:
+        take = min(lvl.size, remaining)
+        total_cost += take * lvl.price
+        total_filled += take
+        remaining -= take
+        if remaining <= 0:
+            break
+    if total_filled == 0:
+        return Decimal(0), Decimal(0)
+    return total_cost / total_filled, total_filled
+
+
 @dataclass(frozen=True)
 class Book:
     """L2 order book snapshot. `bids` sorted desc by price, `asks` sorted asc."""
@@ -97,6 +120,7 @@ class AbstractExchange(ABC):
     must return REJECTED / empty results instead of hitting the network."""
 
     name: str
+    ws_url: str | None = None
 
     @abstractmethod
     async def list_instruments(
@@ -109,6 +133,13 @@ class AbstractExchange(ABC):
     @abstractmethod
     def ws_channels(self, instruments: list[Instrument]) -> list[str]:
         """Return the WS channel names to subscribe for the given instruments."""
+
+    @abstractmethod
+    def ws_subscribe_payloads(self, channels: list[str]) -> list[dict[str, Any]]:
+        """Return the messages that subscribe to `channels`, in send order.
+
+        Batching belongs here: venues cap frame size (Deribit rejects
+        messages over 32KB), and only the adapter knows its wire format."""
 
     @abstractmethod
     def parse_ws_message(self, raw: dict[str, Any]) -> TickerUpdate | list[TickerUpdate] | None:
@@ -133,3 +164,8 @@ class AbstractExchange(ABC):
         """Fonds disponibles pour de nouvelles positions (hors marge déjà engagée).
         Default no-op — les exchanges non-authentifiés retournent {}."""
         return {}
+
+    async def aclose(self) -> None:
+        """Release network resources. Default no-op — adapters holding a
+        RestClient override it."""
+        return None

@@ -149,6 +149,11 @@ class DeriveExchange(AbstractExchange):
         # ticker channel was deprecated; ticker_slim uses plain ms integer (100 or 1000)
         return [f"ticker_slim.{i.instrument_name}.1000" for i in instruments]
 
+    def ws_subscribe_payloads(self, channels: list[str]) -> list[dict[str, Any]]:
+        if not channels:
+            return []
+        return [{"method": "subscribe", "params": {"channels": channels}, "id": "1"}]
+
     def parse_ws_message(self, raw: dict[str, Any]) -> TickerUpdate | None:
         params = raw.get("params")
         if not params:
@@ -182,6 +187,9 @@ class DeriveExchange(AbstractExchange):
         except (KeyError, ValueError) as e:
             log.debug("skip malformed derive ticker_slim: %s", e)
             return None
+
+    async def aclose(self) -> None:
+        await self.rest.aclose()
 
     async def place_order(self, order: OrderRequest) -> OrderResult:
         if isinstance(self.auth, NoAuth):

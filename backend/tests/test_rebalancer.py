@@ -45,6 +45,9 @@ class _FakeEx(AbstractExchange):
     async def get_orderbook_l2(self, i):
         return Book(exchange=self.name, instrument="", ts=datetime.now(UTC))
 
+    def ws_subscribe_payloads(self, channels: list[str]) -> list[dict[str, Any]]:
+        return []
+
     def ws_channels(self, instruments):
         return []
 

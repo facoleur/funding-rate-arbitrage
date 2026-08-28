@@ -266,11 +266,3 @@ class Screener:
             )
         if new_rows:
             log.info("wrote %d new opportunities", len(new_rows))
-
-
-async def _count_pending() -> int:
-    async with get_session() as sess:
-        res = await sess.execute(
-            select(Opportunity).where(Opportunity.status == OpportunityStatus.PENDING)
-        )
-        return len(list(res.scalars()))

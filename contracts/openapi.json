@@ -336,6 +336,7 @@
             "type": "number"
           },
           "days_to_expiry": {
+            "readOnly": true,
             "title": "Days To Expiry",
             "type": "number"
           },
@@ -596,7 +597,6 @@
           "instrument",
           "symbol",
           "expiry",
-          "days_to_expiry",
           "strike",
           "option_type",
           "buy_from",
@@ -629,7 +629,8 @@
           "verified_net_return_pct",
           "verified_apr_pct",
           "status",
-          "rejection_reason"
+          "rejection_reason",
+          "days_to_expiry"
         ],
         "title": "OpportunityResponse",
         "type": "object"

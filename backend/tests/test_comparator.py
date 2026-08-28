@@ -9,7 +9,7 @@ from freezegun import freeze_time
 from option_arb.api.tickers import _group_and_compute
 from option_arb.db.models import TickerState
 from option_arb.exchanges.naming import normalize_deribit, normalize_from_parts
-from option_arb.services.comparator import Quote, Spread, compare_options, group_by_instrument
+from option_arb.services.comparator import Quote, Spread, compare_options
 
 
 def _q(
@@ -52,14 +52,6 @@ def test_normalize_from_parts() -> None:
         "C",
     )
     assert name == "BTC-20251025-30000-C"
-
-
-def test_group_by_instrument() -> None:
-    a = _q("derive", "100", "101")
-    b = _q("deribit", "102", "103")
-    grouped = group_by_instrument([a, b])
-    assert set(grouped) == {"BTC-20260101-30000-C"}
-    assert len(grouped["BTC-20260101-30000-C"]) == 2
 
 
 def test_spread_detected_when_cross_venue_and_positive_net() -> None:

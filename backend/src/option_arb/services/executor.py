@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from pathlib import Path
 from typing import Literal
 
 import sqlalchemy as sa
-from sqlalchemy import func
 from sqlmodel import select
 
 from option_arb.config import AppConfig, load_config
+from option_arb.db.event_relay import PostgresEventRelay
 from option_arb.db.models import (
     Mode,
     Opportunity,
@@ -33,16 +34,57 @@ from option_arb.exchanges.base import (
     Instrument,
     OrderRequest,
     OrderResult,
+    walk_book,
 )
+from option_arb.services.limits import kill_switch_reason
 
 log = logging.getLogger(__name__)
 
-ACTIVE_TRADE_STATES = (
-    TradeStatus.PLACING,
-    TradeStatus.LEG1_FILLED,
-    TradeStatus.LEG2_FILLED,
-    TradeStatus.HEDGING,
-)
+_BINARY_SEARCH_STEPS = 20
+
+
+@dataclass(frozen=True)
+class WalkedTrade:
+    """A size that clears every gate, priced at the worst IOC limits."""
+
+    walked_ask: Decimal
+    walked_bid: Decimal
+    buy_limit: Decimal
+    sell_limit: Decimal
+    economics: OptionEconomics
+
+
+@dataclass(frozen=True)
+class _Venues:
+    """Both sides of one opportunity, resolved to live adapters + metadata."""
+
+    buy_ex: AbstractExchange
+    sell_ex: AbstractExchange
+    buy_inst: Instrument
+    sell_inst: Instrument
+
+
+@dataclass(frozen=True)
+class _FreshMarket:
+    """Books refetched over REST right before placing, plus usable funds."""
+
+    buy_book: Book
+    sell_book: Book
+    buy_avail_usd: Decimal | None
+    sell_avail_usd: Decimal | None
+
+
+@dataclass(frozen=True)
+class _Gates:
+    """Config thresholds as Decimals, resolved once per opportunity."""
+
+    min_apr: Decimal
+    min_buy_premium: Decimal
+    min_net_profit: Decimal
+    min_net_return: Decimal
+    max_contracts: Decimal | None
+    slippage: Decimal
+    cap: Decimal
 
 
 class Executor:
@@ -102,8 +144,7 @@ class Executor:
             await self._process(opp)
 
     async def _process(self, opp: Opportunity) -> None:
-        # 1. kill-switches
-        killed_reason = await self._kill_switch_check()
+        killed_reason = await kill_switch_reason(self.config.limits)
         if killed_reason:
             await self._reject(opp, killed_reason)
             await bus.publish(
@@ -116,96 +157,133 @@ class Executor:
             )
             return
 
-        # 2. expiry pre-check; all economic thresholds are rechecked on fresh books.
-        exp = opp.expiry if opp.expiry.tzinfo else opp.expiry.replace(tzinfo=UTC)
-        days_remaining = days_to_expiry(exp, datetime.now(UTC))
-        if days_remaining <= 0:
-            await self._reject(opp, "expiry_invalid")
-            return
-        if days_remaining > Decimal(self.config.thresholds.max_days_to_expiry):
-            await self._reject(opp, f"expiry_too_far({days_remaining:.0f}d)")
+        blocked = self._static_checks(opp)
+        if blocked:
+            await self._reject(opp, blocked)
             return
 
-        # 3. trade_enabled check per exchange
-        for ex_name in (opp.buy_from, opp.sell_to):
-            ex_cfg = self.config.exchanges.get(ex_name)
-            if ex_cfg and not ex_cfg.trade_enabled:
-                await self._reject(opp, f"trading_disabled({ex_name})")
-                return
-
-        # 3. fresh L2 refetch — parallel
-        buy_ex = self.exchanges.get(opp.buy_from)
-        sell_ex = self.exchanges.get(opp.sell_to)
-        if not buy_ex or not sell_ex:
-            await self._reject(opp, f"unknown_exchange({opp.buy_from},{opp.sell_to})")
-            return
-        buy_inst = self._instruments_by_name.get(opp.buy_from, {}).get(opp.instrument)
-        sell_inst = self._instruments_by_name.get(opp.sell_to, {}).get(opp.instrument)
-        if not buy_inst or not sell_inst:
-            await self._reject(opp, "instrument_metadata_missing")
+        venues = self._resolve_venues(opp)
+        if isinstance(venues, str):
+            await self._reject(opp, venues)
             return
 
-        timeout = self.config.executor.fresh_fetch_timeout_ms / 1000.0
-        try:
-            results = await asyncio.wait_for(
-                asyncio.gather(
-                    buy_ex.get_orderbook_l2(buy_inst),
-                    sell_ex.get_orderbook_l2(sell_inst),
-                    buy_ex.get_available_funds(),
-                    sell_ex.get_available_funds(),
-                    return_exceptions=True,
-                ),
-                timeout=timeout,
-            )
-        except (TimeoutError, Exception) as e:
-            await self._reject(opp, f"stale_book:{type(e).__name__}")
+        market = await self._fetch_fresh_market(venues)
+        if isinstance(market, str):
+            await self._reject(opp, market)
             return
 
-        if isinstance(results[0], BaseException) or isinstance(results[1], BaseException):
-            await self._reject(opp, f"stale_book:{type(results[0]).__name__}")
-            return
-        buy_book: Book = results[0]
-        sell_book: Book = results[1]
-        buy_funds: dict[str, Decimal] = (
-            results[2] if not isinstance(results[2], BaseException) else {}
-        )
-        sell_funds: dict[str, Decimal] = (
-            results[3] if not isinstance(results[3], BaseException) else {}
-        )
-
-        spot = _valid_spot(buy_book.underlying_price) or _valid_spot(sell_book.underlying_price)
-        buy_avail_usd = _available_funds_usd(buy_funds, buy_inst.underlying, spot)
-        sell_avail_usd = _available_funds_usd(sell_funds, sell_inst.underlying, spot)
-
-        # 3. walk book, recompute
         walked = self._walk_and_verify(
-            opp, buy_book, sell_book, buy_inst, sell_inst, buy_avail_usd, sell_avail_usd
+            opp,
+            market.buy_book,
+            market.sell_book,
+            venues.buy_inst,
+            venues.sell_inst,
+            market.buy_avail_usd,
+            market.sell_avail_usd,
         )
         if isinstance(walked, str):
             await self._reject(opp, walked)
             return
-        walked_ask, walked_bid, buy_limit, sell_limit, economics = walked
-        walked_size = economics.tradeable_size
 
-        # persist walked values on the opportunity + create Trade in PLACING
+        trade = await self._open_trade(opp, walked)
+        await bus.publish(
+            Event(
+                type="trade_opened",
+                level="info",
+                message=(
+                    f"trade {trade.id} placing {walked.economics.tradeable_size} {opp.instrument}"
+                ),
+                payload={"trade_id": trade.id, "opportunity_id": opp.id},
+            )
+        )
+        buy_res, sell_res = await self._place_legs(trade, opp, venues, walked)
+        await self._dispatch_outcome(trade, opp, venues, walked, buy_res, sell_res)
+
+    # -----------------------------------------------------------------
+
+    def _static_checks(self, opp: Opportunity) -> str | None:
+        """Cheap gates that need no network. Economic thresholds are NOT
+        checked here — they're rechecked on fresh books in _walk_and_verify."""
+        exp = opp.expiry if opp.expiry.tzinfo else opp.expiry.replace(tzinfo=UTC)
+        days_remaining = days_to_expiry(exp, datetime.now(UTC))
+        if days_remaining <= 0:
+            return "expiry_invalid"
+        if days_remaining > Decimal(self.config.thresholds.max_days_to_expiry):
+            return f"expiry_too_far({days_remaining:.0f}d)"
+        for ex_name in (opp.buy_from, opp.sell_to):
+            ex_cfg = self.config.exchanges.get(ex_name)
+            if ex_cfg and not ex_cfg.trade_enabled:
+                return f"trading_disabled({ex_name})"
+        return None
+
+    def _resolve_venues(self, opp: Opportunity) -> _Venues | str:
+        buy_ex = self.exchanges.get(opp.buy_from)
+        sell_ex = self.exchanges.get(opp.sell_to)
+        if not buy_ex or not sell_ex:
+            return f"unknown_exchange({opp.buy_from},{opp.sell_to})"
+        buy_inst = self._instruments_by_name.get(opp.buy_from, {}).get(opp.instrument)
+        sell_inst = self._instruments_by_name.get(opp.sell_to, {}).get(opp.instrument)
+        if not buy_inst or not sell_inst:
+            return "instrument_metadata_missing"
+        return _Venues(buy_ex, sell_ex, buy_inst, sell_inst)
+
+    async def _fetch_fresh_market(self, venues: _Venues) -> _FreshMarket | str:
+        """Refetch both books (and balances) in parallel under one timeout.
+        A stale book is a rejection: the screener's snapshot is not enough."""
+        timeout = self.config.executor.fresh_fetch_timeout_ms / 1000.0
+        try:
+            results = await asyncio.wait_for(
+                asyncio.gather(
+                    venues.buy_ex.get_orderbook_l2(venues.buy_inst),
+                    venues.sell_ex.get_orderbook_l2(venues.sell_inst),
+                    venues.buy_ex.get_available_funds(),
+                    venues.sell_ex.get_available_funds(),
+                    return_exceptions=True,
+                ),
+                timeout=timeout,
+            )
+        except Exception as e:
+            return f"stale_book:{type(e).__name__}"
+
+        buy_book, sell_book = results[0], results[1]
+        for book in (buy_book, sell_book):
+            if isinstance(book, BaseException):
+                return f"stale_book:{type(book).__name__}"
+        assert isinstance(buy_book, Book) and isinstance(sell_book, Book)
+
+        # Balances are best-effort: a failure only means we can't tighten the cap.
+        buy_funds = results[2] if not isinstance(results[2], BaseException) else {}
+        sell_funds = results[3] if not isinstance(results[3], BaseException) else {}
+        spot = _valid_spot(buy_book.underlying_price) or _valid_spot(sell_book.underlying_price)
+        return _FreshMarket(
+            buy_book=buy_book,
+            sell_book=sell_book,
+            buy_avail_usd=_available_funds_usd(buy_funds, venues.buy_inst.underlying, spot),
+            sell_avail_usd=_available_funds_usd(sell_funds, venues.sell_inst.underlying, spot),
+        )
+
+    async def _open_trade(self, opp: Opportunity, walked: WalkedTrade) -> Trade:
+        """Record what the fresh books actually justified, then open the trade
+        in PLACING — both in one transaction, before any order goes out."""
+        economics = walked.economics
         async with get_session() as sess:
-            opp2 = await sess.get(Opportunity, opp.id)
-            assert opp2 is not None
-            opp2.walked_ask = float(walked_ask)
-            opp2.walked_bid = float(walked_bid)
-            opp2.verified_buy_limit = float(buy_limit)
-            opp2.verified_sell_limit = float(sell_limit)
-            opp2.verified_tradeable_size = float(economics.tradeable_size)
-            opp2.verified_buy_premium_usd = float(economics.buy_premium_usd)
-            opp2.verified_sell_premium_usd = float(economics.sell_premium_usd)
-            opp2.verified_estimated_short_margin_usd = float(economics.estimated_short_margin_usd)
-            opp2.verified_capital_required_usd = float(economics.capital_required_usd)
-            opp2.verified_gross_profit_usd = float(economics.gross_profit_usd)
-            opp2.verified_fees_usd = float(economics.fees_usd)
-            opp2.verified_net_profit_usd = float(economics.net_profit_usd)
-            opp2.verified_net_return_pct = float(economics.net_return_pct)
-            opp2.verified_apr_pct = float(economics.apr_pct)
-            opp2.status = OpportunityStatus.APPROVED
+            row = await sess.get(Opportunity, opp.id)
+            assert row is not None
+            row.walked_ask = float(walked.walked_ask)
+            row.walked_bid = float(walked.walked_bid)
+            row.verified_buy_limit = float(walked.buy_limit)
+            row.verified_sell_limit = float(walked.sell_limit)
+            row.verified_tradeable_size = float(economics.tradeable_size)
+            row.verified_buy_premium_usd = float(economics.buy_premium_usd)
+            row.verified_sell_premium_usd = float(economics.sell_premium_usd)
+            row.verified_estimated_short_margin_usd = float(economics.estimated_short_margin_usd)
+            row.verified_capital_required_usd = float(economics.capital_required_usd)
+            row.verified_gross_profit_usd = float(economics.gross_profit_usd)
+            row.verified_fees_usd = float(economics.fees_usd)
+            row.verified_net_profit_usd = float(economics.net_profit_usd)
+            row.verified_net_return_pct = float(economics.net_return_pct)
+            row.verified_apr_pct = float(economics.apr_pct)
+            row.status = OpportunityStatus.APPROVED
             trade = Trade(
                 opportunity_id=opp.id,
                 opened_at=datetime.now(UTC),
@@ -213,46 +291,42 @@ class Executor:
                 status=TradeStatus.PLACING,
                 buy_exchange=opp.buy_from,
                 sell_exchange=opp.sell_to,
-                requested_size=float(walked_size),
+                requested_size=float(economics.tradeable_size),
             )
             sess.add(trade)
             await sess.commit()
             await sess.refresh(trade)
             assert trade.id is not None
+            return trade
 
-        await bus.publish(
-            Event(
-                type="trade_opened",
-                level="info",
-                message=f"trade {trade.id} placing {walked_size} {opp.instrument}",
-                payload={"trade_id": trade.id, "opportunity_id": opp.id},
-            )
-        )
-
-        # 4. place both IOC limits in parallel
+    async def _place_legs(
+        self, trade: Trade, opp: Opportunity, venues: _Venues, walked: WalkedTrade
+    ) -> tuple[OrderResult, OrderResult]:
+        """Both IOC limits go out together — sequential placement would let
+        one side move while the other is in flight."""
+        size = walked.economics.tradeable_size
         buy_req = OrderRequest(
             exchange=opp.buy_from,
-            instrument=buy_inst.instrument_name,
+            instrument=venues.buy_inst.instrument_name,
             side="BUY",
-            size=walked_size,
-            limit_price=buy_limit,
+            size=size,
+            limit_price=walked.buy_limit,
             time_in_force="IOC",
         )
         sell_req = OrderRequest(
             exchange=opp.sell_to,
-            instrument=sell_inst.instrument_name,
+            instrument=venues.sell_inst.instrument_name,
             side="SELL",
-            size=walked_size,
-            limit_price=sell_limit,
+            size=size,
+            limit_price=walked.sell_limit,
             time_in_force="IOC",
         )
-
         buy_order = await self._create_order(trade.id, buy_req, OrderKind.IOC_LIMIT)
         sell_order = await self._create_order(trade.id, sell_req, OrderKind.IOC_LIMIT)
 
         buy_res, sell_res = await asyncio.gather(
-            buy_ex.place_order(buy_req),
-            sell_ex.place_order(sell_req),
+            venues.buy_ex.place_order(buy_req),
+            venues.sell_ex.place_order(sell_req),
             return_exceptions=True,
         )
         if isinstance(buy_res, BaseException):
@@ -262,50 +336,62 @@ class Executor:
 
         await self._update_order(buy_order.id, buy_res)
         await self._update_order(sell_order.id, sell_res)
+        return buy_res, sell_res
 
-        # 5. dispatch on outcome
+    async def _dispatch_outcome(
+        self,
+        trade: Trade,
+        opp: Opportunity,
+        venues: _Venues,
+        walked: WalkedTrade,
+        buy_res: OrderResult,
+        sell_res: OrderResult,
+    ) -> None:
         buy_ok = buy_res.status in ("FILLED", "PARTIAL") and buy_res.filled_size > 0
         sell_ok = sell_res.status in ("FILLED", "PARTIAL") and sell_res.filled_size > 0
+        assert trade.id is not None
 
         if buy_ok and sell_ok:
             await self._finalize_filled(
-                trade.id, opp, buy_res, sell_res, buy_inst, sell_inst, walked_ask, walked_bid
+                trade.id,
+                opp,
+                buy_res,
+                sell_res,
+                venues.buy_inst,
+                venues.sell_inst,
+                walked.walked_ask,
+                walked.walked_bid,
             )
-        elif buy_ok ^ sell_ok:  # exactly one filled
-            await self._market_out(trade, opp, buy_ok, buy_res, sell_res, buy_inst, sell_inst)
+        elif buy_ok ^ sell_ok:  # exactly one leg filled — we're naked, hedge out
+            await self._market_out(
+                trade, opp, buy_ok, buy_res, sell_res, venues.buy_inst, venues.sell_inst
+            )
         else:
             await self._finalize_failed(trade.id, opp, buy_res, sell_res)
 
     # -----------------------------------------------------------------
 
-    async def _kill_switch_check(self) -> str | None:
-        limits = self.config.limits
-        if Path(limits.kill_switch_file).exists():
-            return "kill_switch_file"
-
-        async with get_session() as sess:
-            open_count = (
-                await sess.execute(
-                    select(func.count())
-                    .select_from(Trade)
-                    .where(Trade.status.in_(ACTIVE_TRADE_STATES))  # type: ignore[attr-defined]
-                )
-            ).scalar_one()
-            if open_count >= limits.max_positions_open:
-                return f"max_positions_open({open_count})"
-
-            midnight = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-            daily_pnl = (
-                await sess.execute(
-                    select(func.coalesce(func.sum(Trade.net_pnl_usd), 0.0)).where(
-                        Trade.opened_at >= midnight
-                    )
-                )
-            ).scalar_one()
-            if float(daily_pnl or 0) <= -limits.max_daily_loss_usd:
-                return f"max_daily_loss({daily_pnl:.2f})"
-
-        return None
+    def _gates(self, buy_avail_usd: Decimal | None) -> _Gates | str:
+        """Thresholds for this attempt. Available funds tighten the premium cap."""
+        cfg = self.config
+        cap = Decimal(str(cfg.limits.max_buy_premium_per_trade_usd))
+        if buy_avail_usd is not None:
+            cap = min(cap, buy_avail_usd)
+            if cap <= 0:
+                return f"insufficient_buy_funds({buy_avail_usd:.0f})"
+        return _Gates(
+            min_apr=Decimal(str(cfg.thresholds.min_apr_pct)),
+            min_buy_premium=Decimal(str(cfg.thresholds.min_buy_premium_usd)),
+            min_net_profit=Decimal(str(cfg.thresholds.min_net_profit_usd)),
+            min_net_return=Decimal(str(cfg.thresholds.min_net_return_pct)),
+            max_contracts=(
+                Decimal(str(cfg.limits.max_contracts_per_trade))
+                if cfg.limits.max_contracts_per_trade
+                else None
+            ),
+            slippage=Decimal(str(cfg.executor.ioc_slippage_limit_pct)) / Decimal(100),
+            cap=cap,
+        )
 
     def _walk_and_verify(
         self,
@@ -316,22 +402,14 @@ class Executor:
         sell_inst: Instrument,
         buy_avail_usd: Decimal | None = None,
         sell_avail_usd: Decimal | None = None,
-    ) -> tuple[Decimal, Decimal, Decimal, Decimal, OptionEconomics] | str:
-        cfg = self.config
-        limits = cfg.limits
-        min_apr = Decimal(str(cfg.thresholds.min_apr_pct))
-        min_buy_premium = Decimal(str(cfg.thresholds.min_buy_premium_usd))
-        min_net_profit = Decimal(str(cfg.thresholds.min_net_profit_usd))
-        min_net_return = Decimal(str(cfg.thresholds.min_net_return_pct))
-        cap = Decimal(str(limits.max_buy_premium_per_trade_usd))
-        if buy_avail_usd is not None:
-            cap = min(cap, buy_avail_usd)
-            if cap <= 0:
-                return f"insufficient_buy_funds({buy_avail_usd:.0f})"
-        slippage = Decimal(str(cfg.executor.ioc_slippage_limit_pct)) / Decimal(100)
-        max_contracts = (
-            Decimal(str(limits.max_contracts_per_trade)) if limits.max_contracts_per_trade else None
-        )
+    ) -> WalkedTrade | str:
+        """Largest size that still clears every gate at the worst IOC price,
+        or a rejection reason. Runs on freshly-fetched books, so it — not the
+        screener's estimate — is what authorises the trade."""
+        gates = self._gates(buy_avail_usd)
+        if isinstance(gates, str):
+            return gates
+
         spot = _valid_spot(buy_book.underlying_price) or _valid_spot(sell_book.underlying_price)
         if spot is None:
             return "margin_unavailable"
@@ -340,82 +418,59 @@ class Executor:
         if dte <= 0:
             return "expiry_invalid"
 
-        candidate_size = _max_size_within_cap(
+        largest = _max_size_within_cap(
             buy_book.asks,
             sell_book.bids,
-            cap,
-            max_contracts,
-            buy_price_multiplier=Decimal(1) + slippage,
+            gates.cap,
+            gates.max_contracts,
+            buy_price_multiplier=Decimal(1) + gates.slippage,
         )
-        if candidate_size <= 0:
+        if largest <= 0:
             return "empty_book"
 
-        def evaluate(
-            size: Decimal,
-        ) -> tuple[Decimal, Decimal, Decimal, Decimal, OptionEconomics] | None:
-            walked_ask, filled_ask = _walk(size, buy_book.asks)
-            walked_bid, filled_bid = _walk(size, sell_book.bids)
-            if filled_ask < size or filled_bid < size:
-                return None
-            buy_limit = walked_ask * (Decimal(1) + slippage)
-            sell_limit = walked_bid * (Decimal(1) - slippage)
-            economics = calculate_option_economics(
-                buy_price=buy_limit,
-                sell_price=sell_limit,
-                quantity=size,
-                buy_taker_fee_rate=buy_inst.taker_fee_rate,
-                sell_taker_fee_rate=sell_inst.taker_fee_rate,
-                spot=spot,
-                strike=sell_inst.strike,
-                option_type=sell_inst.option_type,
-                days_to_expiry=dte,
-            )
-            if economics is None:
-                return None
-            return walked_ask, walked_bid, buy_limit, sell_limit, economics
-
-        def passes_quality(
-            result: tuple[Decimal, Decimal, Decimal, Decimal, OptionEconomics],
-        ) -> bool:
-            economics = result[4]
-            return (
-                economics.buy_premium_usd <= cap
-                and economics.net_profit_usd > 0
-                and economics.net_return_pct >= min_net_return
-                and economics.apr_pct >= min_apr
+        def evaluate(size: Decimal) -> WalkedTrade | None:
+            return self._price_at_size(
+                size, buy_book, sell_book, buy_inst, sell_inst, gates, spot, dte
             )
 
-        candidate = evaluate(candidate_size)
-        best = candidate if candidate is not None and passes_quality(candidate) else None
-        low, high = Decimal(0), candidate_size
-        for _ in range(20 if best is None else 0):
-            mid = (low + high) / Decimal(2)
-            if mid <= 0:
-                break
-            result = evaluate(mid)
-            if result is not None and passes_quality(result):
-                best = result
-                low = mid
-            else:
-                high = mid
-
+        best = _largest_passing_size(largest, evaluate, lambda t: _clears_gates(t, gates))
         if best is None:
             return "apr_dropped"
-        economics = best[4]
-        walked_size = economics.tradeable_size
-        if economics.buy_premium_usd < min_buy_premium:
-            return "size_too_small"
-        if economics.net_profit_usd < min_net_profit:
-            return "profit_too_small"
-        min_size = max(buy_inst.min_trade_amount, sell_inst.min_trade_amount)
-        if min_size > 0 and walked_size < min_size:
-            return f"size_below_minimum({float(walked_size):.4f}<{float(min_size):.4f})"
-        if sell_avail_usd is not None and sell_avail_usd < economics.estimated_short_margin_usd:
-            return (
-                f"insufficient_sell_funds({sell_avail_usd:.0f}"
-                f"<{economics.estimated_short_margin_usd:.0f})"
-            )
-        return best
+        return _final_checks(best, gates, buy_inst, sell_inst, sell_avail_usd)
+
+    @staticmethod
+    def _price_at_size(
+        size: Decimal,
+        buy_book: Book,
+        sell_book: Book,
+        buy_inst: Instrument,
+        sell_inst: Instrument,
+        gates: _Gates,
+        spot: Decimal,
+        dte: Decimal,
+    ) -> WalkedTrade | None:
+        """Walk both books for `size` and price the pair at the worst IOC
+        limits. None when the books can't fill it or economics don't compute."""
+        walked_ask, filled_ask = walk_book(size, buy_book.asks)
+        walked_bid, filled_bid = walk_book(size, sell_book.bids)
+        if filled_ask < size or filled_bid < size:
+            return None
+        buy_limit = walked_ask * (Decimal(1) + gates.slippage)
+        sell_limit = walked_bid * (Decimal(1) - gates.slippage)
+        economics = calculate_option_economics(
+            buy_price=buy_limit,
+            sell_price=sell_limit,
+            quantity=size,
+            buy_taker_fee_rate=buy_inst.taker_fee_rate,
+            sell_taker_fee_rate=sell_inst.taker_fee_rate,
+            spot=spot,
+            strike=sell_inst.strike,
+            option_type=sell_inst.option_type,
+            days_to_expiry=dte,
+        )
+        if economics is None:
+            return None
+        return WalkedTrade(walked_ask, walked_bid, buy_limit, sell_limit, economics)
 
     async def _reject(self, opp: Opportunity, reason: str) -> None:
         async with get_session() as sess:
@@ -646,24 +701,6 @@ class Executor:
 # ---------- helpers ----------
 
 
-def _walk(size: Decimal, levels: list[BookLevel]) -> tuple[Decimal, Decimal]:
-    if not levels or size <= 0:
-        return Decimal(0), Decimal(0)
-    remaining = size
-    total_cost = Decimal(0)
-    total_filled = Decimal(0)
-    for lvl in levels:
-        take = min(lvl.size, remaining)
-        total_cost += take * lvl.price
-        total_filled += take
-        remaining -= take
-        if remaining <= 0:
-            break
-    if total_filled == 0:
-        return Decimal(0), Decimal(0)
-    return total_cost / total_filled, total_filled
-
-
 def _max_size_within_cap(
     asks: list[BookLevel],
     bids: list[BookLevel],
@@ -683,6 +720,63 @@ def _max_size_within_cap(
     if max_contracts is not None:
         result = min(result, max_contracts)
     return result
+
+
+def _clears_gates(trade: WalkedTrade, gates: _Gates) -> bool:
+    e = trade.economics
+    return (
+        e.buy_premium_usd <= gates.cap
+        and e.net_profit_usd > 0
+        and e.net_return_pct >= gates.min_net_return
+        and e.apr_pct >= gates.min_apr
+    )
+
+
+def _largest_passing_size(
+    largest: Decimal,
+    evaluate: Callable[[Decimal], WalkedTrade | None],
+    passes: Callable[[WalkedTrade], bool],
+) -> WalkedTrade | None:
+    """Take the biggest size the book allows; if it fails the gates, binary
+    search downward for the largest size that clears them."""
+    candidate = evaluate(largest)
+    if candidate is not None and passes(candidate):
+        return candidate
+
+    best: WalkedTrade | None = None
+    low, high = Decimal(0), largest
+    for _ in range(_BINARY_SEARCH_STEPS):
+        mid = (low + high) / Decimal(2)
+        if mid <= 0:
+            break
+        result = evaluate(mid)
+        if result is not None and passes(result):
+            best = result
+            low = mid
+        else:
+            high = mid
+    return best
+
+
+def _final_checks(
+    trade: WalkedTrade,
+    gates: _Gates,
+    buy_inst: Instrument,
+    sell_inst: Instrument,
+    sell_avail_usd: Decimal | None,
+) -> WalkedTrade | str:
+    """Absolute floors, checked once on the winning size."""
+    e = trade.economics
+    if e.buy_premium_usd < gates.min_buy_premium:
+        return "size_too_small"
+    if e.net_profit_usd < gates.min_net_profit:
+        return "profit_too_small"
+    min_size = max(buy_inst.min_trade_amount, sell_inst.min_trade_amount)
+    if min_size > 0 and e.tradeable_size < min_size:
+        return f"size_below_minimum({float(e.tradeable_size):.4f}<{float(min_size):.4f})"
+    if sell_avail_usd is not None and sell_avail_usd < e.estimated_short_margin_usd:
+        return f"insufficient_sell_funds({sell_avail_usd:.0f}<{e.estimated_short_margin_usd:.0f})"
+    return trade
 
 
 def _valid_spot(spot: Decimal | None) -> Decimal | None:
@@ -726,6 +820,10 @@ async def _amain() -> None:
     from option_arb.exchanges.registry import build_exchanges, close_exchanges
 
     exchanges = build_exchanges(cfg)
+    # Without the relay every executor event (trade_stuck included) would die
+    # in this process — the Alerter and /api/stream live in other containers.
+    relay = PostgresEventRelay()
+    await relay.start()
     try:
         exec_ = Executor(cfg, exchanges)
         for underlying in cfg.screener.underlyings:
@@ -746,6 +844,7 @@ async def _amain() -> None:
                     log.warning("executor bootstrap %s/%s failed: %s", name, underlying, e)
         await exec_.run()
     finally:
+        await relay.stop()
         await close_exchanges(exchanges)
 
 

@@ -17,13 +17,16 @@ from option_arb.api import (
     tickers,
     trades,
 )
+from option_arb.db.event_relay import PostgresEventRelay
 from option_arb.db.session import init_db
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     await init_db()
-    yield
+    # /api/stream fans out events emitted by the workers + executor containers.
+    async with PostgresEventRelay():
+        yield
 
 
 app = FastAPI(

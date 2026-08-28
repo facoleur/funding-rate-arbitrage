@@ -5,7 +5,7 @@ import random
 from dataclasses import dataclass
 from decimal import Decimal
 
-from option_arb.exchanges.base import Book, BookLevel, OrderRequest, OrderResult
+from option_arb.exchanges.base import Book, OrderRequest, OrderResult, walk_book
 
 
 @dataclass
@@ -35,7 +35,7 @@ class SlippageModel:
             return OrderResult(status="REJECTED", reason="random_reject")
 
         levels = book.asks if order.side == "BUY" else book.bids
-        avg_price, filled = self._walk(order.size, levels)
+        avg_price, filled = walk_book(order.size, levels)
         if filled <= 0:
             return OrderResult(status="REJECTED", reason="empty_book")
 
@@ -56,21 +56,3 @@ class SlippageModel:
             exchange_order_id=f"mock-{self._rng.randint(1, 10**9)}",
             raw_response={"walked_avg": str(avg_price), "noise": str(noise)},
         )
-
-    @staticmethod
-    def _walk(size: Decimal, levels: list[BookLevel]) -> tuple[Decimal, Decimal]:
-        if not levels:
-            return Decimal(0), Decimal(0)
-        remaining = size
-        total_cost = Decimal(0)
-        total_filled = Decimal(0)
-        for lvl in levels:
-            take = min(lvl.size, remaining)
-            total_cost += take * lvl.price
-            total_filled += take
-            remaining -= take
-            if remaining <= 0:
-                break
-        if total_filled == 0:
-            return Decimal(0), Decimal(0)
-        return total_cost / total_filled, total_filled

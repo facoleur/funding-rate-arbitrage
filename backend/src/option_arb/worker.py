@@ -6,6 +6,7 @@ import logging
 import signal
 
 from option_arb.config import AppConfig, load_config
+from option_arb.db.event_relay import PostgresEventRelay
 from option_arb.db.session import init_db
 from option_arb.exchanges.base import AbstractExchange, Instrument, TickerUpdate
 from option_arb.exchanges.deribit import DeribitExchange
@@ -28,6 +29,8 @@ async def _amain() -> None:
 
     await init_db()
     cfg = load_config()
+    relay = PostgresEventRelay()
+    await relay.start()
     exchanges = build_exchanges(cfg)
 
     # 1. bootstrap instrument metadata for every configured underlying/exchange
@@ -100,6 +103,7 @@ async def _amain() -> None:
     await asyncio.gather(*tasks, return_exceptions=True)
     await ws.stop()
     await close_exchanges(exchanges)
+    await relay.stop()
     log.info("worker stopped")
 
 

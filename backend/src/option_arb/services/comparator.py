@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -52,13 +51,6 @@ class Spread:
     price_spread_pct: Decimal
     net_return_pct: Decimal
     apr_pct: Decimal
-
-
-def group_by_instrument(quotes: list[Quote]) -> dict[str, list[Quote]]:
-    grouped: dict[str, list[Quote]] = defaultdict(list)
-    for quote in quotes:
-        grouped[quote.normalized_name].append(quote)
-    return grouped
 
 
 def _is_valid(quote: Quote) -> bool:

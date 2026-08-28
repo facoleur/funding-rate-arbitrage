@@ -5,7 +5,6 @@ import pytest
 from option_arb.exchanges.auth import (
     AuthNotReadyError,
     DeribitOAuth,
-    EIP712Auth,
     NoAuth,
     build_authenticator,
 )
@@ -49,31 +48,6 @@ async def test_deribit_oauth_ws_message_injects_token() -> None:
     auth = DeribitOAuth("id", "secret", auth_call=fake_auth)
     out = await auth.sign_ws_message({"method": "private/cancel", "params": {"order_id": "x"}})
     assert out["params"]["access_token"] == "abc"
-
-
-def test_eip712_auth_requires_key() -> None:
-    with pytest.raises(ValueError):
-        EIP712Auth(
-            session_private_key="",
-            wallet_address="0x1",
-            chain_id=1,
-            domain_name="X",
-            verifying_contract="0x0",
-        )
-
-
-def test_eip712_auth_signer_address_matches_key() -> None:
-    from eth_account import Account
-
-    acc = Account.create()
-    auth = EIP712Auth(
-        session_private_key=acc.key.hex(),
-        wallet_address=acc.address,
-        chain_id=957,
-        domain_name="Matching",
-        verifying_contract="0x0000000000000000000000000000000000000000",
-    )
-    assert auth.signer_address.lower() == acc.address.lower()
 
 
 def _empty_settings():

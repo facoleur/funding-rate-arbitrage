@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -100,7 +99,7 @@ async def list_opportunities(
     sort_dir: SortDirection = "desc",
     limit: int = Query(default=100, le=1000),
     offset: int = Query(default=0, ge=0),
-) -> list[dict[str, Any]]:
+) -> list[Opportunity]:
     from datetime import UTC, datetime, timedelta
 
     import sqlalchemy as sa
@@ -125,8 +124,7 @@ async def list_opportunities(
     if network is not None:
         stmt = stmt.where(Opportunity.network == network)
     async with get_session() as sess:
-        rows = list((await sess.execute(stmt)).scalars())
-    return [_serialize(r) for r in rows]
+        return list((await sess.execute(stmt)).scalars())
 
 
 @router.get(
@@ -134,59 +132,11 @@ async def list_opportunities(
     response_model=OpportunityResponse,
     responses={404: {"model": ErrorResponse}},
 )
-async def get_opportunity(opp_id: int) -> dict[str, Any]:
+async def get_opportunity(opp_id: int) -> Opportunity:
     async with get_session() as sess:
         row = (
             await sess.execute(select(Opportunity).where(Opportunity.id == opp_id))
         ).scalar_one_or_none()
     if row is None:
         raise HTTPException(404, "not found")
-    return _serialize(row)
-
-
-def _serialize(o: Opportunity) -> dict[str, Any]:
-    expiry_utc = o.expiry if o.expiry.tzinfo else o.expiry.replace(tzinfo=UTC)
-    days_to_expiry = max((expiry_utc - datetime.now(UTC)).total_seconds() / 86400.0, 0)
-    return {
-        "id": o.id,
-        "detected_at": o.detected_at.isoformat(),
-        "mode": o.mode.value,
-        "network": o.network,
-        "instrument": o.instrument,
-        "symbol": o.symbol,
-        "expiry": o.expiry.isoformat(),
-        "days_to_expiry": round(days_to_expiry, 2),
-        "strike": o.strike,
-        "option_type": o.option_type,
-        "buy_from": o.buy_from,
-        "sell_to": o.sell_to,
-        "top_ask": o.top_ask,
-        "top_bid": o.top_bid,
-        "walked_ask": o.walked_ask,
-        "walked_bid": o.walked_bid,
-        "tradeable_size": o.tradeable_size,
-        "buy_premium_usd": o.buy_premium_usd,
-        "sell_premium_usd": o.sell_premium_usd,
-        "estimated_short_margin_usd": o.estimated_short_margin_usd,
-        "capital_required_usd": o.capital_required_usd,
-        "gross_profit_usd": o.gross_profit_usd,
-        "fees_usd": o.fees_usd,
-        "net_profit_usd": o.net_profit_usd,
-        "price_spread_pct": o.price_spread_pct,
-        "net_return_pct": o.net_return_pct,
-        "apr_pct": o.apr_pct,
-        "verified_buy_limit": o.verified_buy_limit,
-        "verified_sell_limit": o.verified_sell_limit,
-        "verified_tradeable_size": o.verified_tradeable_size,
-        "verified_buy_premium_usd": o.verified_buy_premium_usd,
-        "verified_sell_premium_usd": o.verified_sell_premium_usd,
-        "verified_estimated_short_margin_usd": o.verified_estimated_short_margin_usd,
-        "verified_capital_required_usd": o.verified_capital_required_usd,
-        "verified_gross_profit_usd": o.verified_gross_profit_usd,
-        "verified_fees_usd": o.verified_fees_usd,
-        "verified_net_profit_usd": o.verified_net_profit_usd,
-        "verified_net_return_pct": o.verified_net_return_pct,
-        "verified_apr_pct": o.verified_apr_pct,
-        "status": o.status.value,
-        "rejection_reason": o.rejection_reason,
-    }
+    return row

@@ -465,7 +465,7 @@ export interface components {
             /** Capital Required Usd */
             capital_required_usd: number;
             /** Days To Expiry */
-            days_to_expiry: number;
+            readonly days_to_expiry: number;
             detected_at: components["schemas"]["IsoDatetime"];
             /** Estimated Short Margin Usd */
             estimated_short_margin_usd: number;

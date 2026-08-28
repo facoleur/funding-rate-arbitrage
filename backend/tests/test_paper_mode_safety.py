@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import Any
 
 import pytest
 
@@ -55,6 +56,9 @@ class _SpyRealExchange(AbstractExchange):
             bids=[BookLevel(price=Decimal("100"), size=Decimal("10"))],
             asks=[BookLevel(price=Decimal("101"), size=Decimal("10"))],
         )
+
+    def ws_subscribe_payloads(self, channels: list[str]) -> list[dict[str, Any]]:
+        return []
 
     def ws_channels(self, instruments):
         return [f"ticker.{i.instrument_name}" for i in instruments]

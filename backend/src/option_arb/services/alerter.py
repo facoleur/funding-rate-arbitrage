@@ -24,17 +24,6 @@ def escape_mdv2(text: str) -> str:
     return _MDV2_SPECIAL.sub(r"\\\1", str(text))
 
 
-def deep_link(
-    exchange: str, instrument: str, *, symbol: str | None = None, symbol_date: str | None = None
-) -> str | None:
-    """Best-effort deep link back to the exchange trading UI."""
-    if exchange == "derive":
-        return f"https://app.derive.xyz/trade/options?symbol={instrument}"
-    if exchange == "deribit" and symbol and symbol_date:
-        return f"https://deribit.com/options/{symbol}/{symbol_date}/{instrument}"
-    return None
-
-
 def format_opportunity(event: Event) -> str:
     p = event.payload
     instrument = p.get("instrument", "")

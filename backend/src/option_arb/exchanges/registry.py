@@ -63,13 +63,5 @@ def build_exchanges(config: AppConfig) -> dict[str, AbstractExchange]:
 
 
 async def close_exchanges(exchanges: dict[str, AbstractExchange]) -> None:
-    seen: set[int] = set()
     for ex in exchanges.values():
-        # unwrap: if it's a MockExchange holding a real upstream, close that too
-        rest = getattr(ex, "rest", None)
-        upstream = getattr(ex, "upstream", None)
-        for target_rest in (rest, getattr(upstream, "rest", None) if upstream else None):
-            if target_rest is None or id(target_rest) in seen:
-                continue
-            await target_rest.aclose()
-            seen.add(id(target_rest))
+        await ex.aclose()

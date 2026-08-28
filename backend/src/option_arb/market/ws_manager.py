@@ -52,14 +52,6 @@ class WsManager:
         self._ping_timeout_sec = ping_timeout_sec
         self._stop = asyncio.Event()
 
-    def status(self, exchange: str) -> dict[str, object]:
-        s = self._states[exchange]
-        return {
-            "connected": s.connected,
-            "subscriptions": len(s.subscriptions),
-            "reconnect_attempts": s.reconnect_attempts,
-        }
-
     async def start(self, subscriptions: dict[str, list[Instrument]]) -> None:
         for name, instruments in subscriptions.items():
             if name not in self._exchanges:
@@ -84,7 +76,7 @@ class WsManager:
     async def _run_loop(self, exchange: str) -> None:
         state = self._states[exchange]
         ex = self._exchanges[exchange]
-        url = getattr(ex, "ws_url", None)
+        url = ex.ws_url
         if not url:
             log.error("%s has no ws_url — dropping", exchange)
             return
@@ -151,33 +143,10 @@ class WsManager:
                 except Exception as e:
                     log.exception("ticker handler failed for %s: %s", exchange, e)
 
-    async def _subscribe(
-        self,
-        ws: Any,
-        exchange: str,
-        channels: list[str],
-    ) -> None:
+    async def _subscribe(self, ws: Any, exchange: str, channels: list[str]) -> None:
         if not channels:
             return
-        # Deribit rejects messages >32KB — split into batches of 200 channels.
-        batch_size = 200 if exchange.startswith("deribit") else len(channels)
-        for i in range(0, len(channels), batch_size):
-            batch = channels[i : i + batch_size]
-            if exchange.startswith("deribit"):
-                payload = {
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "method": "public/subscribe",
-                    "params": {"channels": batch},
-                }
-            elif exchange == "derive":
-                payload = {
-                    "method": "subscribe",
-                    "params": {"channels": batch},
-                    "id": "1",
-                }
-            else:  # aevo & fallback
-                payload = {"op": "subscribe", "data": batch}
+        for payload in self._exchanges[exchange].ws_subscribe_payloads(channels):
             await ws.send(json.dumps(payload))
         log.info("subscribed %d channels on %s", len(channels), exchange)
 
@@ -191,6 +160,3 @@ class WsManager:
                 await self._subscribe(state.ws, exchange, [channel])
             except Exception as e:
                 log.warning("ws %s: live subscribe failed for %s: %s", exchange, channel, e)
-
-    async def remove_subscription(self, exchange: str, channel: str) -> None:
-        self._states[exchange].subscriptions.discard(channel)
