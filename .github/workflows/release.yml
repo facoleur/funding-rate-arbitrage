@@ -94,7 +94,7 @@ jobs:
           host: ${{ secrets.VPS_IP }}
           username: ubuntu
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: "docker-compose.yml,docker-compose.prod.yml,config.prod.yaml,arbitrage.caddy,docker/nginx.conf"
+          source: "docker-compose.yml,docker-compose.prod.yml,config.prod.yaml,arbitrage.caddy,docker/nginx.conf,scripts/vps-monitor.sh,scripts/vps-setup-swap.sh"
           target: /srv/arbitrage/
 
       - name: Copy frontend dist to VPS
@@ -133,6 +133,7 @@ jobs:
             DERIVE_SESSION_PRIVATE_KEY=${{ secrets.DERIVE_SESSION_PRIVATE_KEY }}
             BOT_TOKEN=${{ secrets.BOT_TOKEN }}
             CHAT_ID=${{ secrets.CHAT_ID }}
+            MONITOR_CHAT_ID=${{ secrets.MONITOR_CHAT_ID }}
             ENVEOF
             chmod 600 .env
 
@@ -174,6 +175,12 @@ jobs:
               [ $i -eq 6 ] && docker compose -f docker-compose.yml -f docker-compose.prod.yml logs api --tail=50 && exit 1
               sleep 5
             done
+
+            # Monitoring système : cron toutes les 2h → Telegram (chat séparé)
+            chmod +x scripts/vps-monitor.sh scripts/vps-setup-swap.sh
+            ( crontab -l 2>/dev/null | grep -v 'vps-monitor.sh' ; \
+              echo '0 */2 * * * /srv/arbitrage/scripts/vps-monitor.sh >> /srv/arbitrage/data/monitor.log 2>&1' \
+            ) | crontab -
 
             # Nettoyer les anciennes images (garder les 3 plus récentes)
             docker images "ghcr.io/${{ github.repository_owner }}/arbitrage" -q \

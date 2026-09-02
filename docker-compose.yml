@@ -1,6 +1,20 @@
+# Cap container stdout/stderr on disk. Without this the default json-file driver
+# grows unbounded and fills a small VPS in days (workers logs every 500ms).
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:16-alpine
+    logging: *default-logging
+    labels: ["autoheal=true"]
+    # mem_limit values assume a ~4 GB VPS — tune to the actual box.
+    # A leak then kills just this container (auto-restarted), not the whole
+    # host via the kernel OOM killer.
+    mem_limit: 768m
     environment:
       POSTGRES_USER: option_arb
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-option_arb}
@@ -17,6 +31,7 @@ services:
   migrate:
     build:
       context: ./backend
+    logging: *default-logging
     command: alembic upgrade head
     environment:
       DATABASE_URL: postgresql+asyncpg://option_arb:${POSTGRES_PASSWORD:-option_arb}@postgres:5432/option_arb
@@ -42,7 +57,16 @@ services:
   api:
     build:
       context: ./backend
+    logging: *default-logging
+    labels: ["autoheal=true"]
+    mem_limit: 512m
     command: uvicorn option_arb.main:app --host 0.0.0.0 --port 8000
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     environment:
       DATABASE_URL: postgresql+asyncpg://option_arb:${POSTGRES_PASSWORD:-option_arb}@postgres:5432/option_arb
       BOT_TOKEN: ${BOT_TOKEN:-}
@@ -68,7 +92,19 @@ services:
   workers:
     build:
       context: ./backend
+    logging: *default-logging
+    labels: ["autoheal=true"]
+    # heaviest process: book_cache + WS + httpx
+    mem_limit: 768m
     command: python -m option_arb.worker
+    healthcheck:
+      # screener loop touches /tmp/hb_screener every iteration (~500ms);
+      # unhealthy => event loop is hung, not just crashed.
+      test: ["CMD-SHELL", "find /tmp/hb_screener -mmin -2 2>/dev/null | grep -q ."]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     environment:
       DATABASE_URL: postgresql+asyncpg://option_arb:${POSTGRES_PASSWORD:-option_arb}@postgres:5432/option_arb
       BOT_TOKEN: ${BOT_TOKEN:-}
@@ -92,7 +128,16 @@ services:
   executor:
     build:
       context: ./backend
+    logging: *default-logging
+    labels: ["autoheal=true"]
+    mem_limit: 512m
     command: python -m option_arb.services.executor
+    healthcheck:
+      test: ["CMD-SHELL", "find /tmp/hb_executor -mmin -2 2>/dev/null | grep -q ."]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     environment:
       DATABASE_URL: postgresql+asyncpg://option_arb:${POSTGRES_PASSWORD:-option_arb}@postgres:5432/option_arb
       BOT_TOKEN: ${BOT_TOKEN:-}
@@ -115,6 +160,8 @@ services:
 
   caddy:
     image: caddy:2-alpine
+    logging: *default-logging
+    mem_limit: 128m
     ports:
       - "0.0.0.0:80:80"
       - "0.0.0.0:443:443"

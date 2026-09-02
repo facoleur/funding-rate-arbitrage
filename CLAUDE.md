@@ -150,8 +150,9 @@ All exchanges are currently configured as **mainnet** in `config.yaml`. Change `
 | `DERIVE_WALLET_ADDRESS`     | Adresse SCW Derive                                     |
 | `DERIVE_SUBACCOUNT_ID`      | Subaccount Derive                                      |
 | `DERIVE_SESSION_PRIVATE_KEY`| Clé de session Derive                                  |
-| `BOT_TOKEN`                 | Token Telegram                                         |
-| `CHAT_ID`                   | Chat ID Telegram                                       |
+| `BOT_TOKEN`                 | Token Telegram (partagé alertes trading + monitoring)  |
+| `CHAT_ID`                   | Chat ID Telegram — alertes trading                     |
+| `MONITOR_CHAT_ID`           | Chat ID Telegram — rapport système toutes les 2h (même bot, chat séparé) |
 | `ARB_AUTH_USER`             | Utilisateur basic_auth du site                         |
 | `ARB_AUTH_HASH`             | Hash bcrypt : `docker run --rm -it caddy:2-alpine caddy hash-password` |
 
@@ -161,13 +162,28 @@ Pas de secret GHCR séparé : le `GITHUB_TOKEN` du job est forwardé via SSH.
 
 - Déclenché sur tags `v*.*.*` uniquement (pas push master — déploiement auto sur executor live = trop risqué)
 - **Job `build`** : build + push vers GHCR avec tag `${{ github.sha }}`
-- **Job `deploy`** : génère `.env`, copie les fichiers, restart stagé avec kill-switch executor, copie snippet Caddy + reload
+- **Job `deploy`** : génère `.env`, copie les fichiers + `scripts/`, restart stagé avec kill-switch executor, copie snippet Caddy + reload, (ré)installe le cron de monitoring (`0 */2 * * * scripts/vps-monitor.sh`)
+
+### Durcissement (dans les compose)
+
+- **Rotation des logs** : `x-logging` anchor (`json-file`, `max-size 10m`, `max-file 3`) sur chaque service — sans ça les logs JSON Docker remplissent le disque en quelques jours (cause n°1 des crashs VPS).
+- **`mem_limit` par service** (`docker-compose.yml`, calibré ~4 GB de RAM ; `frontend`/`autoheal` dans `.prod`) : une fuite mémoire tue **un** container (redémarré seul) au lieu de déclencher l'OOM killer du noyau sur tout le VPS. Ajuster les valeurs à la RAM réelle.
+- **`autoheal`** (`willfarrell/autoheal`) : redémarre tout container marqué `unhealthy` — un event loop figé ne sort jamais seul, donc `restart: unless-stopped` ne suffit pas.
+- **Healthchecks** : `api` via HTTP `/health` ; `workers`/`executor` via un fichier heartbeat (`/tmp/hb_screener`, `/tmp/hb_executor`) touché à chaque itération de boucle (`option_arb.heartbeat.beat`) → détecte un hang, pas seulement un crash.
+- **Rétention Postgres** : le worker purge quotidiennement les lignes `opportunities` plus vieilles que `screener.opportunity_retention_days` (défaut 14, `<= 0` désactive).
+
+### Monitoring système
+
+- `scripts/vps-monitor.sh` — cron toutes les 2h sur le VPS → Telegram (`MONITOR_CHAT_ID`, même bot que les alertes trading). Rapporte uptime/load, RAM, swap, disque `/`, containers non-`running`/`unhealthy`, OOM (exit 137), top 3 mem, `docker system df`, HTTP `/health`. Préfixe l'entête de 🔴 si disque ≥ 85 %, mem ≥ 90 %, docker KO ou API ≠ 200.
+- Log local : `/srv/arbitrage/data/monitor.log`.
+- Test manuel : `ssh ubuntu@<VPS> /srv/arbitrage/scripts/vps-monitor.sh`.
 
 ### Initialisation du serveur (première fois)
 
 ```bash
 sudo mkdir -p /srv/arbitrage/data && sudo chown ubuntu:ubuntu /srv/arbitrage
 docker network create proxy   # si pas déjà créé par une autre app
+sudo bash /srv/arbitrage/scripts/vps-setup-swap.sh   # swapfile 2 GB, coussin anti-OOM (idempotent)
 ```
 
 ## Rules for changes

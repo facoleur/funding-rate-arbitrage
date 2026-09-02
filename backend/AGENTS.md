@@ -32,6 +32,7 @@ src/option_arb/
 ├── market/
 │   ├── book_cache.py        # in-memory {exchange, normalized_name} → CachedTicker
 │   └── ws_manager.py        # one WS per exchange, reconnect + resubscribe
+├── heartbeat.py             # beat(name) → touch /tmp/hb_<name>; read by Docker healthchecks
 ├── services/
 │   ├── screener.py          # 500ms loop, reads cache, writes PENDING opportunities
 │   ├── comparator.py        # 1:1 port of TS compareOptions (Decimal)
@@ -46,7 +47,7 @@ src/option_arb/
 ├── config.py                # Pydantic Settings (env) + AppConfig (YAML) + resolved_alembic_url
 ├── events.py                # in-process asyncio bus (fan-out with per-subscriber queue)
 ├── main.py                  # FastAPI app + lifespan
-├── worker.py                # entry-point: WS + screener + alerter + rebalancer + perp_hedger
+├── worker.py                # entry-point: WS + screener + alerter + rebalancer + perp_hedger + retention (daily opportunities prune)
 ├── backtest.py              # CLI replay
 └── record.py                # CLI book capture
 ```

@@ -24,6 +24,9 @@ class ScreenerConfig(ConfigModel):
     max_expiries_ahead: int = 8
     metadata_refresh_hours: int = 6
     book_cache_ttl_ms: int = 5000
+    # rows in `opportunities` older than this are pruned daily by the worker;
+    # <= 0 disables pruning. Keeps Postgres disk bounded on a small VPS.
+    opportunity_retention_days: int = 14
 
 
 class Thresholds(ConfigModel):

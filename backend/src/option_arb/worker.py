@@ -5,9 +5,9 @@ import contextlib
 import logging
 import signal
 
-from option_arb.config import AppConfig, load_config
+from option_arb.config import AppConfig, load_config, settings
 from option_arb.db.event_relay import PostgresEventRelay
-from option_arb.db.session import init_db
+from option_arb.db.session import get_session, init_db
 from option_arb.exchanges.base import AbstractExchange, Instrument, TickerUpdate
 from option_arb.exchanges.deribit import DeribitExchange
 from option_arb.exchanges.registry import build_exchanges, close_exchanges
@@ -90,6 +90,7 @@ async def _amain() -> None:
             _metadata_refresh_loop(exchanges, cfg, cache, ws, known, stop),
             name="metadata_refresh",
         ),
+        asyncio.create_task(_retention_loop(cfg, stop), name="retention"),
         *(
             [asyncio.create_task(perp_hedger.run(), name="perp_hedger")]
             if perp_hedger is not None
@@ -109,6 +110,35 @@ async def _amain() -> None:
 
 async def _push(cache: BookCache, upd: TickerUpdate) -> None:
     cache.update(upd)
+
+
+async def _retention_loop(cfg: AppConfig, stop: asyncio.Event) -> None:
+    """Prune old `opportunities` rows once a day to keep Postgres disk bounded."""
+    days = cfg.screener.opportunity_retention_days
+    if days <= 0 or "postgresql" not in settings.database_url:
+        return
+    from sqlalchemy import text
+
+    log.info("retention: pruning opportunities older than %dd, daily", days)
+    while not stop.is_set():
+        try:
+            async with get_session() as sess:
+                res = await sess.execute(
+                    text(
+                        "DELETE FROM opportunities "
+                        "WHERE detected_at < now() - make_interval(days => :d)"
+                    ),
+                    {"d": days},
+                )
+                await sess.commit()
+            log.info("retention: pruned %s rows", getattr(res, "rowcount", "?"))
+        except Exception as e:
+            log.warning("retention prune failed: %s", e)
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=86400)
+            break
+        except TimeoutError:
+            pass
 
 
 async def _metadata_refresh_loop(

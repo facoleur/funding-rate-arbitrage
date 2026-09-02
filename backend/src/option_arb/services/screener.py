@@ -12,6 +12,7 @@ from option_arb.db.models import Mode, Opportunity, OpportunityStatus, TickerSta
 from option_arb.db.session import get_session
 from option_arb.economics import meets_thresholds
 from option_arb.events import Event, bus
+from option_arb.heartbeat import beat
 from option_arb.market.book_cache import BookCache, CachedTicker
 from option_arb.services.comparator import Quote, compare_options
 
@@ -62,6 +63,7 @@ class Screener:
                 await self._tick()
             except Exception as e:
                 log.exception("screener tick failed: %s", e)
+            beat("screener")
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=interval)
                 break

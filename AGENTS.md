@@ -194,7 +194,7 @@ make backtest file=recordings/derive-*.jsonl
 7. **Any code touching order placement** must have a `MockExchange` path and unit tests covering the 4 kill-switches. Never wire the live executor without paper validation.
 8. **The executor is the highest-blast-radius component.** State transitions persist to `trades` + `orders` before the next await; kill-switches are honoured every loop.
 9. **Reference plan**: `~/.claude/plans/rippling-gathering-fountain.md`.
-10. **VPS deployment**: see `docker/README.md`.
+10. **VPS deployment**: see the "VPS deployment" section of `CLAUDE.md` (authoritative — `docker/README.md` is legacy). Compose hardening lives there: log rotation, `mem_limit`, `autoheal`, heartbeat healthchecks, `scripts/vps-monitor.sh` (Telegram system report every 2h), `scripts/vps-setup-swap.sh`.
 
 ## Open decisions
 

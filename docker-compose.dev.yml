@@ -1,6 +1,13 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:16-alpine
+    logging: *default-logging
     environment:
       POSTGRES_USER: option_arb
       POSTGRES_PASSWORD: option_arb
@@ -19,6 +26,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
+    logging: *default-logging
     command: alembic upgrade head
     environment:
       DATABASE_URL: postgresql+asyncpg://option_arb:option_arb@postgres:5432/option_arb
@@ -38,6 +46,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
+    logging: *default-logging
     command: uvicorn option_arb.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
     environment:
       DATABASE_URL: postgresql+asyncpg://option_arb:option_arb@postgres:5432/option_arb
@@ -57,6 +66,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
+    logging: *default-logging
     command: watchfiles "python -m option_arb.worker" /app/src
     environment:
       DATABASE_URL: postgresql+asyncpg://option_arb:option_arb@postgres:5432/option_arb
@@ -74,6 +84,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
+    logging: *default-logging
     command: watchfiles "python -m option_arb.services.executor" /app/src
     environment:
       DATABASE_URL: postgresql+asyncpg://option_arb:option_arb@postgres:5432/option_arb
@@ -91,6 +102,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev
+    logging: *default-logging
     command: npm run dev -- --host 0.0.0.0
     environment:
       API_URL: http://api:8000

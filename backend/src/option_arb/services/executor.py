@@ -36,6 +36,7 @@ from option_arb.exchanges.base import (
     OrderResult,
     walk_book,
 )
+from option_arb.heartbeat import beat
 from option_arb.services.limits import kill_switch_reason
 
 log = logging.getLogger(__name__)
@@ -119,6 +120,7 @@ class Executor:
                 await self._tick()
             except Exception as e:
                 log.exception("executor tick failed: %s", e)
+            beat("executor")
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=interval)
                 break
