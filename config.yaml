@@ -1,7 +1,7 @@
 screener:
   poll_interval_ms: 500
   underlyings: ["BTC", "ETH"]
-  exchanges: ["derive", "deribit", "deribit_linear", "aevo"]
+  exchanges: ["derive", "deribit", "deribit_linear", "aevo", "rocket"]
   max_expiries_ahead: 8
   metadata_refresh_hours: 6
   book_cache_ttl_ms: 5000
@@ -30,7 +30,7 @@ limits:
 rebalancer:
   poll_interval_sec: 300
   expiry_warning_hours: 24
-  balance_low_threshold_usd: 30
+  balance_low_threshold_usd: 0  # 0 = alertes low balance désactivées
 
 exchanges:
   deribit:
@@ -60,6 +60,13 @@ exchanges:
     rest_base_url: https://api.aevo.xyz
     ws_url: wss://ws.aevo.xyz
     trade_enabled: false
+
+  rocket:
+    network: mainnet          # Rocket n'a pas de vrai mainnet — "beta" est le cluster le plus stable
+    rest_rate_limit_per_sec: 10
+    rest_base_url: https://beta.rocket-cluster-1.com
+    ws_url: wss://beta.rocket-cluster-1.com/ws
+    trade_enabled: false      # monitoring seul — signature des transactions Rocket non implémentée
 
 perp_hedge:
   enabled: true

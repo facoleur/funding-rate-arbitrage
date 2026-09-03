@@ -174,4 +174,7 @@ def build_authenticator(exchange: str, settings: Any, network: str = "testnet") 
     if ex == "aevo":
         # Aevo signing not yet implemented — keep public-only.
         return NoAuth()
+    if ex == "rocket":
+        # Rocket transaction signing not implemented — monitoring only.
+        return NoAuth()
     return NoAuth()

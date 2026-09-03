@@ -28,7 +28,7 @@ limits:
 rebalancer:
   poll_interval_sec: 300
   expiry_warning_hours: 24
-  balance_low_threshold_usd: 100
+  balance_low_threshold_usd: 0  # 0 = alertes low balance désactivées
 
 exchanges:
   deribit:
@@ -55,6 +55,15 @@ exchanges:
     rest_base_url: https://api.aevo.xyz
     ws_url: wss://ws.aevo.xyz
     trade_enabled: false
+
+  rocket:
+    network: mainnet          # Rocket n'a pas de vrai mainnet — "beta" est le cluster le plus stable
+    rest_rate_limit_per_sec: 10
+    rest_base_url: https://beta.rocket-cluster-1.com
+    ws_url: wss://beta.rocket-cluster-1.com/ws
+    trade_enabled: false      # monitoring seul
+    # Pas encore dans screener.exchanges en prod (executor.mode: live) —
+    # à activer après observation en dev.
 
 alerts:
   telegram:

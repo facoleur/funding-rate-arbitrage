@@ -11,6 +11,7 @@ from option_arb.exchanges.deribit import DeribitExchange
 from option_arb.exchanges.derive import DeriveExchange
 from option_arb.exchanges.http import RestClient
 from option_arb.exchanges.naming import normalize_deribit
+from option_arb.exchanges.rocket import RocketExchange
 
 # ---------- WS message parsing (offline, no network) ----------
 
@@ -273,7 +274,7 @@ async def test_aevo_rest_book_carries_index_price() -> None:
 async def test_place_order_rejects_without_auth() -> None:
     from option_arb.exchanges.base import OrderRequest
 
-    for cls in (DeribitExchange, DeriveExchange, AevoExchange):
+    for cls in (DeribitExchange, DeriveExchange, AevoExchange, RocketExchange):
         ex = cls(_rest_stub())
         r = await ex.place_order(
             OrderRequest(
@@ -349,5 +350,145 @@ def test_empty_channel_list_produces_no_frames() -> None:
     for ex in (
         DeribitExchange(_rest_stub()),
         DeriveExchange(_rest_stub()),
+        RocketExchange(_rest_stub()),
     ):
         assert ex.ws_subscribe_payloads([]) == []
+
+
+# ---------------------------------------------------------------------------
+# Rocket — monitoring-only adapter (public REST metadata + WS Orderbook)
+# ---------------------------------------------------------------------------
+
+
+def _rocket_instrument(iid: str, name: str) -> Instrument:
+    return Instrument(
+        exchange="rocket",
+        instrument_name=name,
+        normalized_name=normalize_deribit(name),
+        underlying=name.split("-")[0],
+        expiry=datetime(2026, 8, 28, 8, tzinfo=UTC),
+        strike=Decimal(name.split("-")[2]),
+        option_type=name.rsplit("-", 1)[1],  # type: ignore[arg-type]
+        maker_fee_rate=Decimal("0.0001"),
+        taker_fee_rate=Decimal("0.0005"),
+        asset_address=iid,
+    )
+
+
+def test_rocket_ws_channels_one_per_instrument() -> None:
+    ex = RocketExchange(_rest_stub())
+    channels = ex.ws_channels(
+        [
+            _rocket_instrument("0xaa", "BTC-28AUG26-60000-C"),
+            _rocket_instrument("0xbb", "ETH-28AUG26-3000-P"),
+        ]
+    )
+    assert channels == ["Orderbook:0xaa", "Orderbook:0xbb"]
+
+
+def test_rocket_subscribe_payload_shape() -> None:
+    ex = RocketExchange(_rest_stub())
+    assert ex.ws_subscribe_payloads(["Orderbook:0xaa", "Orderbook:0xbb"]) == [
+        {"Subscribe": {"Orderbook": {"instrumentId": "0xaa"}}},
+        {"Subscribe": {"Orderbook": {"instrumentId": "0xbb"}}},
+    ]
+
+
+def test_rocket_parses_orderbook_update_to_top_of_book() -> None:
+    ex = RocketExchange(_rest_stub())
+    ex.norm_by_id["0xaa"] = "ETH-20260828-3000-C"
+
+    upd = ex.parse_ws_message(
+        {
+            "OrderbookUpdate": {
+                "instrumentId": "0xaa",
+                "orderbook": {
+                    "bids": [{"price": "12.5", "quantity": "3"}, {"price": "12", "quantity": "9"}],
+                    "asks": [{"price": "13", "quantity": "2"}],
+                },
+            }
+        }
+    )
+    assert upd is not None and not isinstance(upd, list)
+    assert upd.exchange == "rocket"
+    assert upd.instrument == "ETH-20260828-3000-C"
+    assert upd.bid_price == Decimal("12.5")
+    assert upd.bid_size == Decimal("3")
+    assert upd.ask_price == Decimal("13")
+    assert upd.ask_size == Decimal("2")
+    assert upd.underlying_price is None
+
+
+def test_rocket_ignores_unknown_and_control_messages() -> None:
+    ex = RocketExchange(_rest_stub())
+    assert ex.parse_ws_message({"Ping": None}) is None
+    assert (
+        ex.parse_ws_message({"SubscribeConfirmation": {"Orderbook": {"instrumentId": "1"}}}) is None
+    )
+    # known message shape but instrument id never registered
+    assert (
+        ex.parse_ws_message(
+            {"OrderbookUpdate": {"instrumentId": "0xdead", "orderbook": {"bids": [], "asks": []}}}
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_rocket_list_instruments_parses_ticker_and_filters_non_options() -> None:
+    rest = _rest_stub()
+
+    async def get(path, **kwargs):  # type: ignore[no-untyped-def]
+        if path == "/fees":
+            return {
+                "result": {"regularFeeLadder": [["0", {"passive": "0.0001", "active": "0.0003"}]]}
+            }
+        assert path == "/instruments"
+        return {
+            "instruments": {
+                "0x101": {
+                    "id": "0x101",
+                    "ticker": "ETH-28MAR25-3000-C",
+                    "instrumentType": "CALL_OPTION",
+                    "underlyingAsset": "ETH",
+                    "settlementAsset": "USDC",
+                    "isTrading": True,
+                    "strike": "30000000",  # scaled — must be ignored, parse the ticker
+                    "expiry": "28MAR25",
+                    "priceScale": 10000,
+                },
+                "0x102": {
+                    "id": "0x102",
+                    "ticker": "ETH-28MAR25-3000-P",
+                    "instrumentType": "PUT_OPTION",
+                    "isTrading": True,
+                    "strike": "30000000",
+                },
+                "0x103": {
+                    "id": "0x103",
+                    "ticker": "FUTURE_ETH_USDC-28MAR25",
+                    "instrumentType": "FUTURE",
+                    "isTrading": True,
+                },
+                "0x104": {
+                    "id": "0x104",
+                    "ticker": "ETH-28MAR25-4000-C",
+                    "instrumentType": "CALL_OPTION",
+                    "isTrading": False,  # delisted
+                },
+            }
+        }
+
+    rest.get = get  # type: ignore[method-assign]
+    instruments = await RocketExchange(rest).list_instruments("ETH", max_expiries_ahead=8)
+
+    assert {i.normalized_name for i in instruments} == {
+        "ETH-20250328-3000-C",
+        "ETH-20250328-3000-P",
+    }
+    call = next(i for i in instruments if i.option_type == "C")
+    assert call.expiry == datetime(2025, 3, 28, 8, tzinfo=UTC)
+    assert call.strike == Decimal("3000")
+    assert call.taker_fee_rate == Decimal("0.0003")
+    assert call.maker_fee_rate == Decimal("0.0001")
+    assert call.asset_address == "0x101"

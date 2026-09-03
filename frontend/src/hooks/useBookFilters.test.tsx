@@ -16,10 +16,10 @@ function renderFilters(initialUrl = '/book') {
 }
 
 describe('useBookFilters', () => {
-  it('part vide, tri décroissant par défaut', () => {
+  it('part vide, arb coché, tri décroissant par défaut', () => {
     const { result } = renderFilters()
     expect(result.current.underlying).toBe('')
-    expect(result.current.onlyArb).toBe(false)
+    expect(result.current.onlyArb).toBe(true)
     expect(result.current.sortCol).toBe('')
     expect(result.current.sortDir).toBe('desc')
     expect(result.current.hasFilters).toBe(false)
@@ -56,11 +56,17 @@ describe('useBookFilters', () => {
     expect(result.current.sortDir).toBe('desc')
   })
 
-  it('décocher « arb seulement » retire le paramètre au lieu de le vider', () => {
-    const { result } = renderFilters('/book?arb=1')
+  it('décocher « arb seulement » le marque comme filtre actif', () => {
+    const { result } = renderFilters()
     expect(result.current.onlyArb).toBe(true)
+    expect(result.current.hasFilters).toBe(false)
+
     act(() => result.current.setOnlyArb(false))
     expect(result.current.onlyArb).toBe(false)
+    expect(result.current.hasFilters).toBe(true)
+
+    act(() => result.current.setOnlyArb(true))
+    expect(result.current.onlyArb).toBe(true)
     expect(result.current.hasFilters).toBe(false)
   })
 

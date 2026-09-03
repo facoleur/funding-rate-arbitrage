@@ -17,7 +17,8 @@ export function useBookFilters() {
   const optionType = params.get('t') ?? ''
   const exchange = params.get('ex') ?? ''
   const maxExpiry = params.get('maxexp') ?? ''
-  const onlyArb = params.get('arb') === '1'
+  // Activé par défaut : seul `arb=0` le désactive (absence = coché).
+  const onlyArb = params.get('arb') !== '0'
   const sortCol = params.get('sort') ?? ''
   const sortDir: SortDir = params.get('dir') === 'asc' ? 'asc' : 'desc'
 
@@ -40,7 +41,8 @@ export function useBookFilters() {
 
   const setSort = useCallback((col: string, dir: SortDir) => patch({ sort: col, dir }), [patch])
 
-  const hasFilters = !!(underlying || optionType || exchange || maxExpiry || onlyArb)
+  // `onlyArb` est l'état par défaut → ne compte comme filtre actif que désactivé.
+  const hasFilters = !!(underlying || optionType || exchange || maxExpiry || !onlyArb)
 
   return {
     underlying,
@@ -56,7 +58,7 @@ export function useBookFilters() {
     setOptionType: (v: string) => patch({ t: v }),
     setExchange: (v: string) => patch({ ex: v }),
     setMaxExpiry: (v: string) => patch({ maxexp: v }),
-    setOnlyArb: (v: boolean) => patch({ arb: v ? '1' : '' }),
+    setOnlyArb: (v: boolean) => patch({ arb: v ? '' : '0' }),
     resetFilters: () => patch({ u: '', t: '', ex: '', maxexp: '', arb: '' }),
   }
 }

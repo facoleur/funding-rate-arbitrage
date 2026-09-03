@@ -10,6 +10,7 @@ from option_arb.exchanges.deribit import DeribitExchange
 from option_arb.exchanges.derive import DeriveExchange
 from option_arb.exchanges.http import RestClient
 from option_arb.exchanges.mock import MockExchange
+from option_arb.exchanges.rocket import RocketExchange
 from option_arb.exchanges.slippage import SlippageModel
 
 log = logging.getLogger(__name__)
@@ -30,6 +31,8 @@ def _build_real_exchange(name: str, ex_cfg: ExchangeConfig, network: str) -> Abs
         return DeriveExchange(rest, ws_url=ex_cfg.ws_url, auth=auth)
     if name == "aevo":
         return AevoExchange(rest, ws_url=ex_cfg.ws_url, auth=auth)
+    if name == "rocket":
+        return RocketExchange(rest, ws_url=ex_cfg.ws_url, auth=auth)
     raise KeyError(f"unknown exchange '{name}'")
 
 

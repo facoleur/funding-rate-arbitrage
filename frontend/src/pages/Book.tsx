@@ -145,10 +145,40 @@ function NumCell({
 
 // ─── Page ────────────────────────────────────────────────────────────────────
 
+const HIDDEN_EX_KEY = 'book.hiddenExchanges'
+
+function loadHiddenExchanges(): Set<string> {
+  try {
+    const raw = localStorage.getItem(HIDDEN_EX_KEY)
+    if (raw) {
+      const parsed: unknown = JSON.parse(raw)
+      if (Array.isArray(parsed))
+        return new Set(parsed.filter((v): v is string => typeof v === 'string'))
+    }
+  } catch {
+    // localStorage indisponible ou illisible → toutes les colonnes visibles
+  }
+  return new Set()
+}
+
 export default function Book() {
   const f = useBookFilters()
-  const [showLinks, setShowLinks] = useState(true)
+  const [showLinks, setShowLinks] = useState(false)
+  const [hiddenEx, setHiddenEx] = useState<Set<string>>(loadHiddenExchanges)
   const sortCol = isSortCol(f.sortCol) ? f.sortCol : null
+
+  const toggleExchange = (ex: string) =>
+    setHiddenEx((prev) => {
+      const next = new Set(prev)
+      if (next.has(ex)) next.delete(ex)
+      else next.add(ex)
+      try {
+        localStorage.setItem(HIDDEN_EX_KEY, JSON.stringify([...next]))
+      } catch {
+        // pas de persistance : la session courante reste correcte
+      }
+      return next
+    })
 
   const {
     data = [],
@@ -165,6 +195,12 @@ export default function Book() {
     for (const r of data) for (const ex of Object.keys(r.exchanges)) set.add(ex)
     return [...set].sort()
   }, [data])
+
+  // Exchanges dont la colonne bid/ask est effectivement rendue.
+  const shownExchanges = useMemo(
+    () => allExchanges.filter((ex) => !hiddenEx.has(ex)),
+    [allExchanges, hiddenEx],
+  )
 
   const filtered = useMemo(
     () =>
@@ -277,6 +313,30 @@ export default function Book() {
         )}
       </div>
 
+      {allExchanges.length > 1 && (
+        <div className="mb-4 flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-xs text-zinc-500">Colonnes</span>
+          {allExchanges.map((ex) => {
+            const on = !hiddenEx.has(ex)
+            return (
+              <button
+                key={ex}
+                type="button"
+                aria-pressed={on}
+                onClick={() => toggleExchange(ex)}
+                className={`rounded border px-2 py-1 text-xs transition-colors ${
+                  on
+                    ? 'border-zinc-600 bg-zinc-800 text-zinc-200 hover:border-zinc-500'
+                    : 'border-zinc-800 bg-transparent text-zinc-600 line-through hover:text-zinc-400'
+                }`}
+              >
+                {ex}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
       <QueryState
         isLoading={isLoading}
         isError={isError}
@@ -294,7 +354,7 @@ export default function Book() {
                 {th('expiry', 'Expiry')}
                 {th('strike', 'Strike')}
                 <Th>Type</Th>
-                {allExchanges.map((ex) => (
+                {shownExchanges.map((ex) => (
                   <Th key={ex} align="center" colSpan={2}>
                     {ex}
                   </Th>
@@ -313,7 +373,7 @@ export default function Book() {
               <HeadRow className="text-zinc-600">
                 <Th className="sticky left-0 z-20 bg-zinc-950" />
                 <Th colSpan={3} />
-                {allExchanges.map((ex) => (
+                {shownExchanges.map((ex) => (
                   <Th key={ex} colSpan={2} align="center" className="pb-1 text-[10px] font-normal">
                     <span className="pr-5">bid</span>
                     <span>ask</span>
@@ -358,7 +418,7 @@ export default function Book() {
                         {row.option_type === 'C' ? 'Call' : 'Put'}
                       </span>
                     </Td>
-                    {allExchanges.map((ex) => {
+                    {shownExchanges.map((ex) => {
                       const q = row.exchanges[ex]
                       return (
                         <Fragment key={ex}>
