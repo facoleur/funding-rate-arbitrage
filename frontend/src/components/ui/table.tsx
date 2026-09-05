@@ -42,7 +42,10 @@ export function DataTable({
   ...rest
 }: TableHTMLAttributes<HTMLTableElement>) {
   return (
-    <table className={`w-full border-separate border-spacing-0 text-xs ${className}`} {...rest}>
+    <table
+      className={`w-full border-separate border-spacing-0 whitespace-nowrap text-xs ${className}`}
+      {...rest}
+    >
       {children}
     </table>
   )

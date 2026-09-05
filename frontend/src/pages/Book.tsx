@@ -346,7 +346,7 @@ export default function Book() {
 
       {rows.length > 0 && (
         <div className="-mb-6 -mr-6 min-h-0 flex-1 overflow-auto">
-          <DataTable className="whitespace-nowrap">
+          <DataTable>
             <THead sticky>
               {/* Rangée 1 : libellés. Le trait est porté par la rangée 2. */}
               <HeadRow divider={false}>

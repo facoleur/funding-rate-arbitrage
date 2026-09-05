@@ -3,16 +3,16 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-import Executor from './Executor'
-import { fetchExecutorState, killExecutor } from '../api/executor'
-import { fetchAlerts } from '../api/alerts'
+import Status from './Status'
+import { fetchExecutorState, killExecutor } from '../../api/executor'
+import { fetchAlerts } from '../../api/alerts'
 
-vi.mock('../api/executor', () => ({
+vi.mock('../../api/executor', () => ({
   fetchExecutorState: vi.fn(),
   killExecutor: vi.fn(),
   resumeExecutor: vi.fn(),
 }))
-vi.mock('../api/alerts', () => ({ fetchAlerts: vi.fn() }))
+vi.mock('../../api/alerts', () => ({ fetchAlerts: vi.fn() }))
 
 const STATE = {
   status: 'RUNNING',
@@ -37,7 +37,7 @@ function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <Executor />
+      <Status />
     </QueryClientProvider>,
   )
 }

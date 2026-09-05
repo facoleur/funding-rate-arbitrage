@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import { fetchFunding, type FundingPoint } from '../api/funding'
-import { fmtTime } from '../lib/format'
-import { Select } from '../components/ui/Field'
-import QueryState from '../components/ui/QueryState'
+import { fetchFunding, type FundingPoint } from '../../api/funding'
+import { fmtTime } from '../../lib/format'
+import { Select } from '../../components/ui/Field'
+import QueryState from '../../components/ui/QueryState'
 
 const INSTRUMENTS = ['BTC-PERPETUAL', 'ETH-PERPETUAL'] as const
 const DAY_OPTIONS = [7, 30, 90, 365] as const

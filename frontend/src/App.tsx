@@ -2,13 +2,16 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 
 import Layout from './components/Layout'
 import ErrorBoundary from './components/ErrorBoundary'
-import Opportunities from './pages/Opportunities'
+import OpportunitiesLayout from './pages/opportunities/OpportunitiesLayout'
+import Live from './pages/opportunities/Live'
+import History from './pages/opportunities/History'
 import Trades from './pages/Trades'
-import Positions from './pages/Positions'
-import Executor from './pages/Executor'
 import Book from './pages/Book'
-import History from './pages/History'
-import Funding from './pages/Funding'
+import ExecutorLayout from './pages/executor/ExecutorLayout'
+import Status from './pages/executor/Status'
+import Positions from './pages/executor/Positions'
+import AnalyticsLayout from './pages/analytics/AnalyticsLayout'
+import Funding from './pages/analytics/Funding'
 
 export default function App() {
   return (
@@ -21,14 +24,23 @@ export default function App() {
             </ErrorBoundary>
           }
         >
-          <Route index element={<Opportunities />} />
+          <Route index element={<Navigate to="/opportunites/live" replace />} />
+          <Route path="opportunites" element={<OpportunitiesLayout />}>
+            <Route index element={<Navigate to="live" replace />} />
+            <Route path="live" element={<Live />} />
+            <Route path="historique" element={<History />} />
+          </Route>
           <Route path="trades" element={<Trades />} />
-          <Route path="positions" element={<Positions />} />
           <Route path="book" element={<Book />} />
-          <Route path="history" element={<History />} />
-          <Route path="funding" element={<Funding />} />
-          <Route path="executor" element={<Executor />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="executor" element={<ExecutorLayout />}>
+            <Route index element={<Status />} />
+            <Route path="positions" element={<Positions />} />
+          </Route>
+          <Route path="analytics" element={<AnalyticsLayout />}>
+            <Route index element={<Navigate to="funding" replace />} />
+            <Route path="funding" element={<Funding />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/opportunites/live" replace />} />
         </Route>
       </Routes>
     </BrowserRouter>

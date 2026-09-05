@@ -6,17 +6,17 @@ import {
   type Opportunity,
   type OpportunityEconomics,
   type OpportunityStatus,
-} from '../api/opportunities'
-import { fetchExecutorState } from '../api/executor'
-import StatusBadge from '../components/StatusBadge'
-import { NumberField, Select } from '../components/ui/Field'
-import SortHeader from '../components/ui/SortHeader'
-import ColumnPicker from '../components/ui/ColumnPicker'
-import { DataTable, HeadRow, THead, Td, Th, type Align } from '../components/ui/table'
-import QueryState from '../components/ui/QueryState'
-import { useColumnVisibility } from '../hooks/useColumnVisibility'
-import { fmtAge, fmtDte, fmtExpiry, fmtUsdOrDash } from '../lib/format'
-import { compareValues, type SortDir } from '../lib/sort'
+} from '../../api/opportunities'
+import { fetchExecutorState } from '../../api/executor'
+import StatusBadge from '../../components/StatusBadge'
+import { NumberField, Select } from '../../components/ui/Field'
+import SortHeader from '../../components/ui/SortHeader'
+import ColumnPicker from '../../components/ui/ColumnPicker'
+import { DataTable, HeadRow, THead, Td, Th, type Align } from '../../components/ui/table'
+import QueryState from '../../components/ui/QueryState'
+import { useColumnVisibility } from '../../hooks/useColumnVisibility'
+import { fmtAge, fmtDte, fmtExpiry, fmtUsdOrDash } from '../../lib/format'
+import { compareValues, type SortDir } from '../../lib/sort'
 
 // ─── Colonnes ────────────────────────────────────────────────────────────────
 
@@ -234,7 +234,7 @@ const HOT_BG = 'bg-emerald-950/30'
 
 // ─── Page ────────────────────────────────────────────────────────────────────
 
-export default function Opportunities() {
+export default function Live() {
   const [minApr, setMinApr] = useState('')
   const [underlying, setUnderlying] = useState('')
   const [statusFilter, setStatusFilter] = useState<OpportunityStatus | ''>('')
@@ -282,7 +282,7 @@ export default function Opportunities() {
   }
 
   return (
-    <div className="flex flex-col" style={{ height: 'calc(100vh - 7rem)' }}>
+    <div className="flex h-full flex-col">
       {/* toolbar */}
       <div className="mb-3 flex flex-shrink-0 flex-wrap items-center gap-3">
         <h1 className="text-base font-semibold text-zinc-100">Opportunités</h1>
@@ -309,7 +309,7 @@ export default function Opportunities() {
       <QueryState isLoading={isLoading} isError={isError} />
 
       <div className="flex-1 overflow-auto">
-        <DataTable className="whitespace-nowrap">
+        <DataTable>
           <THead>
             <HeadRow>
               {/* instrument — épinglé à gauche et en haut */}

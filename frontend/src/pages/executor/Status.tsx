@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { fetchExecutorState, killExecutor, resumeExecutor } from '../api/executor'
-import { fetchAlerts } from '../api/alerts'
-import StatusBadge from '../components/StatusBadge'
-import ConfirmModal from '../components/ConfirmModal'
-import QueryState from '../components/ui/QueryState'
-import { DataTable, HeadRow, THead, Td, Th } from '../components/ui/table'
-import { fmtDateTime } from '../lib/format'
+import { fetchExecutorState, killExecutor, resumeExecutor } from '../../api/executor'
+import { fetchAlerts } from '../../api/alerts'
+import StatusBadge from '../../components/StatusBadge'
+import ConfirmModal from '../../components/ConfirmModal'
+import QueryState from '../../components/ui/QueryState'
+import { DataTable, HeadRow, THead, Td, Th } from '../../components/ui/table'
+import { fmtDateTime } from '../../lib/format'
 
 function Bar({ value, max, danger }: { value: number; max: number; danger?: boolean }) {
   const pct = Math.min(100, Math.abs(max) > 0 ? (Math.abs(value) / Math.abs(max)) * 100 : 0)
@@ -20,7 +20,7 @@ function Bar({ value, max, danger }: { value: number; max: number; danger?: bool
   )
 }
 
-export default function Executor() {
+export default function Status() {
   const qc = useQueryClient()
   const [modal, setModal] = useState<'kill' | 'resume' | null>(null)
 

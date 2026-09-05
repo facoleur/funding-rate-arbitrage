@@ -6,13 +6,11 @@ import AuthBanner from './AuthBanner'
 import { fetchStatus } from '../api/status'
 
 const links = [
-  { to: '/', label: 'Opportunités', end: true },
+  { to: '/opportunites', label: 'Opportunités' },
   { to: '/trades', label: 'Trades' },
-  { to: '/positions', label: 'Positions' },
   { to: '/book', label: 'Book' },
-  { to: '/history', label: 'Historique' },
-  { to: '/funding', label: 'Funding' },
   { to: '/executor', label: 'Executor' },
+  { to: '/analytics', label: 'Analytics' },
 ]
 
 const STORAGE_KEY = 'sidebar-collapsed'
@@ -102,7 +100,6 @@ export default function Layout() {
               <NavLink
                 key={l.to}
                 to={l.to}
-                end={l.end}
                 className={({ isActive }) =>
                   `rounded px-3 py-1.5 text-sm transition-colors ${
                     isActive
