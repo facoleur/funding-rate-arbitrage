@@ -14,6 +14,7 @@ from option_arb.api import (
     perp_hedge,
     positions,
     stream,
+    structured,
     tickers,
     trades,
 )
@@ -46,5 +47,6 @@ for router in (
     tickers.router,
     stream.router,
     funding.router,
+    structured.router,
 ):
     app.include_router(router)

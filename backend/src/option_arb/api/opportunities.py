@@ -8,12 +8,18 @@ from sqlmodel import select
 from option_arb.api.schemas import (
     ErrorResponse,
     OpportunityResponse,
+    OpportunitySnapshotResponse,
     OpportunitySortBy,
     OpportunityStatsResponse,
     SortDirection,
 )
 from option_arb.config import Network
-from option_arb.db.models import Opportunity, OpportunityStatus
+from option_arb.db.models import (
+    LiveStatus,
+    Opportunity,
+    OpportunitySnapshot,
+    OpportunityStatus,
+)
 from option_arb.db.session import get_session
 
 router = APIRouter(prefix="/api/opportunities", tags=["opportunities"])
@@ -77,17 +83,21 @@ async def opportunity_stats(
 
 _SORT_COLS = {
     "detected_at": "detected_at",
+    "last_seen_at": "last_seen_at",
     "apr_pct": "apr_pct",
     "net_return_pct": "net_return_pct",
     "net_profit_usd": "net_profit_usd",
+    "peak_net_profit_usd": "peak_net_profit_usd",
     "buy_premium_usd": "buy_premium_usd",
     "fees_usd": "fees_usd",
+    "samples_count": "samples_count",
 }
 
 
 @router.get("", response_model=list[OpportunityResponse])
 async def list_opportunities(
     status: OpportunityStatus | None = None,
+    live_status: LiveStatus | None = None,
     min_apr: float | None = None,
     min_profit: float | None = None,
     symbol: str | None = None,
@@ -108,6 +118,8 @@ async def list_opportunities(
     stmt = select(Opportunity).order_by(col_expr).limit(limit).offset(offset)
     if status is not None:
         stmt = stmt.where(Opportunity.status == status)
+    if live_status is not None:
+        stmt = stmt.where(Opportunity.live_status == live_status)
     if min_apr is not None:
         stmt = stmt.where(Opportunity.apr_pct >= min_apr)
     if min_profit is not None:
@@ -140,3 +152,28 @@ async def get_opportunity(opp_id: int) -> Opportunity:
     if row is None:
         raise HTTPException(404, "not found")
     return row
+
+
+@router.get(
+    "/{opp_id}/snapshots",
+    response_model=list[OpportunitySnapshotResponse],
+    responses={404: {"model": ErrorResponse}},
+)
+async def get_opportunity_snapshots(opp_id: int) -> list[OpportunitySnapshot]:
+    import sqlalchemy as sa
+
+    async with get_session() as sess:
+        exists = (
+            await sess.execute(select(Opportunity.id).where(Opportunity.id == opp_id))
+        ).scalar_one_or_none()
+        if exists is None:
+            raise HTTPException(404, "not found")
+        return list(
+            (
+                await sess.execute(
+                    select(OpportunitySnapshot)
+                    .where(OpportunitySnapshot.opportunity_id == opp_id)
+                    .order_by(sa.text("ts ASC"))
+                )
+            ).scalars()
+        )

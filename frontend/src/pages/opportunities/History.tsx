@@ -1,9 +1,11 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 
 import {
   fetchOpportunities,
   fetchOpportunityStats,
+  type LiveStatus,
   type OpportunityStatus,
   type SortCol,
 } from '../../api/opportunities'
@@ -30,6 +32,19 @@ const STATUS_COLORS: Record<OpportunityStatus, string> = {
   EXPIRED: 'text-zinc-500',
 }
 
+const LIVE_COLORS: Record<LiveStatus, string> = {
+  LIVE: 'text-amber-400',
+  STALE: 'text-zinc-400',
+  EXPIRED: 'text-zinc-500',
+}
+
+function fmtLifetime(sec: number): string {
+  if (sec < 90) return `${Math.round(sec)}s`
+  if (sec < 5400) return `${Math.round(sec / 60)}min`
+  if (sec < 172800) return `${(sec / 3600).toFixed(1)}h`
+  return `${(sec / 86400).toFixed(1)}j`
+}
+
 const COLS: { key: SortCol; label: string; align?: Align }[] = [
   { key: 'detected_at', label: 'Date' },
   { key: 'net_profit_usd', label: 'Profit net', align: 'right' },
@@ -40,6 +55,7 @@ const COLS: { key: SortCol; label: string; align?: Align }[] = [
 ]
 
 export default function History() {
+  const navigate = useNavigate()
   const [days, setDays] = useState(30)
   const [symbol, setSymbol] = useState('')
   const [statusFilter, setStatus] = useState<OpportunityStatus | ''>('')
@@ -122,8 +138,6 @@ export default function History() {
       <div className="flex-shrink-0 space-y-5">
         {/* ── Filtres globaux ── */}
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="mr-1 text-base font-semibold text-zinc-100">Historique</h1>
-
           <Select value={days} onChange={(v) => setDays(Number(v))}>
             <option value={7}>7 jours</option>
             <option value={30}>30 jours</option>
@@ -262,15 +276,23 @@ export default function History() {
                       onSort={handleSort}
                     />
                   ))}
+                  <Th align="right">Lifetime</Th>
+                  <Th align="right">Decay</Th>
+                  <Th align="right">Pts</Th>
                   <Th>Instrument</Th>
                   <Th>Paire</Th>
                   <Th>Réseau</Th>
+                  <Th>Live</Th>
                   <Th>Statut</Th>
                 </HeadRow>
               </THead>
               <tbody>
                 {opps.map((o) => (
-                  <tr key={o.id} className="hover:bg-zinc-900/40">
+                  <tr
+                    key={o.id}
+                    onClick={() => navigate(`/opportunites/${o.id}`)}
+                    className="cursor-pointer hover:bg-zinc-800/40"
+                  >
                     <Td className="whitespace-nowrap text-zinc-500">
                       {fmtDateTime(o.detected_at)}
                     </Td>
@@ -289,6 +311,18 @@ export default function History() {
                     <Td align="right" className="text-zinc-400">
                       {o.apr_pct.toFixed(1)}%
                     </Td>
+                    <Td align="right" className="text-zinc-400">
+                      {fmtLifetime(o.lifetime_sec)}
+                    </Td>
+                    <Td
+                      align="right"
+                      className={o.decay_pct > 50 ? 'text-red-400' : 'text-zinc-500'}
+                    >
+                      {o.decay_pct.toFixed(0)}%
+                    </Td>
+                    <Td align="right" className="text-zinc-500">
+                      {o.samples_count}
+                    </Td>
                     <Td className="font-mono text-[11px] text-zinc-300">{o.instrument}</Td>
                     <Td className="whitespace-nowrap">
                       <ExBadge name={o.buy_from} />
@@ -302,6 +336,7 @@ export default function History() {
                         {o.network}
                       </span>
                     </Td>
+                    <Td className={LIVE_COLORS[o.live_status]}>{o.live_status}</Td>
                     <Td className={STATUS_COLORS[o.status]}>{o.status}</Td>
                   </tr>
                 ))}

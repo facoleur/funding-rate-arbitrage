@@ -12,6 +12,7 @@ import StatusBadge from '../../components/StatusBadge'
 import { NumberField, Select } from '../../components/ui/Field'
 import SortHeader from '../../components/ui/SortHeader'
 import ColumnPicker from '../../components/ui/ColumnPicker'
+import PageToolbar from '../../components/ui/PageToolbar'
 import { DataTable, HeadRow, THead, Td, Th, type Align } from '../../components/ui/table'
 import QueryState from '../../components/ui/QueryState'
 import { useColumnVisibility } from '../../hooks/useColumnVisibility'
@@ -283,11 +284,7 @@ export default function Live() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* toolbar */}
-      <div className="mb-3 flex flex-shrink-0 flex-wrap items-center gap-3">
-        <h1 className="text-base font-semibold text-zinc-100">Opportunités</h1>
-        <span className="text-xs text-zinc-500">{rows.length} lignes</span>
-
+      <PageToolbar count={rows.length}>
         <NumberField value={minApr} placeholder="APR min %" onChange={setMinApr} className="w-28" />
         <Select value={underlying} onChange={setUnderlying}>
           <option value="">Tous</option>
@@ -302,9 +299,8 @@ export default function Live() {
             </option>
           ))}
         </Select>
-
         <ColumnPicker columns={COLUMNS} visible={visible} onToggle={toggle} />
-      </div>
+      </PageToolbar>
 
       <QueryState isLoading={isLoading} isError={isError} />
 

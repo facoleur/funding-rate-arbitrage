@@ -2,7 +2,9 @@ import { apiClient, apiRequest } from './client'
 import type { components, operations } from './generated/schema'
 
 export type OpportunityStatus = components['schemas']['OpportunityStatus']
+export type LiveStatus = components['schemas']['LiveStatus']
 export type Opportunity = components['schemas']['OpportunityResponse']
+export type OpportunitySnapshot = components['schemas']['OpportunitySnapshotResponse']
 /** Économie déjà arbitrée par l'API entre valeurs vérifiées et détectées. */
 export type OpportunityEconomics = components['schemas']['OpportunityEconomicsResponse']
 export type OpportunityStats = components['schemas']['OpportunityStatsResponse']
@@ -30,4 +32,18 @@ export function fetchOpportunities(params?: OpportunityParams) {
 export function fetchOpportunityStats(params?: OpportunityStatsParams) {
   const query = params ? { ...params, network: params.network || undefined } : undefined
   return apiRequest(apiClient.GET('/api/opportunities/stats', { params: { query } }))
+}
+
+export function fetchOpportunity(id: number) {
+  return apiRequest(
+    apiClient.GET('/api/opportunities/{opp_id}', { params: { path: { opp_id: id } } }),
+  )
+}
+
+export function fetchOpportunitySnapshots(id: number) {
+  return apiRequest(
+    apiClient.GET('/api/opportunities/{opp_id}/snapshots', {
+      params: { path: { opp_id: id } },
+    }),
+  )
 }

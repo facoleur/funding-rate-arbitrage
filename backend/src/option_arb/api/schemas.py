@@ -8,12 +8,14 @@ from pydantic import BaseModel, ConfigDict, PlainSerializer, WithJsonSchema, com
 from option_arb.config import Network
 from option_arb.db.models import (
     AlertLevel,
+    LiveStatus,
     Mode,
     OpportunityStatus,
     OrderKind,
     OrderStatus,
     RestStatus,
     Side,
+    StrategyType,
     TradeStatus,
     WsStatus,
 )
@@ -30,11 +32,14 @@ type IsoDatetime = Annotated[
 ]
 type OpportunitySortBy = Literal[
     "detected_at",
+    "last_seen_at",
     "apr_pct",
     "net_return_pct",
     "net_profit_usd",
+    "peak_net_profit_usd",
     "buy_premium_usd",
     "fees_usd",
+    "samples_count",
 ]
 type SortDirection = Literal["asc", "desc"]
 
@@ -147,6 +152,34 @@ class OpportunityResponse(ApiResponse):
     verified_apr_pct: float | None
     status: OpportunityStatus
     rejection_reason: str | None
+    # liveness + evolution history (screener-owned, orthogonal to `status`)
+    live_status: LiveStatus
+    last_seen_at: IsoDatetime
+    samples_count: int
+    peak_net_profit_usd: float
+    peak_apr_pct: float
+    closed_at: IsoDatetime | None
+    close_reason: str | None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def lifetime_sec(self) -> float:
+        start = (
+            self.detected_at if self.detected_at.tzinfo else self.detected_at.replace(tzinfo=UTC)
+        )
+        end = self.closed_at or datetime.now(UTC)
+        end = end if end.tzinfo else end.replace(tzinfo=UTC)
+        return round(max((end - start).total_seconds(), 0.0), 1)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def decay_pct(self) -> float:
+        """How far current net profit has fallen from its peak, in %."""
+        if self.peak_net_profit_usd <= 0:
+            return 0.0
+        return round(
+            (self.peak_net_profit_usd - self.net_profit_usd) / self.peak_net_profit_usd * 100, 1
+        )
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -342,3 +375,103 @@ class FundingHistoryResponse(ApiResponse):
     rate_8h: float
     rate_ann: float
     index_price: float
+
+
+type StructuredSortBy = Literal[
+    "detected_at",
+    "last_seen_at",
+    "max_total_profit_usd",
+    "peak_total_profit_usd",
+    "min_profit",
+    "max_size",
+    "capital_required_usd",
+    "samples_count",
+]
+
+
+class StructuredLegResponse(ApiResponse):
+    exchange: str
+    instrument: str
+    side: Literal["buy", "sell"]
+    price: float
+    qty: float
+    taker_fee_rate: float
+
+
+class StructuredOpportunityResponse(ApiResponse):
+    id: int
+    strategy_type: StrategyType
+    underlying: str
+    expiry: IsoDatetime
+    strikes: list[float]
+    legs: list[StructuredLegResponse]
+    is_fixed_payoff: bool
+    settlement_risk: bool
+    min_payoff: float
+    max_payoff: float
+    entry_cost: float
+    max_fees: float
+    min_profit: float
+    max_profit: float
+    max_size: float
+    capital_required_usd: float
+    max_total_profit_usd: float
+    spot: float | None
+    mode: Mode
+    network: Network
+    detected_at: IsoDatetime
+    updated_at: IsoDatetime
+    last_seen_at: IsoDatetime
+    samples_count: int
+    peak_total_profit_usd: float
+    peak_min_profit: float
+    closed_at: IsoDatetime | None
+    close_reason: str | None
+    live_status: LiveStatus
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def lifetime_sec(self) -> float:
+        start = (
+            self.detected_at if self.detected_at.tzinfo else self.detected_at.replace(tzinfo=UTC)
+        )
+        end = self.closed_at or datetime.now(UTC)
+        end = end if end.tzinfo else end.replace(tzinfo=UTC)
+        return round(max((end - start).total_seconds(), 0.0), 1)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def decay_pct(self) -> float:
+        """How far the current profit has fallen from its peak, in %."""
+        if self.peak_total_profit_usd <= 0:
+            return 0.0
+        drop = self.peak_total_profit_usd - self.max_total_profit_usd
+        return round(drop / self.peak_total_profit_usd * 100, 1)
+
+
+class StructuredSnapshotResponse(ApiResponse):
+    ts: IsoDatetime
+    entry_cost: float
+    max_fees: float
+    min_profit: float
+    max_size: float
+    capital_required_usd: float
+    max_total_profit_usd: float
+    legs: list[StructuredLegResponse]
+    underlying_price: float | None
+
+
+class OpportunitySnapshotResponse(ApiResponse):
+    ts: IsoDatetime
+    top_ask: float
+    top_bid: float
+    tradeable_size: float
+    buy_premium_usd: float
+    sell_premium_usd: float
+    capital_required_usd: float
+    fees_usd: float
+    net_profit_usd: float
+    net_return_pct: float
+    apr_pct: float
+    price_spread_pct: float
+    underlying_price: float | None

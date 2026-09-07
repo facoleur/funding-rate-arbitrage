@@ -7,6 +7,7 @@ import { fetchStatus } from '../api/status'
 
 const links = [
   { to: '/opportunites', label: 'Opportunités' },
+  { to: '/structured', label: 'Structured' },
   { to: '/trades', label: 'Trades' },
   { to: '/book', label: 'Book' },
   { to: '/executor', label: 'Executor' },

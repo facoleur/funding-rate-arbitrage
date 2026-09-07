@@ -16,11 +16,14 @@ from option_arb.api.schemas import (
     FundingHistoryResponse,
     HealthResponse,
     OpportunityResponse,
+    OpportunitySnapshotResponse,
     OpportunityStatsResponse,
     PerpHedgeStateResponse,
     PerpHedgeToggleResponse,
     PositionResponse,
     StatusResponse,
+    StructuredOpportunityResponse,
+    StructuredSnapshotResponse,
     TickerResponse,
     TradeDetailResponse,
     TradeResponse,
@@ -81,6 +84,7 @@ def test_openapi_has_named_schemas_for_all_json_responses() -> None:
         ("/api/opportunities/stats", "get"): (OpportunityStatsResponse, True),
         ("/api/opportunities", "get"): (OpportunityResponse, True),
         ("/api/opportunities/{opp_id}", "get"): (OpportunityResponse, False),
+        ("/api/opportunities/{opp_id}/snapshots", "get"): (OpportunitySnapshotResponse, True),
         ("/api/trades", "get"): (TradeResponse, True),
         ("/api/trades/{trade_id}", "get"): (TradeDetailResponse, False),
         ("/api/positions", "get"): (PositionResponse, True),
@@ -94,6 +98,12 @@ def test_openapi_has_named_schemas_for_all_json_responses() -> None:
         ("/api/alerts", "get"): (AlertResponse, True),
         ("/api/tickers", "get"): (TickerResponse, True),
         ("/api/funding", "get"): (FundingHistoryResponse, True),
+        ("/api/structured-opportunities", "get"): (StructuredOpportunityResponse, True),
+        ("/api/structured-opportunities/{opp_id}", "get"): (StructuredOpportunityResponse, False),
+        ("/api/structured-opportunities/{opp_id}/snapshots", "get"): (
+            StructuredSnapshotResponse,
+            True,
+        ),
     }
     openapi = app.openapi()
     components = openapi["components"]["schemas"]
@@ -142,11 +152,14 @@ def test_openapi_has_named_schemas_for_all_json_responses() -> None:
     }
     assert opportunity_parameters["sort_by"]["enum"] == [
         "detected_at",
+        "last_seen_at",
         "apr_pct",
         "net_return_pct",
         "net_profit_usd",
+        "peak_net_profit_usd",
         "buy_premium_usd",
         "fees_usd",
+        "samples_count",
     ]
     assert opportunity_parameters["sort_dir"]["enum"] == ["asc", "desc"]
 
@@ -554,3 +567,194 @@ async def test_ticker_age_reports_the_stalest_leg(test_db: str) -> None:
     # per-venue freshness stays untouched — the UI greys the stale cell
     assert row["exchanges"]["deribit"]["is_stale"] is True
     assert row["exchanges"]["derive"]["is_stale"] is False
+
+
+async def _insert_structured(**kwargs: Any) -> int:
+    from option_arb.db.models import LiveStatus, StrategyType, StructuredOpportunity
+
+    defaults: dict[str, Any] = dict(
+        strategy_type=StrategyType.BOX,
+        underlying="BTC",
+        expiry=datetime.now(UTC) + timedelta(days=30),
+        strikes=[100.0, 120.0],
+        legs=[
+            {
+                "exchange": "derive",
+                "instrument": "BTC-1-100-C",
+                "side": "buy",
+                "price": 21.0,
+                "qty": 5.0,
+                "taker_fee_rate": 0.0,
+            },
+            {
+                "exchange": "derive",
+                "instrument": "BTC-1-100-P",
+                "side": "sell",
+                "price": 9.0,
+                "qty": 5.0,
+                "taker_fee_rate": 0.0,
+            },
+            {
+                "exchange": "derive",
+                "instrument": "BTC-1-120-C",
+                "side": "sell",
+                "price": 9.0,
+                "qty": 5.0,
+                "taker_fee_rate": 0.0,
+            },
+            {
+                "exchange": "derive",
+                "instrument": "BTC-1-120-P",
+                "side": "buy",
+                "price": 16.0,
+                "qty": 5.0,
+                "taker_fee_rate": 0.0,
+            },
+        ],
+        is_fixed_payoff=True,
+        settlement_risk=False,
+        min_payoff=20.0,
+        max_payoff=20.0,
+        entry_cost=19.0,
+        max_fees=0.0,
+        min_profit=1.0,
+        max_profit=1.0,
+        max_size=5.0,
+        capital_required_usd=95.0,
+        max_total_profit_usd=5.0,
+        mode=Mode.PAPER,
+        network="mainnet",
+        live_status=LiveStatus.LIVE,
+    )
+    defaults.update(kwargs)
+    defaults.setdefault("peak_total_profit_usd", defaults["max_total_profit_usd"])
+    defaults.setdefault("peak_min_profit", defaults["min_profit"])
+    async with get_session() as sess:
+        opp = StructuredOpportunity(**defaults)
+        sess.add(opp)
+        await sess.commit()
+        await sess.refresh(opp)
+        return opp.id
+
+
+@pytest.mark.asyncio
+async def test_structured_opportunities_list_and_filters(test_db: str) -> None:
+    await _insert_structured()
+    await _insert_structured(
+        is_fixed_payoff=False,
+        settlement_risk=True,
+        underlying="ETH",
+        max_total_profit_usd=50.0,
+        live_status="STALE",
+        close_reason="stale",
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        r = await ac.get("/api/structured-opportunities?sort_by=peak_total_profit_usd")
+        assert r.status_code == 200
+        body = r.json()
+        assert len(body) == 2  # default live_status filter = every status
+        assert body[0]["underlying"] == "ETH"
+        assert body[0]["legs"][0]["side"] == "buy"
+        assert body[0]["lifetime_sec"] >= 0
+        assert body[0]["close_reason"] == "stale"
+
+        r = await ac.get("/api/structured-opportunities?live_status=LIVE")
+        assert [o["underlying"] for o in r.json()] == ["BTC"]
+
+        r = await ac.get("/api/structured-opportunities?exclude_settlement_risk=true")
+        assert [o["underlying"] for o in r.json()] == ["BTC"]
+
+        r = await ac.get("/api/structured-opportunities?cross_exchange_only=true")
+        assert [o["underlying"] for o in r.json()] == ["ETH"]
+
+        r = await ac.get("/api/structured-opportunities?min_profit_usd=10")
+        assert [o["underlying"] for o in r.json()] == ["ETH"]
+
+
+@pytest.mark.asyncio
+async def test_structured_snapshots_endpoint(test_db: str) -> None:
+    from option_arb.db.models import StructuredOpportunitySnapshot
+
+    opp_id = await _insert_structured()
+    async with get_session() as sess:
+        for i, total in enumerate((5.0, 4.0, 2.5)):
+            sess.add(
+                StructuredOpportunitySnapshot(
+                    opportunity_id=opp_id,
+                    ts=datetime.now(UTC) + timedelta(seconds=i),
+                    entry_cost=19.0 + i * 0.1,
+                    max_fees=0.0,
+                    min_profit=total / 5.0,
+                    max_size=5.0,
+                    capital_required_usd=95.0,
+                    max_total_profit_usd=total,
+                    legs=[],
+                    underlying_price=100_000.0,
+                )
+            )
+        await sess.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        r = await ac.get(f"/api/structured-opportunities/{opp_id}/snapshots")
+        assert r.status_code == 200
+        series = r.json()
+        assert [s["max_total_profit_usd"] for s in series] == [5.0, 4.0, 2.5]  # ts asc
+
+        r = await ac.get("/api/structured-opportunities/999999/snapshots")
+        assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_structured_opportunity_detail_404(test_db: str) -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        r = await ac.get("/api/structured-opportunities/999999")
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_opportunity_snapshots_endpoint(test_db: str) -> None:
+    from option_arb.db.models import OpportunitySnapshot
+
+    opp = await _insert_opportunity()
+    async with get_session() as sess:
+        for i, net in enumerate((90.0, 60.0, 30.0)):
+            sess.add(
+                OpportunitySnapshot(
+                    opportunity_id=opp.id,
+                    ts=datetime.now(UTC) + timedelta(seconds=i),
+                    top_ask=101.0,
+                    top_bid=110.0 - i,
+                    tradeable_size=10.0,
+                    buy_premium_usd=1010.0,
+                    sell_premium_usd=1100.0,
+                    capital_required_usd=76010.0,
+                    fees_usd=0.6,
+                    net_profit_usd=net,
+                    net_return_pct=0.1,
+                    apr_pct=100.0,
+                    price_spread_pct=8.0,
+                    underlying_price=1000.0,
+                )
+            )
+        await sess.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        r = await ac.get(f"/api/opportunities/{opp.id}/snapshots")
+        assert r.status_code == 200
+        assert [s["net_profit_usd"] for s in r.json()] == [90.0, 60.0, 30.0]  # ts asc
+
+        r = await ac.get("/api/opportunities/999999/snapshots")
+        assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_opportunity_response_has_lifecycle_fields(test_db: str) -> None:
+    await _insert_opportunity(peak_net_profit_usd=120.0, net_profit_usd=60.0, samples_count=4)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        r = await ac.get("/api/opportunities")
+    o = r.json()[0]
+    assert o["live_status"] == "LIVE"
+    assert o["samples_count"] == 4
+    assert o["decay_pct"] == 50.0  # (120 - 60) / 120
+    assert o["lifetime_sec"] >= 0

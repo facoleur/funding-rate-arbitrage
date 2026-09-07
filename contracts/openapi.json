@@ -300,6 +300,16 @@
         "format": "date-time",
         "type": "string"
       },
+      "LiveStatus": {
+        "description": "Liveness of a screened opportunity \u2014 whether the screener still detects it.\n\nOrthogonal to the executor workflow (`OpportunityStatus`) on the 1:1\n`opportunities` table, and the sole status on `structured_opportunities`.\nOwned by the screeners; never written by the executor.",
+        "enum": [
+          "LIVE",
+          "STALE",
+          "EXPIRED"
+        ],
+        "title": "LiveStatus",
+        "type": "string"
+      },
       "Mode": {
         "enum": [
           "live",
@@ -405,9 +415,36 @@
             "title": "Capital Required Usd",
             "type": "number"
           },
+          "close_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Close Reason"
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IsoDatetime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "days_to_expiry": {
             "readOnly": true,
             "title": "Days To Expiry",
+            "type": "number"
+          },
+          "decay_pct": {
+            "description": "How far current net profit has fallen from its peak, in %.",
+            "readOnly": true,
+            "title": "Decay Pct",
             "type": "number"
           },
           "detected_at": {
@@ -447,6 +484,17 @@
             "title": "Is Verified",
             "type": "boolean"
           },
+          "last_seen_at": {
+            "$ref": "#/components/schemas/IsoDatetime"
+          },
+          "lifetime_sec": {
+            "readOnly": true,
+            "title": "Lifetime Sec",
+            "type": "number"
+          },
+          "live_status": {
+            "$ref": "#/components/schemas/LiveStatus"
+          },
           "mode": {
             "$ref": "#/components/schemas/Mode"
           },
@@ -469,6 +517,14 @@
             "title": "Option Type",
             "type": "string"
           },
+          "peak_apr_pct": {
+            "title": "Peak Apr Pct",
+            "type": "number"
+          },
+          "peak_net_profit_usd": {
+            "title": "Peak Net Profit Usd",
+            "type": "number"
+          },
           "price_spread_pct": {
             "title": "Price Spread Pct",
             "type": "number"
@@ -483,6 +539,10 @@
               }
             ],
             "title": "Rejection Reason"
+          },
+          "samples_count": {
+            "title": "Samples Count",
+            "type": "integer"
           },
           "sell_premium_usd": {
             "title": "Sell Premium Usd",
@@ -711,11 +771,100 @@
           "verified_apr_pct",
           "status",
           "rejection_reason",
+          "live_status",
+          "last_seen_at",
+          "samples_count",
+          "peak_net_profit_usd",
+          "peak_apr_pct",
+          "closed_at",
+          "close_reason",
+          "lifetime_sec",
+          "decay_pct",
           "days_to_expiry",
           "is_verified",
           "effective"
         ],
         "title": "OpportunityResponse",
+        "type": "object"
+      },
+      "OpportunitySnapshotResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "apr_pct": {
+            "title": "Apr Pct",
+            "type": "number"
+          },
+          "buy_premium_usd": {
+            "title": "Buy Premium Usd",
+            "type": "number"
+          },
+          "capital_required_usd": {
+            "title": "Capital Required Usd",
+            "type": "number"
+          },
+          "fees_usd": {
+            "title": "Fees Usd",
+            "type": "number"
+          },
+          "net_profit_usd": {
+            "title": "Net Profit Usd",
+            "type": "number"
+          },
+          "net_return_pct": {
+            "title": "Net Return Pct",
+            "type": "number"
+          },
+          "price_spread_pct": {
+            "title": "Price Spread Pct",
+            "type": "number"
+          },
+          "sell_premium_usd": {
+            "title": "Sell Premium Usd",
+            "type": "number"
+          },
+          "top_ask": {
+            "title": "Top Ask",
+            "type": "number"
+          },
+          "top_bid": {
+            "title": "Top Bid",
+            "type": "number"
+          },
+          "tradeable_size": {
+            "title": "Tradeable Size",
+            "type": "number"
+          },
+          "ts": {
+            "$ref": "#/components/schemas/IsoDatetime"
+          },
+          "underlying_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Underlying Price"
+          }
+        },
+        "required": [
+          "ts",
+          "top_ask",
+          "top_bid",
+          "tradeable_size",
+          "buy_premium_usd",
+          "sell_premium_usd",
+          "capital_required_usd",
+          "fees_usd",
+          "net_profit_usd",
+          "net_return_pct",
+          "apr_pct",
+          "price_spread_pct",
+          "underlying_price"
+        ],
+        "title": "OpportunitySnapshotResponse",
         "type": "object"
       },
       "OpportunityStatsResponse": {
@@ -1095,6 +1244,304 @@
           "exchanges"
         ],
         "title": "StatusResponse",
+        "type": "object"
+      },
+      "StrategyType": {
+        "enum": [
+          "BOX"
+        ],
+        "title": "StrategyType",
+        "type": "string"
+      },
+      "StructuredLegResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "exchange": {
+            "title": "Exchange",
+            "type": "string"
+          },
+          "instrument": {
+            "title": "Instrument",
+            "type": "string"
+          },
+          "price": {
+            "title": "Price",
+            "type": "number"
+          },
+          "qty": {
+            "title": "Qty",
+            "type": "number"
+          },
+          "side": {
+            "enum": [
+              "buy",
+              "sell"
+            ],
+            "title": "Side",
+            "type": "string"
+          },
+          "taker_fee_rate": {
+            "title": "Taker Fee Rate",
+            "type": "number"
+          }
+        },
+        "required": [
+          "exchange",
+          "instrument",
+          "side",
+          "price",
+          "qty",
+          "taker_fee_rate"
+        ],
+        "title": "StructuredLegResponse",
+        "type": "object"
+      },
+      "StructuredOpportunityResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "capital_required_usd": {
+            "title": "Capital Required Usd",
+            "type": "number"
+          },
+          "close_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Close Reason"
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IsoDatetime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decay_pct": {
+            "description": "How far the current profit has fallen from its peak, in %.",
+            "readOnly": true,
+            "title": "Decay Pct",
+            "type": "number"
+          },
+          "detected_at": {
+            "$ref": "#/components/schemas/IsoDatetime"
+          },
+          "entry_cost": {
+            "title": "Entry Cost",
+            "type": "number"
+          },
+          "expiry": {
+            "$ref": "#/components/schemas/IsoDatetime"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_fixed_payoff": {
+            "title": "Is Fixed Payoff",
+            "type": "boolean"
+          },
+          "last_seen_at": {
+            "$ref": "#/components/schemas/IsoDatetime"
+          },
+          "legs": {
+            "items": {
+              "$ref": "#/components/schemas/StructuredLegResponse"
+            },
+            "title": "Legs",
+            "type": "array"
+          },
+          "lifetime_sec": {
+            "readOnly": true,
+            "title": "Lifetime Sec",
+            "type": "number"
+          },
+          "live_status": {
+            "$ref": "#/components/schemas/LiveStatus"
+          },
+          "max_fees": {
+            "title": "Max Fees",
+            "type": "number"
+          },
+          "max_payoff": {
+            "title": "Max Payoff",
+            "type": "number"
+          },
+          "max_profit": {
+            "title": "Max Profit",
+            "type": "number"
+          },
+          "max_size": {
+            "title": "Max Size",
+            "type": "number"
+          },
+          "max_total_profit_usd": {
+            "title": "Max Total Profit Usd",
+            "type": "number"
+          },
+          "min_payoff": {
+            "title": "Min Payoff",
+            "type": "number"
+          },
+          "min_profit": {
+            "title": "Min Profit",
+            "type": "number"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/Mode"
+          },
+          "network": {
+            "$ref": "#/components/schemas/Network"
+          },
+          "peak_min_profit": {
+            "title": "Peak Min Profit",
+            "type": "number"
+          },
+          "peak_total_profit_usd": {
+            "title": "Peak Total Profit Usd",
+            "type": "number"
+          },
+          "samples_count": {
+            "title": "Samples Count",
+            "type": "integer"
+          },
+          "settlement_risk": {
+            "title": "Settlement Risk",
+            "type": "boolean"
+          },
+          "spot": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spot"
+          },
+          "strategy_type": {
+            "$ref": "#/components/schemas/StrategyType"
+          },
+          "strikes": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Strikes",
+            "type": "array"
+          },
+          "underlying": {
+            "title": "Underlying",
+            "type": "string"
+          },
+          "updated_at": {
+            "$ref": "#/components/schemas/IsoDatetime"
+          }
+        },
+        "required": [
+          "id",
+          "strategy_type",
+          "underlying",
+          "expiry",
+          "strikes",
+          "legs",
+          "is_fixed_payoff",
+          "settlement_risk",
+          "min_payoff",
+          "max_payoff",
+          "entry_cost",
+          "max_fees",
+          "min_profit",
+          "max_profit",
+          "max_size",
+          "capital_required_usd",
+          "max_total_profit_usd",
+          "spot",
+          "mode",
+          "network",
+          "detected_at",
+          "updated_at",
+          "last_seen_at",
+          "samples_count",
+          "peak_total_profit_usd",
+          "peak_min_profit",
+          "closed_at",
+          "close_reason",
+          "live_status",
+          "lifetime_sec",
+          "decay_pct"
+        ],
+        "title": "StructuredOpportunityResponse",
+        "type": "object"
+      },
+      "StructuredSnapshotResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "capital_required_usd": {
+            "title": "Capital Required Usd",
+            "type": "number"
+          },
+          "entry_cost": {
+            "title": "Entry Cost",
+            "type": "number"
+          },
+          "legs": {
+            "items": {
+              "$ref": "#/components/schemas/StructuredLegResponse"
+            },
+            "title": "Legs",
+            "type": "array"
+          },
+          "max_fees": {
+            "title": "Max Fees",
+            "type": "number"
+          },
+          "max_size": {
+            "title": "Max Size",
+            "type": "number"
+          },
+          "max_total_profit_usd": {
+            "title": "Max Total Profit Usd",
+            "type": "number"
+          },
+          "min_profit": {
+            "title": "Min Profit",
+            "type": "number"
+          },
+          "ts": {
+            "$ref": "#/components/schemas/IsoDatetime"
+          },
+          "underlying_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Underlying Price"
+          }
+        },
+        "required": [
+          "ts",
+          "entry_cost",
+          "max_fees",
+          "min_profit",
+          "max_size",
+          "capital_required_usd",
+          "max_total_profit_usd",
+          "legs",
+          "underlying_price"
+        ],
+        "title": "StructuredSnapshotResponse",
         "type": "object"
       },
       "TickerExchangeResponse": {
@@ -2013,6 +2460,22 @@
           },
           {
             "in": "query",
+            "name": "live_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/LiveStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Live Status"
+            }
+          },
+          {
+            "in": "query",
             "name": "min_apr",
             "required": false,
             "schema": {
@@ -2132,11 +2595,14 @@
               "default": "detected_at",
               "enum": [
                 "detected_at",
+                "last_seen_at",
                 "apr_pct",
                 "net_return_pct",
                 "net_profit_usd",
+                "peak_net_profit_usd",
                 "buy_premium_usd",
-                "fees_usd"
+                "fees_usd",
+                "samples_count"
               ],
               "title": "Sort By",
               "type": "string"
@@ -2345,6 +2811,62 @@
         ]
       }
     },
+    "/api/opportunities/{opp_id}/snapshots": {
+      "get": {
+        "operationId": "get_opportunity_snapshots_api_opportunities__opp_id__snapshots_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "opp_id",
+            "required": true,
+            "schema": {
+              "title": "Opp Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OpportunitySnapshotResponse"
+                  },
+                  "title": "Response Get Opportunity Snapshots Api Opportunities  Opp Id  Snapshots Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Opportunity Snapshots",
+        "tags": [
+          "opportunities"
+        ]
+      }
+    },
     "/api/perp-hedge/pause": {
       "post": {
         "operationId": "pause_api_perp_hedge_pause_post",
@@ -2472,6 +2994,326 @@
         "summary": "Stream",
         "tags": [
           "stream"
+        ]
+      }
+    },
+    "/api/structured-opportunities": {
+      "get": {
+        "operationId": "list_structured_opportunities_api_structured_opportunities_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "strategy_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/StrategyType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Strategy Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "underlying",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Underlying"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_profit_usd",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Profit Usd"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cross_exchange_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Cross Exchange Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "exclude_settlement_risk",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Exclude Settlement Risk",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "live_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/LiveStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Live Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 365,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Days"
+            }
+          },
+          {
+            "in": "query",
+            "name": "network",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Network"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "mainnet",
+              "title": "Network"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_by",
+            "required": false,
+            "schema": {
+              "default": "detected_at",
+              "enum": [
+                "detected_at",
+                "last_seen_at",
+                "max_total_profit_usd",
+                "peak_total_profit_usd",
+                "min_profit",
+                "max_size",
+                "capital_required_usd",
+                "samples_count"
+              ],
+              "title": "Sort By",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_dir",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "title": "Sort Dir",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 1000,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StructuredOpportunityResponse"
+                  },
+                  "title": "Response List Structured Opportunities Api Structured Opportunities Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Structured Opportunities",
+        "tags": [
+          "structured"
+        ]
+      }
+    },
+    "/api/structured-opportunities/{opp_id}": {
+      "get": {
+        "operationId": "get_structured_opportunity_api_structured_opportunities__opp_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "opp_id",
+            "required": true,
+            "schema": {
+              "title": "Opp Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StructuredOpportunityResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Structured Opportunity",
+        "tags": [
+          "structured"
+        ]
+      }
+    },
+    "/api/structured-opportunities/{opp_id}/snapshots": {
+      "get": {
+        "operationId": "get_structured_snapshots_api_structured_opportunities__opp_id__snapshots_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "opp_id",
+            "required": true,
+            "schema": {
+              "title": "Opp Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StructuredSnapshotResponse"
+                  },
+                  "title": "Response Get Structured Snapshots Api Structured Opportunities  Opp Id  Snapshots Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Structured Snapshots",
+        "tags": [
+          "structured"
         ]
       }
     },

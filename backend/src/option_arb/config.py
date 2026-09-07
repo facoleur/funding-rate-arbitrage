@@ -27,6 +27,11 @@ class ScreenerConfig(ConfigModel):
     # rows in `opportunities` older than this are pruned daily by the worker;
     # <= 0 disables pruning. Keeps Postgres disk bounded on a small VPS.
     opportunity_retention_days: int = 14
+    # per-opportunity evolution history (opportunity_snapshots)
+    snapshot_min_interval_sec: int = 15  # at most one snapshot / opp / N s …
+    snapshot_delta_usd: float = 0.5  # … unless net_profit_usd moves by >= this
+    close_after_stale_sec: int = 20  # LIVE -> STALE if not re-detected for N s
+    snapshot_retention_days: int = 14  # <= 0 disables
 
 
 class Thresholds(ConfigModel):
@@ -85,6 +90,29 @@ class PerpHedgeConfig(ConfigModel):
     kill_switch_file: str = "/data/PERP_HEDGE_DISABLED"
 
 
+class StructuredThresholds(ConfigModel):
+    min_total_profit_usd: float = 5.0  # min_profit_per_unit * max_size
+    min_profit_per_unit_usd: float = 0.0  # filtre le bruit sub-tick
+    max_days_to_expiry: int = 60
+
+
+class StructuredConfig(ConfigModel):
+    """Détecteur d'arbitrage structuré (box spread) — module séparé du screener 1:1.
+
+    Tourne dans le container `workers` à côté du `Screener`, partage le `BookCache`.
+    Désactivé par défaut : ne se branche que si `enabled: true`.
+    """
+
+    enabled: bool = False
+    poll_interval_ms: int = 1000
+    retention_days: int = 14  # purge quotidienne des rows CLOSED/EXPIRED ; <= 0 désactive
+    snapshot_retention_days: int = 30  # purge des snapshots ; <= 0 désactive
+    snapshot_min_interval_sec: int = 10  # pas plus d'un snapshot / opp / N s …
+    snapshot_edge_delta_usd: float = 1.0  # … sauf si max_total_profit_usd bouge de >= ça
+    close_after_stale_sec: int = 30  # OPEN -> CLOSED si non revue depuis N s
+    thresholds: StructuredThresholds = Field(default_factory=StructuredThresholds)
+
+
 class AppConfig(ConfigModel):
     screener: ScreenerConfig = Field(default_factory=ScreenerConfig)
     thresholds: Thresholds = Field(default_factory=Thresholds)
@@ -94,6 +122,7 @@ class AppConfig(ConfigModel):
     exchanges: dict[str, ExchangeConfig] = Field(default_factory=dict)
     alerts: AlertsConfig = Field(default_factory=AlertsConfig)
     perp_hedge: PerpHedgeConfig = Field(default_factory=PerpHedgeConfig)
+    structured: StructuredConfig = Field(default_factory=StructuredConfig)
 
 
 class Settings(BaseSettings):

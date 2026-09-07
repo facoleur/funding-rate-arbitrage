@@ -4,6 +4,36 @@ Stratégies multi-jambes à payoff fixé ou borné, sans hedge dynamique. Profit
 
 ---
 
+## État d'implémentation
+
+- **Box spread — LIVRÉ (Phase 1 + 2).** Module `backend/src/option_arb/structured/` (types + `strategies/box.py` + `screener.py`), tables `structured_opportunities` + `structured_opportunity_snapshots` (migrations `3a975f04ade8`, `ccd09cc5a4d8`), API `GET /api/structured-opportunities` (+ `/{id}`, `/{id}/snapshots`), **page frontend autonome `/structured`** (onglets Live / Historique + vue détail `/structured/:id`). Détecteur branché dans `worker.py` derrière `structured.enabled` (config `structured:`, **off par défaut**).
+- **Vertical credit / butterfly négatif — pas encore.** L'enum `StrategyType` et le dossier `strategies/` sont prévus pour les accueillir sans refonte.
+
+Écarts vs le design initial ci-dessous :
+- **Best-venue par jambe** au lieu d'énumérer les combos d'exchanges : pour chaque paire `(K1, K2)`, chaque jambe prend le meilleur prix dispo toutes venues confondues (min ask / max bid), comme `comparator.compare_options`. O(N² · V) au lieu de O(N² · V⁴), et c'est l'optimum du coût d'entrée.
+- **`sa.JSON`** pour `strikes` / `legs` (pas `JSONB` / `FLOAT[]`) → même modèle sous SQLite en pytest.
+- Pas encore de champ `min_profit` / `max_profit` distincts pour le box (payoff déterministe → `min == max`).
+
+## Cycle de vie & snapshots (Phase 2)
+
+> **Uniformisé** : le statut de liveness s'appelle `live_status` et utilise l'enum partagé
+> `LiveStatus = LIVE | STALE | EXPIRED` (`db/models.py`) — le même sur `opportunities`
+> (où il est orthogonal au `status` workflow de l'executor) et `structured_opportunities`
+> (où c'est le seul statut). La gate de snapshot est le helper partagé
+> `services/snapshots.py::should_snapshot`.
+
+
+- **Identité d'une opportunité** = `(strategy_type, underlying, expiry, strikes)`. Le mix de venues gagnantes n'entre PAS dans la clé : il évolue et est capturé dans les snapshots.
+- **Statuts** (`live_status`) : `LIVE` (détectée au dernier tick) → `STALE` (`close_reason="stale"`, plus vue depuis `close_after_stale_sec`, défaut 30 s) ou `EXPIRED` (`close_reason="expired"`, `expiry` passée). Balayage à chaque tick du screener (2 `UPDATE` groupés, `synchronize_session=False`).
+- **Colonnes lifecycle** sur `structured_opportunities` : `detected_at` (= first seen), `last_seen_at`, `samples_count`, `peak_total_profit_usd`, `peak_min_profit`, `spot`, `closed_at`, `close_reason`, `last_snapshot_at`, `last_snapshot_total_profit_usd`.
+- **Table `structured_opportunity_snapshots`** : série temporelle `(opportunity_id FK ON DELETE CASCADE, ts, entry_cost, max_fees, min_profit, max_size, capital_required_usd, max_total_profit_usd, legs JSON, underlying_price)`.
+- **Cadence de snapshot** (`_should_snapshot`) : un snapshot à la détection, puis un nouveau seulement si `now - last_snapshot_at ≥ snapshot_min_interval_sec` (défaut 10) **ou** `|Δ max_total_profit_usd| ≥ snapshot_edge_delta_usd` (défaut 1) **ou** le mix de venues a changé.
+- **Rétention** (`worker.py::_retention_loop`, quotidien) : snapshots `> snapshot_retention_days` (défaut 30) ; lignes parentes `STALE`/`EXPIRED` `> retention_days` (défaut 14), snapshots en cascade.
+- **API** : `GET /api/structured-opportunities` accepte `live_status` (défaut = tous), `days`, tris `detected_at`/`last_seen_at`/`peak_total_profit_usd`/`samples_count`/… ; réponse enrichie de `lifetime_sec` + `decay_pct` (computed). `GET /api/structured-opportunities/{id}/snapshots` → série triée par `ts`.
+- **Frontend détail** (`pages/structured/Detail.tsx`, **recharts**) : courbe de decay (`max_total_profit_usd` dans le temps), slider temporel qui sélectionne un snapshot, diagramme de payoff des 2 spreads (`payoff.ts::payoffSeries` — bull call `clamp(S−K1,0,W)−Dc`, bear put `clamp(K2−S,0,W)−Dp`, box plat `W−entry_cost−fees`) + marqueur spot, table des deltas snapshot-à-snapshot.
+
+---
+
 ## Taxonomie des stratégies
 
 ### Payoff vraiment fixé (déterministe à expiry, ∀ S_T)

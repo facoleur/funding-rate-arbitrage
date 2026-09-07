@@ -5,6 +5,10 @@ screener:
   max_expiries_ahead: 8
   metadata_refresh_hours: 6
   book_cache_ttl_ms: 5000
+  snapshot_min_interval_sec: 15
+  snapshot_delta_usd: 0.5
+  close_after_stale_sec: 20
+  snapshot_retention_days: 14
 
 thresholds:
   min_apr_pct: 0.1
@@ -67,6 +71,19 @@ exchanges:
     rest_base_url: https://beta.rocket-cluster-1.com
     ws_url: wss://beta.rocket-cluster-1.com/ws
     trade_enabled: false      # monitoring seul — signature des transactions Rocket non implémentée
+
+structured:
+  enabled: false          # détecteur box spread — module séparé, off par défaut
+  poll_interval_ms: 1000
+  retention_days: 14
+  snapshot_retention_days: 30
+  snapshot_min_interval_sec: 10
+  snapshot_edge_delta_usd: 1.0
+  close_after_stale_sec: 30
+  thresholds:
+    min_total_profit_usd: 5.0
+    min_profit_per_unit_usd: 0.0
+    max_days_to_expiry: 60
 
 perp_hedge:
   enabled: true

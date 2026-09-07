@@ -51,6 +51,7 @@ class Spread:
     price_spread_pct: Decimal
     net_return_pct: Decimal
     apr_pct: Decimal
+    underlying_price: Decimal | None = None
 
 
 def _is_valid(quote: Quote) -> bool:
@@ -141,6 +142,7 @@ def compare_options(
                 price_spread_pct=economics.price_spread_pct,
                 net_return_pct=economics.net_return_pct,
                 apr_pct=economics.apr_pct,
+                underlying_price=spot,
             )
         )
 

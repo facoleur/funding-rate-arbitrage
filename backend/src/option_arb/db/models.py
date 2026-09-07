@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 
 import sqlalchemy as sa
 from sqlmodel import Field, SQLModel
@@ -43,6 +44,23 @@ class OrderStatus(StrEnum):
 class OrderKind(StrEnum):
     IOC_LIMIT = "ioc_limit"
     MARKET_OUT = "market_out"
+
+
+class StrategyType(StrEnum):
+    BOX = "BOX"  # BULL_CALL / BEAR_PUT / BUTTERFLY_NEG viendront ensuite
+
+
+class LiveStatus(StrEnum):
+    """Liveness of a screened opportunity — whether the screener still detects it.
+
+    Orthogonal to the executor workflow (`OpportunityStatus`) on the 1:1
+    `opportunities` table, and the sole status on `structured_opportunities`.
+    Owned by the screeners; never written by the executor.
+    """
+
+    LIVE = "LIVE"
+    STALE = "STALE"  # no longer detected for `close_after_stale_sec`
+    EXPIRED = "EXPIRED"  # instrument expiry passed
 
 
 class Side(StrEnum):
@@ -119,8 +137,62 @@ class Opportunity(SQLModel, table=True):
     verified_net_return_pct: float | None = None
     verified_apr_pct: float | None = None
 
+    # Executor workflow state (PENDING → APPROVED/REJECTED/EXECUTED). Owned by the executor.
     status: OpportunityStatus = Field(default=OpportunityStatus.PENDING, index=True)
     rejection_reason: str | None = None
+
+    # --- liveness + evolution history (owned by the screener, orthogonal to `status`) ---
+    live_status: LiveStatus = Field(default=LiveStatus.LIVE, index=True)
+    last_seen_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+        sa_column=sa.Column(sa.DateTime(timezone=True), nullable=False, index=True),
+    )
+    samples_count: int = 1
+    peak_net_profit_usd: float = 0.0
+    peak_apr_pct: float = 0.0
+    closed_at: datetime | None = Field(
+        default=None, sa_column=sa.Column(sa.DateTime(timezone=True), nullable=True)
+    )
+    close_reason: str | None = None  # "stale" | "expired"
+    last_snapshot_at: datetime | None = Field(
+        default=None, sa_column=sa.Column(sa.DateTime(timezone=True), nullable=True)
+    )
+    last_snapshot_net_profit_usd: float | None = None
+
+
+class OpportunitySnapshot(SQLModel, table=True):
+    """Time series of a 1:1 cross-exchange `Opportunity`'s economics — one row
+    each time `net_profit_usd` moves materially or `snapshot_min_interval_sec`
+    elapses. Powers the decay + leg-convergence charts in the detail view."""
+
+    __tablename__ = "opportunity_snapshots"
+    __table_args__ = (sa.Index("ix_opportunity_snap_opp_ts", "opportunity_id", "ts"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    opportunity_id: int = Field(
+        sa_column=sa.Column(
+            sa.Integer,
+            sa.ForeignKey("opportunities.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    ts: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+        sa_column=sa.Column(sa.DateTime(timezone=True), nullable=False, index=True),
+    )
+    top_ask: float  # buy-leg quote on `buy_from` at this instant
+    top_bid: float  # sell-leg quote on `sell_to` at this instant
+    tradeable_size: float
+    buy_premium_usd: float
+    sell_premium_usd: float
+    capital_required_usd: float
+    fees_usd: float
+    net_profit_usd: float
+    net_return_pct: float
+    apr_pct: float
+    price_spread_pct: float
+    underlying_price: float | None = None
 
 
 class Trade(SQLModel, table=True):
@@ -258,3 +330,106 @@ class BookSnapshot(SQLModel, table=True):
     underlying_price: float | None = None
     bids_json: str
     asks_json: str
+
+
+class StructuredOpportunity(SQLModel, table=True):
+    """Multi-leg structured arb (box spread for now). Written by the standalone
+    `StructuredScreener` in the `workers` container; never touched by the 1:1
+    screener or the executor. `strikes` / `legs` use `sa.JSON` (not JSONB/ARRAY)
+    so the same model runs under SQLite in pytest."""
+
+    __tablename__ = "structured_opportunities"
+    __table_args__ = (
+        sa.Index("ix_structured_status_detected", "live_status", "detected_at"),
+        sa.Index("ix_structured_underlying_expiry_type", "underlying", "expiry", "strategy_type"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+
+    strategy_type: StrategyType = Field(index=True)
+    underlying: str = Field(index=True)
+    expiry: datetime = Field(sa_column=sa.Column(sa.DateTime(timezone=True), nullable=False))
+    # [K1, K2] ascending
+    strikes: list[float] = Field(sa_column=sa.Column(sa.JSON, nullable=False))
+    # 4 entries: {exchange, instrument, side: "buy"|"sell", price, qty, taker_fee_rate}
+    legs: list[dict[str, Any]] = Field(sa_column=sa.Column(sa.JSON, nullable=False))
+
+    is_fixed_payoff: bool  # True only when all 4 legs on the same exchange
+    settlement_risk: bool  # True when venues mix settlement classes (deribit inverse vs linear)
+
+    min_payoff: float  # box: both == K2 - K1
+    max_payoff: float
+
+    entry_cost: float  # net debit per unit (negative = credit)
+    max_fees: float  # per unit, sum of the 4 legs
+
+    min_profit: float  # per unit: width - entry_cost - max_fees
+    max_profit: float
+
+    max_size: float  # capped by the least-liquid leg
+    capital_required_usd: float  # max(entry_cost, 0) * max_size
+    max_total_profit_usd: float  # min_profit * max_size
+
+    spot: float | None = None  # underlying price at the latest snapshot
+
+    mode: Mode
+    network: str = "mainnet"
+
+    detected_at: datetime = Field(  # first seen
+        default_factory=lambda: datetime.now(UTC),
+        sa_column=sa.Column(sa.DateTime(timezone=True), nullable=False, index=True),
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+        sa_column=sa.Column(sa.DateTime(timezone=True), nullable=False),
+    )
+    # --- lifecycle (Phase 2) ---
+    last_seen_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+        sa_column=sa.Column(sa.DateTime(timezone=True), nullable=False, index=True),
+    )
+    samples_count: int = 1
+    peak_total_profit_usd: float = 0.0  # max of max_total_profit_usd over life
+    peak_min_profit: float = 0.0  # max edge/unit over life
+    closed_at: datetime | None = Field(
+        default=None, sa_column=sa.Column(sa.DateTime(timezone=True), nullable=True)
+    )
+    close_reason: str | None = None  # "stale" | "expired"
+    # denormalized to decide, without a query, whether a new snapshot is due
+    last_snapshot_at: datetime | None = Field(
+        default=None, sa_column=sa.Column(sa.DateTime(timezone=True), nullable=True)
+    )
+    last_snapshot_total_profit_usd: float | None = None
+
+    live_status: LiveStatus = Field(default=LiveStatus.LIVE, index=True)
+
+
+class StructuredOpportunitySnapshot(SQLModel, table=True):
+    """Time series of a `StructuredOpportunity`'s economics — one row each time
+    the edge moves materially or `snapshot_min_interval_sec` elapses. Powers the
+    decay chart + payoff-diagram scrubber in the detail view."""
+
+    __tablename__ = "structured_opportunity_snapshots"
+    __table_args__ = (sa.Index("ix_structured_snap_opp_ts", "opportunity_id", "ts"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    opportunity_id: int = Field(
+        sa_column=sa.Column(
+            sa.Integer,
+            sa.ForeignKey("structured_opportunities.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    ts: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+        sa_column=sa.Column(sa.DateTime(timezone=True), nullable=False, index=True),
+    )
+    entry_cost: float
+    max_fees: float
+    min_profit: float  # edge / unit at this instant
+    max_size: float
+    capital_required_usd: float
+    max_total_profit_usd: float
+    legs: list[dict[str, Any]] = Field(sa_column=sa.Column(sa.JSON, nullable=False))
+    underlying_price: float | None = None

@@ -61,6 +61,14 @@ async def _amain() -> None:
     alerter = Alerter(cfg.alerts)
     rebalancer = Rebalancer(cfg, exchanges)
 
+    # 3b. structured screener (box spreads) — optional, shares the cache
+    structured = None
+    if cfg.structured.enabled:
+        from option_arb.structured.screener import StructuredScreener
+
+        structured = StructuredScreener(cache, cfg)
+        log.info("structured screener: enabled")
+
     # 4. perp hedger (optional — Deribit inverse only)
     perp_hedger: PerpHedger | None = None
     if cfg.perp_hedge.enabled and "deribit" in exchanges:
@@ -96,6 +104,11 @@ async def _amain() -> None:
             if perp_hedger is not None
             else []
         ),
+        *(
+            [asyncio.create_task(structured.run(), name="structured")]
+            if structured is not None
+            else []
+        ),
     ]
     await stop.wait()
     log.info("stopping tasks…")
@@ -113,27 +126,67 @@ async def _push(cache: BookCache, upd: TickerUpdate) -> None:
 
 
 async def _retention_loop(cfg: AppConfig, stop: asyncio.Event) -> None:
-    """Prune old `opportunities` rows once a day to keep Postgres disk bounded."""
-    days = cfg.screener.opportunity_retention_days
-    if days <= 0 or "postgresql" not in settings.database_url:
+    """Prune old rows once a day to keep Postgres disk bounded."""
+    opp_days = cfg.screener.opportunity_retention_days
+    opp_snap_days = cfg.screener.snapshot_retention_days
+    struct_on = cfg.structured.enabled
+    struct_days = cfg.structured.retention_days if struct_on else 0
+    struct_snap_days = cfg.structured.snapshot_retention_days if struct_on else 0
+    if (opp_days <= 0 and opp_snap_days <= 0 and struct_days <= 0 and struct_snap_days <= 0) or (
+        "postgresql" not in settings.database_url
+    ):
         return
     from sqlalchemy import text
 
-    log.info("retention: pruning opportunities older than %dd, daily", days)
+    # (label, SQL, params) — each runs in its own transaction, best-effort.
+    stmts: list[tuple[str, str, dict[str, int]]] = []
+    if opp_snap_days > 0:
+        stmts.append(
+            (
+                "opportunity_snapshots",
+                "DELETE FROM opportunity_snapshots WHERE ts < now() - make_interval(days => :d)",
+                {"d": opp_snap_days},
+            )
+        )
+    if opp_days > 0:
+        # snapshots of pruned parents cascade via the FK
+        stmts.append(
+            (
+                "opportunities",
+                "DELETE FROM opportunities WHERE detected_at < now() - make_interval(days => :d)",
+                {"d": opp_days},
+            )
+        )
+    if struct_snap_days > 0:
+        stmts.append(
+            (
+                "structured_opportunity_snapshots",
+                "DELETE FROM structured_opportunity_snapshots "
+                "WHERE ts < now() - make_interval(days => :d)",
+                {"d": struct_snap_days},
+            )
+        )
+    if struct_days > 0:
+        # only finished opportunities; snapshots cascade via the FK
+        stmts.append(
+            (
+                "structured_opportunities",
+                "DELETE FROM structured_opportunities "
+                "WHERE live_status IN ('STALE', 'EXPIRED') "
+                "AND detected_at < now() - make_interval(days => :d)",
+                {"d": struct_days},
+            )
+        )
+    log.info("retention: pruning %s, daily", ", ".join(s[0] for s in stmts))
     while not stop.is_set():
-        try:
-            async with get_session() as sess:
-                res = await sess.execute(
-                    text(
-                        "DELETE FROM opportunities "
-                        "WHERE detected_at < now() - make_interval(days => :d)"
-                    ),
-                    {"d": days},
-                )
-                await sess.commit()
-            log.info("retention: pruned %s rows", getattr(res, "rowcount", "?"))
-        except Exception as e:
-            log.warning("retention prune failed: %s", e)
+        for label, sql, params in stmts:
+            try:
+                async with get_session() as sess:
+                    res = await sess.execute(text(sql), params)
+                    await sess.commit()
+                log.info("retention: pruned %s %s rows", getattr(res, "rowcount", "?"), label)
+            except Exception as e:
+                log.warning("retention prune of %s failed: %s", label, e)
         try:
             await asyncio.wait_for(stop.wait(), timeout=86400)
             break

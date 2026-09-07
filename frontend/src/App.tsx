@@ -5,6 +5,11 @@ import ErrorBoundary from './components/ErrorBoundary'
 import OpportunitiesLayout from './pages/opportunities/OpportunitiesLayout'
 import Live from './pages/opportunities/Live'
 import History from './pages/opportunities/History'
+import OpportunityDetail from './pages/opportunities/Detail'
+import StructuredLayout from './pages/structured/StructuredLayout'
+import StructuredLive from './pages/structured/Live'
+import StructuredHistory from './pages/structured/History'
+import StructuredDetail from './pages/structured/Detail'
 import Trades from './pages/Trades'
 import Book from './pages/Book'
 import ExecutorLayout from './pages/executor/ExecutorLayout'
@@ -25,10 +30,21 @@ export default function App() {
           }
         >
           <Route index element={<Navigate to="/opportunites/live" replace />} />
-          <Route path="opportunites" element={<OpportunitiesLayout />}>
-            <Route index element={<Navigate to="live" replace />} />
-            <Route path="live" element={<Live />} />
-            <Route path="historique" element={<History />} />
+          <Route path="opportunites">
+            <Route element={<OpportunitiesLayout />}>
+              <Route index element={<Navigate to="live" replace />} />
+              <Route path="live" element={<Live />} />
+              <Route path="historique" element={<History />} />
+            </Route>
+            <Route path=":id" element={<OpportunityDetail />} />
+          </Route>
+          <Route path="structured">
+            <Route element={<StructuredLayout />}>
+              <Route index element={<Navigate to="live" replace />} />
+              <Route path="live" element={<StructuredLive />} />
+              <Route path="historique" element={<StructuredHistory />} />
+            </Route>
+            <Route path=":id" element={<StructuredDetail />} />
           </Route>
           <Route path="trades" element={<Trades />} />
           <Route path="book" element={<Book />} />

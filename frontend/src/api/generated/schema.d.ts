@@ -160,6 +160,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/opportunities/{opp_id}/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Opportunity Snapshots */
+        get: operations["get_opportunity_snapshots_api_opportunities__opp_id__snapshots_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/perp-hedge/pause": {
         parameters: {
             query?: never;
@@ -254,6 +271,57 @@ export interface paths {
         };
         /** Stream */
         get: operations["stream_api_stream_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/structured-opportunities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Structured Opportunities */
+        get: operations["list_structured_opportunities_api_structured_opportunities_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/structured-opportunities/{opp_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Structured Opportunity */
+        get: operations["get_structured_opportunity_api_structured_opportunities__opp_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/structured-opportunities/{opp_id}/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Structured Snapshots */
+        get: operations["get_structured_snapshots_api_structured_opportunities__opp_id__snapshots_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -448,6 +516,16 @@ export interface components {
         /** Format: date-time */
         IsoDatetime: string;
         /**
+         * LiveStatus
+         * @description Liveness of a screened opportunity — whether the screener still detects it.
+         *
+         *     Orthogonal to the executor workflow (`OpportunityStatus`) on the 1:1
+         *     `opportunities` table, and the sole status on `structured_opportunities`.
+         *     Owned by the screeners; never written by the executor.
+         * @enum {string}
+         */
+        LiveStatus: "LIVE" | "STALE" | "EXPIRED";
+        /**
          * Mode
          * @enum {string}
          */
@@ -494,8 +572,16 @@ export interface components {
             buy_premium_usd: number;
             /** Capital Required Usd */
             capital_required_usd: number;
+            /** Close Reason */
+            close_reason: string | null;
+            closed_at: components["schemas"]["IsoDatetime"] | null;
             /** Days To Expiry */
             readonly days_to_expiry: number;
+            /**
+             * Decay Pct
+             * @description How far current net profit has fallen from its peak, in %.
+             */
+            readonly decay_pct: number;
             detected_at: components["schemas"]["IsoDatetime"];
             /** @description Économie à afficher, sans que le client ait à arbitrer lui-même. */
             readonly effective: components["schemas"]["OpportunityEconomicsResponse"];
@@ -515,6 +601,10 @@ export interface components {
              * @description L'executor a re-vérifié les books avant exécution.
              */
             readonly is_verified: boolean;
+            last_seen_at: components["schemas"]["IsoDatetime"];
+            /** Lifetime Sec */
+            readonly lifetime_sec: number;
+            live_status: components["schemas"]["LiveStatus"];
             mode: components["schemas"]["Mode"];
             /** Net Profit Usd */
             net_profit_usd: number;
@@ -526,10 +616,16 @@ export interface components {
              * @enum {string}
              */
             option_type: "C" | "P";
+            /** Peak Apr Pct */
+            peak_apr_pct: number;
+            /** Peak Net Profit Usd */
+            peak_net_profit_usd: number;
             /** Price Spread Pct */
             price_spread_pct: number;
             /** Rejection Reason */
             rejection_reason: string | null;
+            /** Samples Count */
+            samples_count: number;
             /** Sell Premium Usd */
             sell_premium_usd: number;
             /** Sell To */
@@ -573,6 +669,34 @@ export interface components {
             walked_ask: number | null;
             /** Walked Bid */
             walked_bid: number | null;
+        };
+        /** OpportunitySnapshotResponse */
+        OpportunitySnapshotResponse: {
+            /** Apr Pct */
+            apr_pct: number;
+            /** Buy Premium Usd */
+            buy_premium_usd: number;
+            /** Capital Required Usd */
+            capital_required_usd: number;
+            /** Fees Usd */
+            fees_usd: number;
+            /** Net Profit Usd */
+            net_profit_usd: number;
+            /** Net Return Pct */
+            net_return_pct: number;
+            /** Price Spread Pct */
+            price_spread_pct: number;
+            /** Sell Premium Usd */
+            sell_premium_usd: number;
+            /** Top Ask */
+            top_ask: number;
+            /** Top Bid */
+            top_bid: number;
+            /** Tradeable Size */
+            tradeable_size: number;
+            ts: components["schemas"]["IsoDatetime"];
+            /** Underlying Price */
+            underlying_price: number | null;
         };
         /** OpportunityStatsResponse */
         OpportunityStatsResponse: {
@@ -702,6 +826,108 @@ export interface components {
              */
             executor: "KILLED" | "RUNNING";
             mode: components["schemas"]["Mode"];
+        };
+        /**
+         * StrategyType
+         * @enum {string}
+         */
+        StrategyType: "BOX";
+        /** StructuredLegResponse */
+        StructuredLegResponse: {
+            /** Exchange */
+            exchange: string;
+            /** Instrument */
+            instrument: string;
+            /** Price */
+            price: number;
+            /** Qty */
+            qty: number;
+            /**
+             * Side
+             * @enum {string}
+             */
+            side: "buy" | "sell";
+            /** Taker Fee Rate */
+            taker_fee_rate: number;
+        };
+        /** StructuredOpportunityResponse */
+        StructuredOpportunityResponse: {
+            /** Capital Required Usd */
+            capital_required_usd: number;
+            /** Close Reason */
+            close_reason: string | null;
+            closed_at: components["schemas"]["IsoDatetime"] | null;
+            /**
+             * Decay Pct
+             * @description How far the current profit has fallen from its peak, in %.
+             */
+            readonly decay_pct: number;
+            detected_at: components["schemas"]["IsoDatetime"];
+            /** Entry Cost */
+            entry_cost: number;
+            expiry: components["schemas"]["IsoDatetime"];
+            /** Id */
+            id: number;
+            /** Is Fixed Payoff */
+            is_fixed_payoff: boolean;
+            last_seen_at: components["schemas"]["IsoDatetime"];
+            /** Legs */
+            legs: components["schemas"]["StructuredLegResponse"][];
+            /** Lifetime Sec */
+            readonly lifetime_sec: number;
+            live_status: components["schemas"]["LiveStatus"];
+            /** Max Fees */
+            max_fees: number;
+            /** Max Payoff */
+            max_payoff: number;
+            /** Max Profit */
+            max_profit: number;
+            /** Max Size */
+            max_size: number;
+            /** Max Total Profit Usd */
+            max_total_profit_usd: number;
+            /** Min Payoff */
+            min_payoff: number;
+            /** Min Profit */
+            min_profit: number;
+            mode: components["schemas"]["Mode"];
+            network: components["schemas"]["Network"];
+            /** Peak Min Profit */
+            peak_min_profit: number;
+            /** Peak Total Profit Usd */
+            peak_total_profit_usd: number;
+            /** Samples Count */
+            samples_count: number;
+            /** Settlement Risk */
+            settlement_risk: boolean;
+            /** Spot */
+            spot: number | null;
+            strategy_type: components["schemas"]["StrategyType"];
+            /** Strikes */
+            strikes: number[];
+            /** Underlying */
+            underlying: string;
+            updated_at: components["schemas"]["IsoDatetime"];
+        };
+        /** StructuredSnapshotResponse */
+        StructuredSnapshotResponse: {
+            /** Capital Required Usd */
+            capital_required_usd: number;
+            /** Entry Cost */
+            entry_cost: number;
+            /** Legs */
+            legs: components["schemas"]["StructuredLegResponse"][];
+            /** Max Fees */
+            max_fees: number;
+            /** Max Size */
+            max_size: number;
+            /** Max Total Profit Usd */
+            max_total_profit_usd: number;
+            /** Min Profit */
+            min_profit: number;
+            ts: components["schemas"]["IsoDatetime"];
+            /** Underlying Price */
+            underlying_price: number | null;
         };
         /** TickerExchangeResponse */
         TickerExchangeResponse: {
@@ -1019,6 +1245,7 @@ export interface operations {
         parameters: {
             query?: {
                 status?: components["schemas"]["OpportunityStatus"] | null;
+                live_status?: components["schemas"]["LiveStatus"] | null;
                 min_apr?: number | null;
                 min_profit?: number | null;
                 symbol?: string | null;
@@ -1026,7 +1253,7 @@ export interface operations {
                 sell_to?: string | null;
                 days?: number | null;
                 network?: components["schemas"]["Network"] | null;
-                sort_by?: "detected_at" | "apr_pct" | "net_return_pct" | "net_profit_usd" | "buy_premium_usd" | "fees_usd";
+                sort_by?: "detected_at" | "last_seen_at" | "apr_pct" | "net_return_pct" | "net_profit_usd" | "peak_net_profit_usd" | "buy_premium_usd" | "fees_usd" | "samples_count";
                 sort_dir?: "asc" | "desc";
                 limit?: number;
                 offset?: number;
@@ -1108,6 +1335,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpportunityResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_opportunity_snapshots_api_opportunities__opp_id__snapshots_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opp_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpportunitySnapshotResponse"][];
                 };
             };
             /** @description Not Found */
@@ -1246,6 +1513,128 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": string;
+                };
+            };
+        };
+    };
+    list_structured_opportunities_api_structured_opportunities_get: {
+        parameters: {
+            query?: {
+                strategy_type?: components["schemas"]["StrategyType"] | null;
+                underlying?: string | null;
+                min_profit_usd?: number | null;
+                cross_exchange_only?: boolean;
+                exclude_settlement_risk?: boolean;
+                live_status?: components["schemas"]["LiveStatus"] | null;
+                days?: number | null;
+                network?: components["schemas"]["Network"] | null;
+                sort_by?: "detected_at" | "last_seen_at" | "max_total_profit_usd" | "peak_total_profit_usd" | "min_profit" | "max_size" | "capital_required_usd" | "samples_count";
+                sort_dir?: "asc" | "desc";
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StructuredOpportunityResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_structured_opportunity_api_structured_opportunities__opp_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opp_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StructuredOpportunityResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_structured_snapshots_api_structured_opportunities__opp_id__snapshots_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opp_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StructuredSnapshotResponse"][];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
