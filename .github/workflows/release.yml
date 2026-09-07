@@ -88,13 +88,46 @@ jobs:
           p.write_text(s)
           PY
 
+      - name: Generate production .env
+        env:
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          DERIBIT_CLIENT_ID: ${{ secrets.DERIBIT_CLIENT_ID }}
+          DERIBIT_CLIENT_SECRET: ${{ secrets.DERIBIT_CLIENT_SECRET }}
+          DERIVE_WALLET_ADDRESS: ${{ secrets.DERIVE_WALLET_ADDRESS }}
+          DERIVE_SUBACCOUNT_ID: ${{ secrets.DERIVE_SUBACCOUNT_ID }}
+          DERIVE_SESSION_PRIVATE_KEY: ${{ secrets.DERIVE_SESSION_PRIVATE_KEY }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          MONITOR_CHAT_ID: ${{ secrets.MONITOR_CHAT_ID }}
+          GHCR_OWNER: ${{ github.repository_owner }}
+          RELEASE_TAG: ${{ github.sha }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_ACTOR: ${{ github.actor }}
+        run: |
+          umask 077
+          {
+            echo "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}"
+            echo "GHCR_OWNER=${GHCR_OWNER}"
+            echo "RELEASE_TAG=${RELEASE_TAG}"
+            echo "DERIBIT_CLIENT_ID=${DERIBIT_CLIENT_ID}"
+            echo "DERIBIT_CLIENT_SECRET=${DERIBIT_CLIENT_SECRET}"
+            echo "DERIVE_WALLET_ADDRESS=${DERIVE_WALLET_ADDRESS}"
+            echo "DERIVE_SUBACCOUNT_ID=${DERIVE_SUBACCOUNT_ID}"
+            echo "DERIVE_SESSION_PRIVATE_KEY=${DERIVE_SESSION_PRIVATE_KEY}"
+            echo "BOT_TOKEN=${BOT_TOKEN}"
+            echo "CHAT_ID=${CHAT_ID}"
+            echo "MONITOR_CHAT_ID=${MONITOR_CHAT_ID}"
+            echo "GITHUB_TOKEN=${GH_TOKEN}"
+            echo "GITHUB_ACTOR=${GH_ACTOR}"
+          } > prod.env
+
       - name: Copy files to VPS
         uses: appleboy/scp-action@v1
         with:
           host: ${{ secrets.VPS_IP }}
           username: ubuntu
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: "docker-compose.yml,docker-compose.prod.yml,config.prod.yaml,arbitrage.caddy,docker/nginx.conf,scripts/vps-monitor.sh,scripts/vps-setup-swap.sh"
+          source: "docker-compose.yml,docker-compose.prod.yml,config.prod.yaml,arbitrage.caddy,docker/nginx.conf,scripts/vps-deploy.sh,scripts/vps-monitor.sh,scripts/vps-setup-swap.sh,prod.env"
           target: /srv/arbitrage/
 
       - name: Copy frontend dist to VPS
@@ -107,84 +140,18 @@ jobs:
           target: /srv/arbitrage/frontend/
           strip_components: 1
 
+      # La seule commande passée par SSH est `bash <fichier>` : pas de heredoc,
+      # pas de redirection, pas d'`export` — donc insensible au shell de login
+      # du compte `ubuntu` sur le VPS (bash, fish, zsh…). Toute la logique vit
+      # dans scripts/vps-deploy.sh (versionné, exécuté explicitement par `bash`).
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_ACTOR: ${{ github.actor }}
         with:
           host: ${{ secrets.VPS_IP }}
           username: ubuntu
           key: ${{ secrets.VPS_SSH_KEY }}
-          envs: GITHUB_TOKEN,GITHUB_ACTOR
-          script: |
-            set -e
-            cd /srv/arbitrage
-
-            # Générer le .env de production (réécrit à chaque déploiement)
-            cat > .env << 'ENVEOF'
-            POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
-            GHCR_OWNER=${{ github.repository_owner }}
-            RELEASE_TAG=${{ github.sha }}
-            DERIBIT_CLIENT_ID=${{ secrets.DERIBIT_CLIENT_ID }}
-            DERIBIT_CLIENT_SECRET=${{ secrets.DERIBIT_CLIENT_SECRET }}
-            DERIVE_WALLET_ADDRESS=${{ secrets.DERIVE_WALLET_ADDRESS }}
-            DERIVE_SUBACCOUNT_ID=${{ secrets.DERIVE_SUBACCOUNT_ID }}
-            DERIVE_SESSION_PRIVATE_KEY=${{ secrets.DERIVE_SESSION_PRIVATE_KEY }}
-            BOT_TOKEN=${{ secrets.BOT_TOKEN }}
-            CHAT_ID=${{ secrets.CHAT_ID }}
-            MONITOR_CHAT_ID=${{ secrets.MONITOR_CHAT_ID }}
-            ENVEOF
-            chmod 600 .env
-
-            # Login GHCR avec le GITHUB_TOKEN du job (pas de secret dédié)
-            echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-
-            # Activer la config de production
-            cp config.prod.yaml config.yaml
-
-            # ⚠️ Couper l'executor avant le restart pour éviter les positions orphelines
-            touch data/EXECUTOR_DISABLED
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml stop executor 2>/dev/null || true
-            sleep 3
-
-            # Pull la nouvelle image
-            RELEASE_TAG=${{ github.sha }} \
-              docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
-
-            # Migrations
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml up migrate
-
-            # Restart api, workers, frontend
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml \
-              up -d --no-deps api workers frontend
-
-            # Réactiver l'executor
-            rm -f data/EXECUTOR_DISABLED
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml \
-              up -d --no-deps executor
-
-            # Déployer le snippet Caddy et recharger
-            cp arbitrage.caddy /srv/caddy/sites/arbitrage.caddy
-            cd /srv/caddy && docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile
-
-            # Vérifier que l'API répond (retry 30s)
-            cd /srv/arbitrage
-            for i in $(seq 1 6); do
-              curl -sf http://localhost:8001/health && break
-              [ $i -eq 6 ] && docker compose -f docker-compose.yml -f docker-compose.prod.yml logs api --tail=50 && exit 1
-              sleep 5
-            done
-
-            # Monitoring système : cron toutes les 2h → Telegram (chat séparé)
-            chmod +x scripts/vps-monitor.sh scripts/vps-setup-swap.sh
-            ( crontab -l 2>/dev/null | grep -v 'vps-monitor.sh' ; \
-              echo '0 */2 * * * /srv/arbitrage/scripts/vps-monitor.sh >> /srv/arbitrage/data/monitor.log 2>&1' \
-            ) | crontab -
-
-            # Nettoyer les anciennes images (garder les 3 plus récentes)
-            docker images "ghcr.io/${{ github.repository_owner }}/arbitrage" -q \
-              | tail -n +4 | xargs -r docker rmi 2>/dev/null || true
+          command_timeout: 30m
+          script: bash /srv/arbitrage/scripts/vps-deploy.sh
 
   github-release:
     needs: deploy
