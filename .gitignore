@@ -47,3 +47,4 @@ data/*.db
 data/*.db-*
 data/EXECUTOR_DISABLED
 data/recordings/
+.enola/

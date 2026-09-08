@@ -1,0 +1,78 @@
+name: DB backup
+
+# Dump quotidien de Postgres → artefact GitHub (rétention 14 jours, expiration auto).
+# Rien n'est écrit sur le VPS : pg_dump tourne dans le conteneur, sa sortie est
+# streamée via SSH jusqu'au runner, puis uploadée comme artefact.
+#
+# Restauration :
+#   gh run download <run-id> -n db-backup-YYYYMMDD-HHMM        # récupère le .dump
+#   scp db-*.dump ubuntu@<VPS>:/srv/arbitrage/data/restore.dump
+#   ssh ubuntu@<VPS> 'cd /srv/arbitrage && \
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T postgres \
+#       pg_restore -U option_arb -d option_arb --clean --if-exists --no-owner \
+#       < /srv/arbitrage/data/restore.dump'   # -T + redirection : exec lit le .dump sur stdin
+
+on:
+  schedule:
+    - cron: "30 3 * * *" # 03:30 UTC, tous les jours
+  workflow_dispatch: {}
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump Postgres via SSH
+        env:
+          VPS_IP: ${{ secrets.VPS_IP }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "$VPS_IP" >> ~/.ssh/known_hosts 2>/dev/null
+
+          STAMP=$(date -u +%Y%m%d-%H%M)
+          echo "STAMP=$STAMP" >> "$GITHUB_ENV"
+          DUMP="db-$STAMP.dump"
+          echo "DUMP=$DUMP" >> "$GITHUB_ENV"
+
+          ssh -i ~/.ssh/id_deploy \
+              -o ConnectTimeout=15 -o ServerAliveInterval=30 \
+              "ubuntu@$VPS_IP" \
+              'cd /srv/arbitrage && docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T postgres pg_dump -U option_arb -Fc option_arb' \
+              > "$DUMP"
+
+          # Validation : format custom pg_dump => les 5 premiers octets == "PGDMP"
+          size=$(stat -c%s "$DUMP")
+          magic=$(head -c5 "$DUMP" || true)
+          echo "dump: $DUMP ($size octets, magic='$magic')"
+          if [ "$magic" != "PGDMP" ] || [ "$size" -lt 1024 ]; then
+            echo "::error::dump invalide ou vide"
+            exit 1
+          fi
+
+      - name: Upload artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ env.STAMP }}
+          path: ${{ env.DUMP }}
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Alerte Telegram si échec
+        if: failure()
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          MONITOR_CHAT_ID: ${{ secrets.MONITOR_CHAT_ID }}
+        run: |
+          [ -z "${MONITOR_CHAT_ID:-}" ] && exit 0
+          curl -sS --max-time 15 \
+            "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -d chat_id="${MONITOR_CHAT_ID}" \
+            -d parse_mode="HTML" \
+            --data-urlencode text="🔴 <b>DB backup</b> a échoué — run ${GITHUB_RUN_ID}" >/dev/null

@@ -178,6 +178,13 @@ Pas de secret GHCR séparé : le `GITHUB_TOKEN` du job est forwardé via SSH.
 - Log local : `/srv/arbitrage/data/monitor.log`.
 - Test manuel : `ssh ubuntu@<VPS> /srv/arbitrage/scripts/vps-monitor.sh`.
 
+### Backup DB
+
+- `.github/workflows/db-backup.yml` — cron GitHub Actions quotidien (03:30 UTC) + `workflow_dispatch`. `pg_dump -Fc` tourne dans le conteneur `postgres`, la sortie est streamée via SSH jusqu'au runner (rien n'atterrit sur le VPS), puis uploadée en artefact `db-backup-<STAMP>` avec `retention-days: 14` (expiration auto → 14 dumps glissants). Échec → Telegram (`MONITOR_CHAT_ID`).
+- Secrets réutilisés : `VPS_IP`, `VPS_SSH_KEY`, `BOT_TOKEN`, `MONITOR_CHAT_ID`. Aucun nouveau secret.
+- Restauration : voir l'entête du workflow (`gh run download` → `scp` → `pg_restore --clean --if-exists` via `exec -T`).
+- GitHub désactive un cron workflow après 60 j sans activité sur le repo — sans objet ici (pushes réguliers).
+
 ### Initialisation du serveur (première fois)
 
 ```bash
