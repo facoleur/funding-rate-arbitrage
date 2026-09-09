@@ -394,16 +394,17 @@ async def test_backtest_dedup_and_budget_gates(test_db: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_backtest_excludes_rejected_and_respects_min_profit(test_db: str) -> None:
+async def test_backtest_includes_rejected_and_status_filter_narrows(test_db: str) -> None:
     now = datetime.now(UTC)
     await _insert_opportunity(
         instrument="BTC-20260601-90000-C",
         detected_at=now - timedelta(days=5),
         expiry=now - timedelta(days=1),
         capital_required_usd=1000.0,
-        net_profit_usd=5.0,
+        net_profit_usd=40.0,
         status=OpportunityStatus.EXECUTED,
     )
+    # REJECTED only because the executor was disabled / capped — still a real detection
     await _insert_opportunity(
         instrument="BTC-20260601-95000-C",
         detected_at=now - timedelta(days=5),
@@ -412,13 +413,30 @@ async def test_backtest_excludes_rejected_and_respects_min_profit(test_db: str) 
         net_profit_usd=500.0,
         status=OpportunityStatus.REJECTED,
     )
+    # below min_profit → dropped by the economics filter
+    await _insert_opportunity(
+        instrument="BTC-20260601-97000-C",
+        detected_at=now - timedelta(days=5),
+        expiry=now - timedelta(days=1),
+        capital_required_usd=1000.0,
+        net_profit_usd=5.0,
+        status=OpportunityStatus.PENDING,
+    )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        body = BacktestResponse.model_validate(
+        default = BacktestResponse.model_validate(
             (await ac.get("/api/analytics/backtest?days=30&min_profit=10")).json()
         )
-    # the $5 one is below min_profit, the $500 one is REJECTED → nothing taken
-    assert body.summary.n_taken == 0
+        executed_only = BacktestResponse.model_validate(
+            (await ac.get("/api/analytics/backtest?days=30&status=EXECUTED")).json()
+        )
+
+    # default: REJECTED included, only the $5 one dropped (min_profit)
+    assert default.summary.n_taken == 2
+    assert default.summary.total_net_profit_usd == pytest.approx(540.0)
+    # status filter narrows to the one that actually traded
+    assert executed_only.summary.n_taken == 1
+    assert executed_only.summary.total_net_profit_usd == pytest.approx(40.0)
 
 
 @pytest.mark.asyncio

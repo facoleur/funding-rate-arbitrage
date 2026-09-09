@@ -2505,7 +2505,7 @@
     },
     "/api/analytics/backtest": {
       "get": {
-        "description": "Simulate a portfolio built from historical opportunities.\n\nEach opportunity is taken at ``detected_at``; ``capital_required`` is locked\nuntil the instrument ``expiry`` and ``net_profit`` realized there. See\n``services.opportunity_backtest`` for the admission gates (dedup + budget).",
+        "description": "Simulate a portfolio built from historical opportunities.\n\nEach opportunity is taken at ``detected_at``; ``capital_required`` is locked\nuntil the instrument ``expiry`` and ``net_profit`` realized there. See\n``services.opportunity_backtest`` for the admission gates (dedup + budget).\n\nEvery screener detection is a candidate regardless of executor ``status`` \u2014\n``REJECTED`` here usually just means the executor was disabled or capped, not\nthat the dislocation was fake. Pass ``status`` to narrow (e.g. ``EXECUTED``).",
         "operationId": "backtest_api_analytics_backtest_get",
         "parameters": [
           {

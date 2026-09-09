@@ -35,6 +35,10 @@ export interface paths {
          *     Each opportunity is taken at ``detected_at``; ``capital_required`` is locked
          *     until the instrument ``expiry`` and ``net_profit`` realized there. See
          *     ``services.opportunity_backtest`` for the admission gates (dedup + budget).
+         *
+         *     Every screener detection is a candidate regardless of executor ``status`` —
+         *     ``REJECTED`` here usually just means the executor was disabled or capped, not
+         *     that the dislocation was fake. Pass ``status`` to narrow (e.g. ``EXECUTED``).
          */
         get: operations["backtest_api_analytics_backtest_get"];
         put?: never;

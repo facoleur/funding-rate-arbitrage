@@ -17,6 +17,7 @@ src/option_arb/
 │   ├── structured.py        # /api/structured-opportunities — list + detail + /{id}/snapshots (box spreads)
 │   ├── funding.py           # /api/funding — Deribit perp funding-rate history passthrough
 │   ├── analytics.py         # /api/analytics/backtest — portfolio backtest over stored opportunities
+│   │                        #   (every screener detection is a candidate; executor `status` ignored unless filtered)
 │   └── stream.py            # /api/stream — SSE fan-out from event bus
 ├── exchanges/
 │   ├── base.py              # AbstractExchange (dataclasses: Instrument, Book, TickerUpdate, OrderRequest, OrderResult)

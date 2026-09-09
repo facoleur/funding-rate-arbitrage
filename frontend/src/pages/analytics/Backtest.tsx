@@ -152,10 +152,11 @@ export default function Backtest() {
 
       {dataUpdatedAt > 0 && (
         <p className="text-[10px] text-zinc-700">
-          Simulation : chaque opportunité prise à sa détection, capital immobilisé jusqu'à
-          l'expiration de l'option, profit réalisé à l'expiration. Économie top-of-book du screener
-          — pas de slippage d'exécution au-delà du walk, pas de coût de funding du hedge au-delà des
-          fees.
+          Simulation : chaque détection du screener prise à sa détection (statut executor ignoré —
+          un REJECTED = executor coupé ou capital plafonné, pas une opp fausse ; filtre{' '}
+          <code>status</code> pour restreindre). Capital immobilisé jusqu'à l'expiration de
+          l'option, profit réalisé à l'expiration. Économie top-of-book du screener — pas de
+          slippage d'exécution au-delà du walk, pas de coût de funding du hedge au-delà des fees.
         </p>
       )}
 
