@@ -7,6 +7,7 @@ from fastapi import FastAPI
 
 from option_arb.api import (
     alerts,
+    analytics,
     executor,
     funding,
     health,
@@ -47,6 +48,7 @@ for router in (
     tickers.router,
     stream.router,
     funding.router,
+    analytics.router,
     structured.router,
 ):
     app.include_router(router)

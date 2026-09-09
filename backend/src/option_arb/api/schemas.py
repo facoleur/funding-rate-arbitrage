@@ -475,3 +475,47 @@ class OpportunitySnapshotResponse(ApiResponse):
     apr_pct: float
     price_spread_pct: float
     underlying_price: float | None
+
+
+class BacktestSummaryResponse(ApiResponse):
+    start: IsoDatetime
+    end: IsoDatetime
+    period_days: float
+    capital_budget_usd: float | None
+    peak_capital_usd: float
+    avg_capital_usd: float
+    capital_efficiency_pct: float
+    total_net_profit_usd: float
+    unrealized_net_profit_usd: float
+    total_fees_usd: float
+    return_on_peak_pct: float
+    return_on_budget_pct: float | None
+    annualized_pct: float
+    n_candidates: int
+    n_taken: int
+    n_skipped_dedup: int
+    n_skipped_budget: int
+    n_open: int
+    win_rate_pct: float
+    avg_hold_days: float
+
+
+class BacktestPointResponse(ApiResponse):
+    ts: IsoDatetime
+    capital_in_use_usd: float
+    cumulative_profit_usd: float
+
+
+class BacktestPairResponse(ApiResponse):
+    pair: str
+    buy_from: str
+    sell_to: str
+    n_taken: int
+    net_profit_usd: float
+    peak_capital_usd: float
+
+
+class BacktestResponse(ApiResponse):
+    summary: BacktestSummaryResponse
+    series: list[BacktestPointResponse]
+    by_pair: list[BacktestPairResponse]

@@ -66,7 +66,9 @@ done
 
 # --- Cron monitoring système (toutes les 2h → Telegram) ----------------------
 chmod +x scripts/vps-monitor.sh scripts/vps-setup-swap.sh
-( crontab -l 2>/dev/null | grep -v 'vps-monitor.sh' ; \
+# `|| true` : sans crontab préexistant, `crontab -l` échoue et `grep -v` sort en 1
+# sur entrée vide — ce qui tuerait le script sous `set -euo pipefail`.
+( { crontab -l 2>/dev/null || true; } | grep -v 'vps-monitor.sh' || true; \
   echo '0 */2 * * * /srv/arbitrage/scripts/vps-monitor.sh >> /srv/arbitrage/data/monitor.log 2>&1' \
 ) | crontab -
 

@@ -16,6 +16,7 @@ import ExecutorLayout from './pages/executor/ExecutorLayout'
 import Status from './pages/executor/Status'
 import Positions from './pages/executor/Positions'
 import AnalyticsLayout from './pages/analytics/AnalyticsLayout'
+import Backtest from './pages/analytics/Backtest'
 import Funding from './pages/analytics/Funding'
 
 export default function App() {
@@ -53,7 +54,8 @@ export default function App() {
             <Route path="positions" element={<Positions />} />
           </Route>
           <Route path="analytics" element={<AnalyticsLayout />}>
-            <Route index element={<Navigate to="funding" replace />} />
+            <Route index element={<Navigate to="backtest" replace />} />
+            <Route path="backtest" element={<Backtest />} />
             <Route path="funding" element={<Funding />} />
           </Route>
           <Route path="*" element={<Navigate to="/opportunites/live" replace />} />

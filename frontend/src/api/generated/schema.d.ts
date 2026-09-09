@@ -21,6 +21,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/analytics/backtest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Backtest
+         * @description Simulate a portfolio built from historical opportunities.
+         *
+         *     Each opportunity is taken at ``detected_at``; ``capital_required`` is locked
+         *     until the instrument ``expiry`` and ``net_profit`` realized there. See
+         *     ``services.opportunity_backtest`` for the admission gates (dedup + budget).
+         */
+        get: operations["backtest_api_analytics_backtest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/exchanges": {
         parameters: {
             query?: never;
@@ -419,6 +443,78 @@ export interface components {
             /** Meta */
             meta: string | null;
             sent_at: components["schemas"]["IsoDatetime"];
+        };
+        /** BacktestPairResponse */
+        BacktestPairResponse: {
+            /** Buy From */
+            buy_from: string;
+            /** N Taken */
+            n_taken: number;
+            /** Net Profit Usd */
+            net_profit_usd: number;
+            /** Pair */
+            pair: string;
+            /** Peak Capital Usd */
+            peak_capital_usd: number;
+            /** Sell To */
+            sell_to: string;
+        };
+        /** BacktestPointResponse */
+        BacktestPointResponse: {
+            /** Capital In Use Usd */
+            capital_in_use_usd: number;
+            /** Cumulative Profit Usd */
+            cumulative_profit_usd: number;
+            ts: components["schemas"]["IsoDatetime"];
+        };
+        /** BacktestResponse */
+        BacktestResponse: {
+            /** By Pair */
+            by_pair: components["schemas"]["BacktestPairResponse"][];
+            /** Series */
+            series: components["schemas"]["BacktestPointResponse"][];
+            summary: components["schemas"]["BacktestSummaryResponse"];
+        };
+        /** BacktestSummaryResponse */
+        BacktestSummaryResponse: {
+            /** Annualized Pct */
+            annualized_pct: number;
+            /** Avg Capital Usd */
+            avg_capital_usd: number;
+            /** Avg Hold Days */
+            avg_hold_days: number;
+            /** Capital Budget Usd */
+            capital_budget_usd: number | null;
+            /** Capital Efficiency Pct */
+            capital_efficiency_pct: number;
+            end: components["schemas"]["IsoDatetime"];
+            /** N Candidates */
+            n_candidates: number;
+            /** N Open */
+            n_open: number;
+            /** N Skipped Budget */
+            n_skipped_budget: number;
+            /** N Skipped Dedup */
+            n_skipped_dedup: number;
+            /** N Taken */
+            n_taken: number;
+            /** Peak Capital Usd */
+            peak_capital_usd: number;
+            /** Period Days */
+            period_days: number;
+            /** Return On Budget Pct */
+            return_on_budget_pct: number | null;
+            /** Return On Peak Pct */
+            return_on_peak_pct: number;
+            start: components["schemas"]["IsoDatetime"];
+            /** Total Fees Usd */
+            total_fees_usd: number;
+            /** Total Net Profit Usd */
+            total_net_profit_usd: number;
+            /** Unrealized Net Profit Usd */
+            unrealized_net_profit_usd: number;
+            /** Win Rate Pct */
+            win_rate_pct: number;
         };
         /** ErrorResponse */
         ErrorResponse: {
@@ -1116,6 +1212,49 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AlertResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    backtest_api_analytics_backtest_get: {
+        parameters: {
+            query?: {
+                days?: number;
+                symbol?: string | null;
+                buy_from?: string | null;
+                sell_to?: string | null;
+                network?: components["schemas"]["Network"] | null;
+                status?: components["schemas"]["OpportunityStatus"] | null;
+                live_status?: components["schemas"]["LiveStatus"] | null;
+                min_apr?: number | null;
+                min_profit?: number | null;
+                min_lifetime_sec?: number;
+                min_samples?: number;
+                one_position_per_instrument?: boolean;
+                capital_budget_usd?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BacktestResponse"];
                 };
             };
             /** @description Validation Error */

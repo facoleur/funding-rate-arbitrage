@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from option_arb.api.schemas import (
     AlertResponse,
+    BacktestResponse,
     ErrorResponse,
     ExchangeStateResponse,
     ExecutorStateResponse,
@@ -329,6 +330,95 @@ async def test_opportunity_stats_empty(test_db: str) -> None:
         r = await ac.get("/api/opportunities/stats")
     assert r.status_code == 200
     assert r.json() == []
+
+
+@pytest.mark.asyncio
+async def test_backtest_empty(test_db: str) -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        r = await ac.get("/api/analytics/backtest")
+    assert r.status_code == 200
+    body = BacktestResponse.model_validate(r.json())
+    assert body.summary.n_candidates == 0
+    assert body.summary.peak_capital_usd == 0.0
+    assert body.series == []
+
+
+@pytest.mark.asyncio
+async def test_backtest_dedup_and_budget_gates(test_db: str) -> None:
+    now = datetime.now(UTC)
+    # two overlapping detections on the SAME instrument — dedup keeps one
+    await _insert_opportunity(
+        instrument="BTC-20260601-100000-C",
+        detected_at=now - timedelta(days=20),
+        expiry=now - timedelta(days=1),
+        capital_required_usd=1000.0,
+        net_profit_usd=50.0,
+        fees_usd=1.0,
+    )
+    await _insert_opportunity(
+        instrument="BTC-20260601-100000-C",
+        detected_at=now - timedelta(days=19),
+        expiry=now - timedelta(days=1),
+        capital_required_usd=1000.0,
+        net_profit_usd=999.0,
+        fees_usd=1.0,
+    )
+    # a separate instrument that only fits without a budget cap
+    await _insert_opportunity(
+        instrument="ETH-20260601-3000-C",
+        symbol="ETH",
+        detected_at=now - timedelta(days=18),
+        expiry=now - timedelta(days=2),
+        capital_required_usd=5000.0,
+        net_profit_usd=120.0,
+        fees_usd=2.0,
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        unlimited = BacktestResponse.model_validate(
+            (await ac.get("/api/analytics/backtest?days=60")).json()
+        )
+        capped = BacktestResponse.model_validate(
+            (await ac.get("/api/analytics/backtest?days=60&capital_budget_usd=2000")).json()
+        )
+
+    assert unlimited.summary.n_taken == 2
+    assert unlimited.summary.n_skipped_dedup == 1
+    assert unlimited.summary.total_net_profit_usd == pytest.approx(170.0)
+    # BTC ($1k) and ETH ($5k) legs overlap in time → stacked
+    assert unlimited.summary.peak_capital_usd == pytest.approx(6000.0)
+
+    assert capped.summary.n_skipped_budget == 1
+    assert capped.summary.n_taken == 1
+    assert capped.summary.total_net_profit_usd == pytest.approx(50.0)
+
+
+@pytest.mark.asyncio
+async def test_backtest_excludes_rejected_and_respects_min_profit(test_db: str) -> None:
+    now = datetime.now(UTC)
+    await _insert_opportunity(
+        instrument="BTC-20260601-90000-C",
+        detected_at=now - timedelta(days=5),
+        expiry=now - timedelta(days=1),
+        capital_required_usd=1000.0,
+        net_profit_usd=5.0,
+        status=OpportunityStatus.EXECUTED,
+    )
+    await _insert_opportunity(
+        instrument="BTC-20260601-95000-C",
+        detected_at=now - timedelta(days=5),
+        expiry=now - timedelta(days=1),
+        capital_required_usd=1000.0,
+        net_profit_usd=500.0,
+        status=OpportunityStatus.REJECTED,
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        body = BacktestResponse.model_validate(
+            (await ac.get("/api/analytics/backtest?days=30&min_profit=10")).json()
+        )
+    # the $5 one is below min_profit, the $500 one is REJECTED → nothing taken
+    assert body.summary.n_taken == 0
 
 
 @pytest.mark.asyncio

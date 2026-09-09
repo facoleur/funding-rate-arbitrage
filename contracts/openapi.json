@@ -54,6 +54,218 @@
         "title": "AlertResponse",
         "type": "object"
       },
+      "BacktestPairResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "buy_from": {
+            "title": "Buy From",
+            "type": "string"
+          },
+          "n_taken": {
+            "title": "N Taken",
+            "type": "integer"
+          },
+          "net_profit_usd": {
+            "title": "Net Profit Usd",
+            "type": "number"
+          },
+          "pair": {
+            "title": "Pair",
+            "type": "string"
+          },
+          "peak_capital_usd": {
+            "title": "Peak Capital Usd",
+            "type": "number"
+          },
+          "sell_to": {
+            "title": "Sell To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pair",
+          "buy_from",
+          "sell_to",
+          "n_taken",
+          "net_profit_usd",
+          "peak_capital_usd"
+        ],
+        "title": "BacktestPairResponse",
+        "type": "object"
+      },
+      "BacktestPointResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "capital_in_use_usd": {
+            "title": "Capital In Use Usd",
+            "type": "number"
+          },
+          "cumulative_profit_usd": {
+            "title": "Cumulative Profit Usd",
+            "type": "number"
+          },
+          "ts": {
+            "$ref": "#/components/schemas/IsoDatetime"
+          }
+        },
+        "required": [
+          "ts",
+          "capital_in_use_usd",
+          "cumulative_profit_usd"
+        ],
+        "title": "BacktestPointResponse",
+        "type": "object"
+      },
+      "BacktestResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "by_pair": {
+            "items": {
+              "$ref": "#/components/schemas/BacktestPairResponse"
+            },
+            "title": "By Pair",
+            "type": "array"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/BacktestPointResponse"
+            },
+            "title": "Series",
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/BacktestSummaryResponse"
+          }
+        },
+        "required": [
+          "summary",
+          "series",
+          "by_pair"
+        ],
+        "title": "BacktestResponse",
+        "type": "object"
+      },
+      "BacktestSummaryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "annualized_pct": {
+            "title": "Annualized Pct",
+            "type": "number"
+          },
+          "avg_capital_usd": {
+            "title": "Avg Capital Usd",
+            "type": "number"
+          },
+          "avg_hold_days": {
+            "title": "Avg Hold Days",
+            "type": "number"
+          },
+          "capital_budget_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capital Budget Usd"
+          },
+          "capital_efficiency_pct": {
+            "title": "Capital Efficiency Pct",
+            "type": "number"
+          },
+          "end": {
+            "$ref": "#/components/schemas/IsoDatetime"
+          },
+          "n_candidates": {
+            "title": "N Candidates",
+            "type": "integer"
+          },
+          "n_open": {
+            "title": "N Open",
+            "type": "integer"
+          },
+          "n_skipped_budget": {
+            "title": "N Skipped Budget",
+            "type": "integer"
+          },
+          "n_skipped_dedup": {
+            "title": "N Skipped Dedup",
+            "type": "integer"
+          },
+          "n_taken": {
+            "title": "N Taken",
+            "type": "integer"
+          },
+          "peak_capital_usd": {
+            "title": "Peak Capital Usd",
+            "type": "number"
+          },
+          "period_days": {
+            "title": "Period Days",
+            "type": "number"
+          },
+          "return_on_budget_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Return On Budget Pct"
+          },
+          "return_on_peak_pct": {
+            "title": "Return On Peak Pct",
+            "type": "number"
+          },
+          "start": {
+            "$ref": "#/components/schemas/IsoDatetime"
+          },
+          "total_fees_usd": {
+            "title": "Total Fees Usd",
+            "type": "number"
+          },
+          "total_net_profit_usd": {
+            "title": "Total Net Profit Usd",
+            "type": "number"
+          },
+          "unrealized_net_profit_usd": {
+            "title": "Unrealized Net Profit Usd",
+            "type": "number"
+          },
+          "win_rate_pct": {
+            "title": "Win Rate Pct",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "period_days",
+          "capital_budget_usd",
+          "peak_capital_usd",
+          "avg_capital_usd",
+          "capital_efficiency_pct",
+          "total_net_profit_usd",
+          "unrealized_net_profit_usd",
+          "total_fees_usd",
+          "return_on_peak_pct",
+          "return_on_budget_pct",
+          "annualized_pct",
+          "n_candidates",
+          "n_taken",
+          "n_skipped_dedup",
+          "n_skipped_budget",
+          "n_open",
+          "win_rate_pct",
+          "avg_hold_days"
+        ],
+        "title": "BacktestSummaryResponse",
+        "type": "object"
+      },
       "ErrorResponse": {
         "additionalProperties": false,
         "properties": {
@@ -2288,6 +2500,230 @@
         "summary": "List Alerts",
         "tags": [
           "alerts"
+        ]
+      }
+    },
+    "/api/analytics/backtest": {
+      "get": {
+        "description": "Simulate a portfolio built from historical opportunities.\n\nEach opportunity is taken at ``detected_at``; ``capital_required`` is locked\nuntil the instrument ``expiry`` and ``net_profit`` realized there. See\n``services.opportunity_backtest`` for the admission gates (dedup + budget).",
+        "operationId": "backtest_api_analytics_backtest_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "symbol",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Symbol"
+            }
+          },
+          {
+            "in": "query",
+            "name": "buy_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Buy From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sell_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sell To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "network",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Network"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "mainnet",
+              "title": "Network"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/OpportunityStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "live_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/LiveStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Live Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_apr",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Apr"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_profit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Profit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_lifetime_sec",
+            "required": false,
+            "schema": {
+              "default": 0.0,
+              "minimum": 0.0,
+              "title": "Min Lifetime Sec",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_samples",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Min Samples",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "one_position_per_instrument",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "One Position Per Instrument",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "capital_budget_usd",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Capital Budget Usd"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BacktestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Backtest",
+        "tags": [
+          "analytics"
         ]
       }
     },

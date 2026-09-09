@@ -15,6 +15,8 @@ src/option_arb/
 │   ├── perp_hedge.py        # /state + POST pause + POST resume
 │   ├── alerts.py            # audit log
 │   ├── structured.py        # /api/structured-opportunities — list + detail + /{id}/snapshots (box spreads)
+│   ├── funding.py           # /api/funding — Deribit perp funding-rate history passthrough
+│   ├── analytics.py         # /api/analytics/backtest — portfolio backtest over stored opportunities
 │   └── stream.py            # /api/stream — SSE fan-out from event bus
 ├── exchanges/
 │   ├── base.py              # AbstractExchange (dataclasses: Instrument, Book, TickerUpdate, OrderRequest, OrderResult)
@@ -50,6 +52,8 @@ src/option_arb/
 │   ├── executor.py          # state machine, poll PENDING, kill-switches, IOC limits, market-out
 │   ├── rebalancer.py        # 5min monitor loop, alerts only
 │   ├── perp_hedger.py       # BTC-PERPETUAL short hedge on Deribit inverse; dry_run in paper mode
+│   ├── opportunity_backtest.py  # pure portfolio sim over `Opportunity` rows: capital locked
+│   │                            #   detection→expiry, dedup 1/instrument + budget-cap admission gates
 │   └── alerter.py           # consumes bus, MarkdownV2 → Telegram, persists to alerts table
 ├── db/
 │   ├── models.py            # tables + enums; LiveStatus (LIVE/STALE/EXPIRED) shared by
@@ -197,7 +201,7 @@ Zero direct in-process calls. Screener writes `Opportunity(status=PENDING)` in D
 - `test_db` fixture in `tests/conftest.py` gives each test a fresh temp SQLite DB and repoints the shared engine at it.
 - Executor + MockExchange tests deterministic via `SlippageModel(rng_seed=…, noise_stdev_bps=0, reject_prob=0, latency=0)`.
 - Adding a DB-touching test → depend on the `test_db` fixture, no other setup needed.
-- **182 tests total** covering: comparator, HTTP rate limit / retry / circuit, screener (write + skip), executor (happy + all 4 kill-switches + stale + apr_dropped + empty book + STUCK), mock exchange, alerter (persistence + threshold + level), rebalancer (low balance + expiring + unhealthy), auth (NoAuth + Deribit OAuth caching + EIP-712 signer address), WS manager (subscribe payload + reconnect), adapters (WS ticker parsing per exchange), DeriveAuth (constants + LYRA headers + end-to-end sign+validate on testnet constants), structured box detector (`test_structured_box.py`) + structured screener (`test_structured_screener.py`) + 1:1 opportunity evolution (`test_opportunity_snapshots.py` — first snapshot, interval/delta gating, peak/last_seen tracking, close sweep leaves executor `status` untouched, revive-on-reappear).
+- **196 tests total** covering: comparator, HTTP rate limit / retry / circuit, screener (write + skip), executor (happy + all 4 kill-switches + stale + apr_dropped + empty book + STUCK), mock exchange, alerter (persistence + threshold + level), rebalancer (low balance + expiring + unhealthy), auth (NoAuth + Deribit OAuth caching + EIP-712 signer address), WS manager (subscribe payload + reconnect), adapters (WS ticker parsing per exchange), DeriveAuth (constants + LYRA headers + end-to-end sign+validate on testnet constants), structured box detector (`test_structured_box.py`) + structured screener (`test_structured_screener.py`) + 1:1 opportunity evolution (`test_opportunity_snapshots.py` — first snapshot, interval/delta gating, peak/last_seen tracking, close sweep leaves executor `status` untouched, revive-on-reappear) + portfolio backtest (`test_opportunity_backtest.py` — disjoint vs overlapping capital, release at expiry, dedup + budget gates, annualization, unrealized profit; API gates in `test_api.py`).
 
 ## Not yet wired
 

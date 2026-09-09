@@ -25,7 +25,8 @@ Servi via nginx dans le container Docker `frontend` (port 3000 → port 80 inter
 | `/structured/:id` | `structured/Detail.tsx` | Évolution d'une opportunité : courbe de decay + slider temporel + diagramme de payoff des 2 spreads (recharts) + table des deltas |
 | `/positions` | `Positions.tsx` | État par exchange : balance, positions ouvertes, WS status |
 | `/executor` | `Executor.tsx` | État executor + kill-switches + boutons Kill/Resume |
-| `/funding` | `Funding.tsx` | Données de funding rates |
+| `/analytics/backtest` | `analytics/Backtest.tsx` | Backtest de portefeuille sur l'historique des opportunités : chaque opp prise à la détection, capital immobilisé jusqu'à l'expiration de l'option (libéré + profit à l'échéance). Deux portes d'admission — dédup 1 position/instrument + budget capital plafonné. Stats (capital requis = pic concurrent, rendement annualisé, efficience, win rate, skips), chart capital immobilisé + profit cumulé (recharts), ventilation par paire |
+| `/analytics/funding` | `analytics/Funding.tsx` | Données de funding rates |
 
 ## Composants partagés
 
@@ -55,6 +56,8 @@ Servi via nginx dans le container Docker `frontend` (port 3000 → port 80 inter
 | `/api/perp-hedge/pause` | POST | pause le hedger (crée kill switch file) |
 | `/api/perp-hedge/resume` | POST | reprend le hedger (supprime kill switch file) |
 | `/api/alerts?level=&limit=` | GET | Executor.tsx (alertes récentes) |
+| `/api/analytics/backtest?days=&symbol=&network=&min_apr=&min_profit=&min_lifetime_sec=&one_position_per_instrument=&capital_budget_usd=` | GET | analytics/Backtest.tsx |
+| `/api/funding?instrument=&days=` | GET | analytics/Funding.tsx |
 | `/api/stream` | GET (SSE) | Push events temps réel |
 | `/health` | GET | StatusBadge, monitoring |
 
