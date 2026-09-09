@@ -4,6 +4,8 @@ screener:
   exchanges: ["derive", "deribit", "deribit_linear", "aevo"]
   max_expiries_ahead: 8
   metadata_refresh_hours: 6
+  opportunity_retention_days: 180  # historique long pour le backtest de portefeuille
+  snapshot_retention_days: 14      # snapshots non utilisés par le backtest → purge courte
 
 thresholds:
   min_apr_pct: 5
